@@ -2,6 +2,7 @@ import sqlite3
 from pathlib import Path
 
 from app.admin_catalog import install_catalog_database, validate_catalog_database
+from app.catalog import CatalogRepository
 
 
 def build_catalog(path: Path):
@@ -46,3 +47,13 @@ def test_install_catalog_database_creates_backup(tmp_path):
     assert result["backup_path"]
     assert Path(result["backup_path"]).exists()
     assert validate_catalog_database(current)["counts"]["details"] == 1
+
+
+def test_catalog_lookup_works_without_regional_tables(tmp_path):
+    source = tmp_path / "ebm_only.sqlite"
+    build_catalog(source)
+
+    repo = CatalogRepository(source)
+
+    assert repo.lookup("01210", "2025/Q4").title == "Notfallpauschale I"
+    assert repo.lookup_hessen("01210", "2025/Q4") is None
