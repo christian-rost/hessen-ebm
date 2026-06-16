@@ -1,0 +1,35 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CATALOG_DB_PATH: ${CATALOG_DB_PATH:-/app/catalog/ebm_kbv.sqlite}
+      STORAGE_DIR: ${STORAGE_DIR:-/app/storage}
+      ENABLE_MISTRAL_OCR: ${ENABLE_MISTRAL_OCR:-false}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      MISTRAL_OCR_MODEL: ${MISTRAL_OCR_MODEL:-mistral-ocr-latest}
+    volumes:
+      - backend-storage:/app/storage
+      - catalog-data:/app/catalog
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    restart: unless-stopped
+
+volumes:
+  backend-storage:
+  catalog-data:
+

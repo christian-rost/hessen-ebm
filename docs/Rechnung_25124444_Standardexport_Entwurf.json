@@ -1,0 +1,466 @@
+{
+  "export_profile": "EBM_KVDT_ADT_LIKE_V1_DRAFT",
+  "status": "draft_needs_human_review",
+  "privacy_mode": "patient_name_omitted",
+  "source_document": {
+    "file": "/Users/cro/Downloads/LENUS_varisano_ebm/25124444.pdf",
+    "case_id": "25124444",
+    "page_count": 54,
+    "pdf_title": "HYDMedia PDF",
+    "created_at_observed": "2026-06-11T13:31:40+02:00"
+  },
+  "catalog_context": {
+    "treatment_quarter": "2025/Q4",
+    "ebm_source": "EBM_KBV",
+    "ebm_snapshot": {
+      "quarter": "2025/Q4",
+      "site_version": "1.4.0",
+      "data_stand": "02.04.2026",
+      "retrieved_at": "2026-06-16T13:42:47+00:00",
+      "detail_count": 3850
+    },
+    "regional_catalog": {
+      "source_system": "KV_HESSEN_GOP",
+      "region": "Hessen",
+      "quarter": "2025/Q4",
+      "data_stand": "30.09.2025",
+      "safe_candidate_matches": 0
+    }
+  },
+  "case_context": {
+    "care_context": "KV-Notfall/ZNA",
+    "treatment_start": "2025-10-03T22:59:00+02:00",
+    "treatment_end": "2025-10-04T01:19:00+02:00",
+    "diagnoses": [
+      {
+        "icd10": "S00.95",
+        "text": "Schaedelprellung",
+        "evidence_pages": [19]
+      }
+    ]
+  },
+  "summary": {
+    "line_count": 15,
+    "points_total": 931,
+    "amount_total_eur": 119.81,
+    "currency": "EUR",
+    "human_review_required": true
+  },
+  "items": [
+    {
+      "line": 1,
+      "gop_original": "01210",
+      "gop_base": "01210",
+      "gop_suffix": null,
+      "title": "Notfallpauschale I",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-03",
+      "service_time": "22:59",
+      "quantity": 1,
+      "points": 120,
+      "amount_eur": 14.87,
+      "rule_id": "context.kv_notfall_zna.01210.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 5,
+          "type": "case_context",
+          "text": "KV-Abrechnung/Notfalldienst/Vertretung/Notfall; Aufnahme ZNA 03.10.2025 22:59"
+        },
+        {
+          "page": 19,
+          "type": "treatment_report",
+          "text": "Behandlungsbericht ZNA mit Aufnahme und Behandlungsende"
+        }
+      ]
+    },
+    {
+      "line": 2,
+      "gop_original": "34310",
+      "gop_base": "34310",
+      "gop_suffix": null,
+      "title": "CT-Untersuchung des Neurocraniums",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:03",
+      "quantity": 1,
+      "points": 534,
+      "amount_eur": 66.18,
+      "rule_id": "radiology.ct_head_native.34310.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 37,
+          "type": "radiology_report",
+          "text": "CT Kopf nativ, durchgefuehrt am 04.10.2025 um 00:03"
+        }
+      ]
+    },
+    {
+      "line": 3,
+      "gop_original": "34231",
+      "gop_base": "34231",
+      "gop_suffix": null,
+      "title": "Aufnahmen der Schulter/des Schulterguertels",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:01",
+      "quantity": 1,
+      "points": 137,
+      "amount_eur": 16.98,
+      "rule_id": "radiology.xray_shoulder_2_planes.34231.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 38,
+          "type": "radiology_report",
+          "text": "Roentgen Schulter 2 Ebenen links, durchgefuehrt am 04.10.2025 um 00:01"
+        }
+      ]
+    },
+    {
+      "line": 4,
+      "gop_original": "34221",
+      "gop_base": "34221",
+      "gop_suffix": null,
+      "title": "Aufnahmen von Teilen der Wirbelsaeule",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:01",
+      "quantity": 1,
+      "points": 140,
+      "amount_eur": 17.35,
+      "rule_id": "radiology.xray_spine_section_hws.34221.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 38,
+          "type": "radiology_report",
+          "text": "Roentgen HWS 2 Ebenen ap, seitl. und Dens, durchgefuehrt am 04.10.2025 um 00:01"
+        }
+      ]
+    },
+    {
+      "line": 5,
+      "gop_original": "32113",
+      "gop_base": "32113",
+      "gop_suffix": null,
+      "title": "Quick-Wert, Plasma",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:19",
+      "quantity": 1,
+      "points": null,
+      "amount_eur": 0.58,
+      "rule_id": "lab.quick.32113.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 52,
+          "type": "laboratory_result",
+          "text": "Quick 95 %, valide zweite Probe"
+        }
+      ]
+    },
+    {
+      "line": 6,
+      "gop_original": "32066",
+      "gop_base": "32066",
+      "gop_suffix": null,
+      "title": "Kreatinin",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:19",
+      "quantity": 1,
+      "points": null,
+      "amount_eur": 0.25,
+      "rule_id": "lab.creatinine.32066.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 52,
+          "type": "laboratory_result",
+          "text": "Kreatinin 0.78 mg/dl"
+        }
+      ]
+    },
+    {
+      "line": 7,
+      "gop_original": "32083",
+      "gop_base": "32083",
+      "gop_suffix": null,
+      "title": "Natrium",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:19",
+      "quantity": 1,
+      "points": null,
+      "amount_eur": 0.25,
+      "rule_id": "lab.sodium.32083.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 52,
+          "type": "laboratory_result",
+          "text": "Natrium 140 mmol/l"
+        }
+      ]
+    },
+    {
+      "line": 8,
+      "gop_original": "32081",
+      "gop_base": "32081",
+      "gop_suffix": null,
+      "title": "Kalium",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:19",
+      "quantity": 1,
+      "points": null,
+      "amount_eur": 0.25,
+      "rule_id": "lab.potassium.32081.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 52,
+          "type": "laboratory_result",
+          "text": "Kalium 3.5 mmol/l"
+        }
+      ]
+    },
+    {
+      "line": 9,
+      "gop_original": "32025",
+      "gop_base": "32025",
+      "gop_suffix": null,
+      "title": "Glucose",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:19",
+      "quantity": 1,
+      "points": null,
+      "amount_eur": 1.60,
+      "rule_id": "lab.glucose.32025.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 52,
+          "type": "laboratory_result",
+          "text": "Glucose 98 mg/dl"
+        }
+      ]
+    },
+    {
+      "line": 10,
+      "gop_original": "32070",
+      "gop_base": "32070",
+      "gop_suffix": null,
+      "title": "GPT / ALT",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-03",
+      "service_time": "23:20",
+      "quantity": 1,
+      "points": null,
+      "amount_eur": 0.25,
+      "rule_id": "lab.alt_gpt.32070.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 48,
+          "type": "laboratory_result",
+          "text": "ALT 14 U/l"
+        }
+      ]
+    },
+    {
+      "line": 11,
+      "gop_original": "32035A",
+      "gop_base": "32035",
+      "gop_suffix": "A",
+      "title": "Erythrozytenzaehlung",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:19",
+      "quantity": 1,
+      "points": null,
+      "amount_eur": 0.25,
+      "rule_id": "lab.blood_count.erythrocytes.32035.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 52,
+          "type": "laboratory_result",
+          "text": "Erythrozyten 4.2 Bil./l"
+        }
+      ]
+    },
+    {
+      "line": 12,
+      "gop_original": "32036A",
+      "gop_base": "32036",
+      "gop_suffix": "A",
+      "title": "Leukozytenzaehlung",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:19",
+      "quantity": 1,
+      "points": null,
+      "amount_eur": 0.25,
+      "rule_id": "lab.blood_count.leukocytes.32036.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 52,
+          "type": "laboratory_result",
+          "text": "Leukozyten 4.9 Mrd./l"
+        }
+      ]
+    },
+    {
+      "line": 13,
+      "gop_original": "32037A",
+      "gop_base": "32037",
+      "gop_suffix": "A",
+      "title": "Thrombozytenzaehlung",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:19",
+      "quantity": 1,
+      "points": null,
+      "amount_eur": 0.25,
+      "rule_id": "lab.blood_count.thrombocytes.32037.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 53,
+          "type": "laboratory_result",
+          "text": "Thrombozyten 285 Mrd./l"
+        }
+      ]
+    },
+    {
+      "line": 14,
+      "gop_original": "32038A",
+      "gop_base": "32038",
+      "gop_suffix": "A",
+      "title": "Haemoglobin",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:19",
+      "quantity": 1,
+      "points": null,
+      "amount_eur": 0.25,
+      "rule_id": "lab.blood_count.hemoglobin.32038.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 52,
+          "type": "laboratory_result",
+          "text": "Haemoglobin 10.0 g/dl"
+        }
+      ]
+    },
+    {
+      "line": 15,
+      "gop_original": "32039A",
+      "gop_base": "32039",
+      "gop_suffix": "A",
+      "title": "Haematokrit",
+      "catalog_source": "EBM_KBV",
+      "quarter": "2025/Q4",
+      "service_date": "2025-10-04",
+      "service_time": "00:19",
+      "quantity": 1,
+      "points": null,
+      "amount_eur": 0.25,
+      "rule_id": "lab.blood_count.hematocrit.32039.v1",
+      "confidence": "high",
+      "evidence": [
+        {
+          "page": 52,
+          "type": "laboratory_result",
+          "text": "Haematokrit 31.7 %"
+        }
+      ]
+    }
+  ],
+  "review_candidates": [
+    {
+      "evidence": "12-Kanal-EKG",
+      "evidence_pages": [31, 32, 33, 34, 35, 36],
+      "reason": "Kein freigegebenes Mapping im aktuellen Regelset."
+    },
+    {
+      "evidence": "Neurologisches Konsil, 25 Minuten Bereitschaftsdienst",
+      "evidence_pages": [22, 41],
+      "reason": "Interne Konsiltypen sind nicht automatisch EBM-GOPs."
+    },
+    {
+      "evidence": "Psychiatrisches Konsil, 40 Minuten Bereitschaftsdienst",
+      "evidence_pages": [24, 42],
+      "reason": "Interne Konsiltypen sind nicht automatisch EBM-GOPs."
+    },
+    {
+      "evidence": "Schwangerschaftstest Urin negativ",
+      "possible_gop": "32132",
+      "evidence_pages": [51],
+      "reason": "Katalogtreffer vorhanden, aber noch keine validierte Positivregel; Widerspruch zum Radiologiebefund beachten."
+    },
+    {
+      "evidence": "Drogen-Screening Urin negativ",
+      "possible_gops": ["32292", "32307"],
+      "evidence_pages": [50],
+      "reason": "Panel-/Einzeltestlogik und Abrechnungsfaehigkeit nicht validiert."
+    },
+    {
+      "evidence": "Weitere Laborwerte wie CRP, CK, CK-MB, Myoglobin, Harnstoff, GOT/AST, Gamma-GT",
+      "possible_gops": ["32065", "32069", "32071", "32074", "32092", "32128", "32450"],
+      "evidence_pages": [48, 52],
+      "reason": "Bisherige Goldstandard-Regeln erlauben nicht automatisch jeden dokumentierten Laborwert."
+    },
+    {
+      "evidence": "Urinstatus",
+      "possible_gop": "32720",
+      "evidence_pages": [51],
+      "reason": "Im ersten Fall als nicht abgerechnet beobachtet; braucht explizite Freigaberegel."
+    }
+  ],
+  "excluded_evidence": [
+    {
+      "evidence": "CT HWS nativ",
+      "evidence_pages": [43, 45],
+      "reason": "Nur angefordert beziehungsweise storniert; kein durchgefuehrter Radiologiebefund gefunden.",
+      "not_billed_gop": "34311"
+    },
+    {
+      "evidence": "CT-Kontrastmittelzuschlag",
+      "evidence_pages": [37],
+      "reason": "CT Kopf ist als nativ dokumentiert; keine KM-Gabe.",
+      "not_billed_gop": "34345"
+    },
+    {
+      "evidence": "Quick/INR/APTT aus erster Gerinnungsprobe",
+      "evidence_pages": [48],
+      "reason": "Probe unterfuellt/falsches Mischungsverhaeltnis; stattdessen validen Quick aus Seite 52 verwendet."
+    },
+    {
+      "evidence": "Interner Radiologie-Zuschlag RAS9048",
+      "evidence_pages": [43],
+      "reason": "Lokaler interner Code ohne freigegebenes EBM-/Hessen-GOP-Mapping."
+    }
+  ]
+}
