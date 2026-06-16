@@ -97,7 +97,7 @@ class CatalogRepository:
             return None
         gop_base, _ = normalize_gop(gop)
         with self._connect() as conn:
-            if "regional_gops" not in self._tables(conn):
+            if "details" not in self._tables(conn):
                 return None
             row = conn.execute(
                 "select gop, title, points, euro from details where quarter = ? and gop = ?",
@@ -120,6 +120,8 @@ class CatalogRepository:
             return None
         gop_base, _ = normalize_gop(gop)
         with self._connect() as conn:
+            if "regional_gops" not in self._tables(conn):
+                return None
             row = conn.execute(
                 "select gop_code, gop_base, title, points, euro, page from regional_gops "
                 "where quarter = ? and region = ? and gop_base = ? "
