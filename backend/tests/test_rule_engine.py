@@ -61,4 +61,3 @@ def test_case_25124444_rule_total():
     assert summary.points_total == 931
     assert summary.amount_total_eur == 119.81
     assert [item.gop_original for item in items[:4]] == ["01210", "34310", "34231", "34221"]
-

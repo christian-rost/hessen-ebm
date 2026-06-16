@@ -24,19 +24,31 @@ Die Anwendung nimmt ein klinisches PDF entgegen, extrahiert Text/OCR, trennt Dok
 - Regel-Engine fuer die validierten GOP-Regeln aus den Faellen `25130195` und `25124444`
 - Katalogvalidierung gegen SQLite-EBM/Hessen-GOP
 - JSON-Exportprofil `EBM_KVDT_ADT_LIKE_V1_DRAFT`
+- Admin-Bereich zum Validieren und Einspielen neuer Katalogdatenbanken
 - Docker-Compose fuer Coolify
 
 ## Wichtige Architekturentscheidung
 
 Die EBM-/Hessen-GOP-Katalogdatenbank wird nicht ins Git-Repo gelegt. Die aktuell erzeugte Datei `ebm_kbv.sqlite` ist ca. 225 MB gross und damit fuer ein normales GitHub-Repo ungeeignet.
 
-Stattdessen erwartet die Anwendung den Katalog unter:
+Stattdessen erwartet die Anwendung den aktiven Katalog unter:
 
 ```text
 CATALOG_DB_PATH=/app/catalog/ebm_kbv.sqlite
 ```
 
-In Coolify sollte dafuer ein Volume nach `/app/catalog` gemountet werden. Lokal kann `CATALOG_DB_PATH` auch direkt auf die vorhandene SQLite-Datei zeigen.
+In Coolify sollte dafuer ein Volume nach `/app/catalog` gemountet werden. Der Admin-Bereich kann eine vorbereitete `ebm_kbv.sqlite` hochladen, validieren und an genau diesen Pfad einspielen. Lokal kann `CATALOG_DB_PATH` auch direkt auf eine vorhandene SQLite-Datei zeigen.
+
+Beim Einspielen wird:
+
+1. die hochgeladene Datei als SQLite-Datenbank geoeffnet
+2. `pragma integrity_check` ausgefuehrt
+3. das Vorhandensein der Tabellen `snapshots`, `nodes` und `details` geprueft
+4. geprueft, ob mindestens ein Snapshot und Details vorhanden sind
+5. die bisherige aktive Datenbank in `STORAGE_DIR/catalog-backups` gesichert
+6. die neue Datenbank atomar nach `CATALOG_DB_PATH` ersetzt
+
+Fuer produktive Deployments sollte `ADMIN_TOKEN` gesetzt werden. Die Admin-Endpunkte erwarten dann den Header `X-Admin-Token`.
 
 ## Lokale Entwicklung
 
@@ -48,6 +60,7 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
 export CATALOG_DB_PATH="/Users/cro/Documents/varisano - ebm Abrechnungsservice/ebm_kbv.sqlite"
+export ADMIN_TOKEN="lokales-admin-passwort"
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -75,10 +88,14 @@ Danach ist das Frontend lokal unter `http://localhost:8080` erreichbar.
 3. Environment setzen:
    - `CATALOG_DB_PATH=/app/catalog/ebm_kbv.sqlite`
    - `STORAGE_DIR=/app/storage`
+   - `ADMIN_TOKEN=...`
    - optional `ENABLE_MISTRAL_OCR=true`
    - optional `MISTRAL_API_KEY=...`
-4. Volume fuer `/app/catalog` anlegen und `ebm_kbv.sqlite` dort bereitstellen.
+4. Volume fuer `/app/catalog` anlegen.
 5. Volume fuer `/app/storage` anlegen.
+6. Initiale oder neue `ebm_kbv.sqlite` ueber den Admin-Bereich hochladen.
+
+Wichtig: Die aktuelle Katalogdatenbank ist groesser als 200 MB. Das mitgelieferte Nginx-Frontend erlaubt deshalb Uploads bis 600 MB. Falls Coolify oder ein vorgelagerter Proxy eigene Limits setzt, muessen diese ebenfalls passend erhoeht werden.
 
 ## Aktuell validierte sichere Regeln
 
@@ -110,6 +127,9 @@ Danach ist das Frontend lokal unter `http://localhost:8080` erreichbar.
 | `GET /health` | Healthcheck |
 | `GET /api/catalog/status` | Katalogstatus |
 | `GET /api/catalog/search?q=...&quarter=2025/Q4` | EBM-/Hessen-GOP-Suche |
+| `GET /api/admin/catalog/status` | Admin-Katalogstatus inklusive Backups |
+| `POST /api/admin/catalog/validate` | SQLite-Katalogdatei nur validieren |
+| `POST /api/admin/catalog/upload` | SQLite-Katalogdatei validieren, Backup anlegen und aktiv ersetzen |
 | `GET /api/rules` | aktuell aktive Regeluebersicht |
 | `POST /api/documents/analyze` | PDF hochladen und Rechnungsentwurf erzeugen |
 | `GET /api/analyses/{analysis_id}` | gespeicherten Analyseentwurf abrufen |
@@ -119,6 +139,5 @@ Danach ist das Frontend lokal unter `http://localhost:8080` erreichbar.
 - echte Zieldefinition fuer den standardisierten Export festlegen
 - Goldstandard-Set aus mehreren Faellen aufbauen
 - Review-Regeln fuer EKG, Konsile, Drogenscreening, Schwangerschaftstest und erweiterte Laborwerte validieren
-- Katalogimport in die Admin-Oberflaeche integrieren
+- serverseitigen Direktimport aus KBV-/Hessen-GOP-Quellen ergaenzen
 - Sachbearbeiter-Workflow mit Kandidatenfreigabe persistieren
-

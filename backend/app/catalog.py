@@ -50,6 +50,14 @@ class CatalogRepository:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _tables(self, conn: sqlite3.Connection) -> set[str]:
+        return {
+            row["name"]
+            for row in conn.execute(
+                "select name from sqlite_master where type = 'table'"
+            )
+        }
+
     def status(self) -> dict[str, Any]:
         if not self.available:
             return {
@@ -60,6 +68,7 @@ class CatalogRepository:
             }
 
         with self._connect() as conn:
+            tables = self._tables(conn)
             snapshots = [
                 dict(row)
                 for row in conn.execute(
@@ -67,13 +76,15 @@ class CatalogRepository:
                     "node_count, detail_count from snapshots order by quarter"
                 )
             ]
-            regional_catalogs = [
-                dict(row)
-                for row in conn.execute(
-                    "select catalog_id, source_system, region, quarter, title, data_stand, "
-                    "page_count from regional_catalogs order by quarter, region"
-                )
-            ]
+            regional_catalogs = []
+            if "regional_catalogs" in tables:
+                regional_catalogs = [
+                    dict(row)
+                    for row in conn.execute(
+                        "select catalog_id, source_system, region, quarter, title, data_stand, "
+                        "page_count from regional_catalogs order by quarter, region"
+                    )
+                ]
         return {
             "available": True,
             "db_path": str(self.db_path),
@@ -86,6 +97,8 @@ class CatalogRepository:
             return None
         gop_base, _ = normalize_gop(gop)
         with self._connect() as conn:
+            if "regional_gops" not in self._tables(conn):
+                return None
             row = conn.execute(
                 "select gop, title, points, euro from details where quarter = ? and gop = ?",
                 (quarter, gop_base),
@@ -135,6 +148,7 @@ class CatalogRepository:
             return []
         term = f"%{query.strip()}%"
         with self._connect() as conn:
+            tables = self._tables(conn)
             ebm_rows = conn.execute(
                 "select gop, title, points, euro from details "
                 "where quarter = ? and (gop like ? or title like ? or text like ?) "
@@ -142,12 +156,14 @@ class CatalogRepository:
                 "limit ?",
                 (quarter, term, term, term, query.strip(), f"{query.strip()}%", limit),
             ).fetchall()
-            regional_rows = conn.execute(
-                "select gop_code, gop_base, title, points, euro, region, page from regional_gops "
-                "where quarter = ? and (gop_code like ? or title like ? or description like ?) "
-                "order by gop_code limit ?",
-                (quarter, term, term, term, limit),
-            ).fetchall()
+            regional_rows = []
+            if "regional_gops" in tables:
+                regional_rows = conn.execute(
+                    "select gop_code, gop_base, title, points, euro, region, page from regional_gops "
+                    "where quarter = ? and (gop_code like ? or title like ? or description like ?) "
+                    "order by gop_code limit ?",
+                    (quarter, term, term, term, limit),
+                ).fetchall()
 
         entries: list[CatalogEntry] = []
         for row in ebm_rows:
@@ -177,4 +193,3 @@ class CatalogRepository:
                 )
             )
         return entries[:limit]
-
