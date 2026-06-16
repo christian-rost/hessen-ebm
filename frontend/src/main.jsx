@@ -85,45 +85,62 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="topbar">
-        <div>
-          <p className="eyebrow">Hessen EBM</p>
-          <h1>PDF rein, Evidenz raus, Rechnungsentwurf pruefen.</h1>
+      <header className="ukb-header">
+        <div className="ukb-brand">
+          <div className="ukb-logo-mark">EBM</div>
+          <div className="ukb-app-name">EBM-/Hessen-GOP-Abrechnung</div>
         </div>
+        <nav className="ukb-nav" aria-label="Arbeitsbereich">
+          <button className={`ukb-nav-btn ${view === "analysis" ? "active" : ""}`} onClick={() => setView("analysis")}>Analyse</button>
+          <button className={`ukb-nav-btn ${view === "admin" ? "active" : ""}`} onClick={() => setView("admin")}>Admin</button>
+        </nav>
         <CatalogStatus catalog={catalog} />
-      </section>
-
-      <nav className="mode-nav" aria-label="Arbeitsbereich">
-        <button className={view === "analysis" ? "active" : ""} onClick={() => setView("analysis")}>Analyse</button>
-        <button className={view === "admin" ? "active" : ""} onClick={() => setView("admin")}>Admin</button>
-      </nav>
+      </header>
 
       {view === "analysis" ? (
         <section className="workspace">
-          <form className="upload-panel" onSubmit={analyze}>
-            <div className="drop-zone">
-              <UploadCloud size={28} />
-              <label htmlFor="pdf-upload">Klinisches PDF hochladen</label>
-              <input
-                id="pdf-upload"
-                type="file"
-                accept="application/pdf"
-                onChange={(event) => setFile(event.target.files?.[0] || null)}
-              />
-              <span>{file ? file.name : "Noch keine Datei gewaehlt"}</span>
+          <aside className="doc-sidebar">
+            <div className="sidebar-head">
+              <h2>Dokument</h2>
             </div>
-            <button className="primary-button" type="submit" disabled={!file || loading}>
-              {loading ? "Analysiere..." : "Rechnung erzeugen"}
-            </button>
-            {error && (
-              <div className="message error">
-                <AlertCircle size={18} />
-                {error}
+            <form className="upload-panel" onSubmit={analyze}>
+              <div className="drop-zone">
+                <UploadCloud size={26} />
+                <label htmlFor="pdf-upload">Klinisches PDF hochladen</label>
+                <input
+                  id="pdf-upload"
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(event) => setFile(event.target.files?.[0] || null)}
+                />
+                <span>{file ? file.name : "Noch keine Datei gewaehlt"}</span>
               </div>
-            )}
-          </form>
-
-          <ResultPanel result={result} onDownload={downloadJson} />
+              <button className="btn-primary btn-block" type="submit" disabled={!file || loading}>
+                {loading ? "Analysiere..." : "Rechnung erzeugen"}
+              </button>
+              {error && (
+                <div className="message error">
+                  <AlertCircle size={18} />
+                  {error}
+                </div>
+              )}
+            </form>
+          </aside>
+          <section className="doc-detail">
+            <div className="doc-detail-header">
+              <div className="doc-detail-title">
+                <h2>Rechnungsentwurf</h2>
+                <p>PDF-Evidenz, GOP-Kandidaten und Review-Hinweise</p>
+              </div>
+              {result && (
+                <button className="btn-secondary" onClick={downloadJson}>
+                  <FileJson size={16} />
+                  JSON Export
+                </button>
+              )}
+            </div>
+            <ResultPanel result={result} onDownload={downloadJson} />
+          </section>
         </section>
       ) : (
         <AdminPanel catalog={catalog} onCatalogUpdated={setCatalog} onRefresh={refreshCatalog} />
@@ -134,18 +151,13 @@ function App() {
 
 function CatalogStatus({ catalog }) {
   if (!catalog) {
-    return <div className="status-chip muted">Katalog wird geprueft</div>;
+    return <div className="ukb-header-user"><span className="ukb-role">Katalog wird geprueft</span></div>;
   }
   return (
-    <div className={`catalog-card ${catalog.available ? "ok" : "warn"}`}>
-      <Database size={20} />
+    <div className="ukb-header-user">
       <div>
-        <strong>{catalog.available ? "Katalog verbunden" : "Katalog fehlt"}</strong>
-        <span>
-          {catalog.available
-            ? `${catalog.snapshots?.length || 0} EBM-Snapshots, ${catalog.regional_catalogs?.length || 0} regionale Kataloge`
-            : "CATALOG_DB_PATH pruefen"}
-        </span>
+        <span className="ukb-username">{catalog.available ? "Katalog verbunden" : "Katalog fehlt"}</span>
+        <span className="ukb-role">{catalog.available ? `${catalog.snapshots?.length || 0} EBM / ${catalog.regional_catalogs?.length || 0} regional` : "Admin"}</span>
       </div>
     </div>
   );
@@ -211,69 +223,78 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
   }
 
   return (
-    <section className="admin-layout">
-      <section className="admin-card">
-        <div className="section-header">
-          <ShieldCheck size={20} />
-          <h2>Katalogverwaltung</h2>
+    <section className="workspace">
+      <aside className="doc-sidebar">
+        <div className="sidebar-head">
+          <h2>Administration</h2>
+          <button className="icon-btn" type="button" disabled={busy === "refresh"} onClick={refresh} title="Status aktualisieren">
+            <RefreshCw size={17} />
+          </button>
         </div>
-        <p className="admin-copy">
-          Lade hier eine vorbereitete `ebm_kbv.sqlite` hoch. Das Backend prueft die SQLite-Integritaet und die EBM-Basistabellen, legt ein Backup der aktiven Datenbank an und ersetzt sie danach atomar.
-        </p>
+        <section className="upload-panel">
+          <div className="admin-side-title">
+            <ShieldCheck size={18} />
+            <strong>Katalogverwaltung</strong>
+          </div>
+          <p className="admin-copy">
+            Lade eine vorbereitete `ebm_kbv.sqlite` hoch. Der aktive Katalog wird validiert, gesichert und atomar ersetzt.
+          </p>
 
-        <label className="field-label" htmlFor="admin-token">Admin Token</label>
-        <input
-          id="admin-token"
-          className="text-input"
-          type="password"
-          value={adminToken}
-          placeholder="Nur erforderlich, wenn ADMIN_TOKEN gesetzt ist"
-          onChange={(event) => rememberToken(event.target.value)}
-        />
-
-        <div className="drop-zone compact">
-          <Database size={26} />
-          <label htmlFor="catalog-upload">EBM-/Hessen-GOP-SQLite auswaehlen</label>
+          <label className="field-label" htmlFor="admin-token">Admin Token</label>
           <input
-            id="catalog-upload"
-            type="file"
-            accept=".sqlite,.db,application/octet-stream"
-            onChange={(event) => setCatalogFile(event.target.files?.[0] || null)}
+            id="admin-token"
+            className="text-input"
+            type="password"
+            value={adminToken}
+            placeholder="Nur bei gesetztem ADMIN_TOKEN"
+            onChange={(event) => rememberToken(event.target.value)}
           />
-          <span>{catalogFile ? catalogFile.name : "Noch keine Katalogdatenbank gewaehlt"}</span>
-        </div>
 
-        <div className="button-row">
-          <button className="secondary-button" type="button" disabled={!catalogFile || busy} onClick={() => sendCatalog("validate")}>
-            {busy === "validate" ? "Pruefe..." : "Nur validieren"}
-          </button>
-          <button className="primary-button inline" type="button" disabled={!catalogFile || busy} onClick={() => sendCatalog("upload")}>
-            {busy === "upload" ? "Importiere..." : "Einspielen / ersetzen"}
-          </button>
-          <button className="icon-button" type="button" disabled={busy === "refresh"} onClick={refresh} title="Status aktualisieren">
-            <RefreshCw size={18} />
-          </button>
-        </div>
-
-        {message && (
-          <div className={`message ${message.includes("fehlgeschlagen") || message.includes("invalid") ? "error" : "success"}`}>
-            {message.includes("fehlgeschlagen") || message.includes("invalid") ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
-            {message}
+          <div className="drop-zone compact">
+            <Database size={24} />
+            <label htmlFor="catalog-upload">SQLite auswaehlen</label>
+            <input
+              id="catalog-upload"
+              type="file"
+              accept=".sqlite,.db,application/octet-stream"
+              onChange={(event) => setCatalogFile(event.target.files?.[0] || null)}
+            />
+            <span>{catalogFile ? catalogFile.name : "Keine Datei gewaehlt"}</span>
           </div>
-        )}
-      </section>
 
-      <section className="admin-card">
-        <div className="section-header">
-          <Database size={20} />
-          <h2>Aktiver Katalog</h2>
-        </div>
-        <CatalogDetails catalog={catalog} />
-        {uploadResult?.import?.backup_path && (
-          <div className="backup-note">
-            Backup angelegt: <code>{uploadResult.import.backup_path}</code>
+          <div className="button-row stacked">
+            <button className="btn-secondary btn-block" type="button" disabled={!catalogFile || busy} onClick={() => sendCatalog("validate")}>
+              {busy === "validate" ? "Pruefe..." : "Nur validieren"}
+            </button>
+            <button className="btn-primary btn-block" type="button" disabled={!catalogFile || busy} onClick={() => sendCatalog("upload")}>
+              {busy === "upload" ? "Importiere..." : "Einspielen / ersetzen"}
+            </button>
           </div>
-        )}
+
+          {message && (
+            <div className={`message ${message.includes("fehlgeschlagen") || message.includes("invalid") ? "error" : "success"}`}>
+              {message.includes("fehlgeschlagen") || message.includes("invalid") ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+              {message}
+            </div>
+          )}
+        </section>
+      </aside>
+
+      <section className="doc-detail">
+        <div className="doc-detail-header">
+          <div className="doc-detail-title">
+            <h2>Aktiver Katalog</h2>
+            <p>EBM-Snapshots, regionale GOP-Kataloge und Backups</p>
+          </div>
+        </div>
+        <section className="result-panel">
+          <CatalogDetails catalog={catalog} />
+          {uploadResult?.import?.backup_path && (
+            <div className="backup-note">
+              Backup angelegt: <code>{uploadResult.import.backup_path}</code>
+            </div>
+          )}
+        </section>
       </section>
     </section>
   );
@@ -335,7 +356,7 @@ function ResultPanel({ result, onDownload }) {
         <SummaryBox label="Positionen" value={result.summary.line_count} />
         <SummaryBox label="Punkte" value={result.summary.points_total} />
         <SummaryBox label="Betrag" value={formatEuro(result.summary.amount_total_eur)} />
-        <button className="secondary-button" onClick={onDownload}>
+        <button className="btn-secondary" onClick={onDownload}>
           <FileJson size={18} />
           JSON Export
         </button>
