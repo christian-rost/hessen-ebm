@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from .admin_auth import require_admin
+from .admin_catalog import CatalogValidationError, install_catalog_database, list_catalog_backups, validate_catalog_database
 from .catalog import CatalogRepository
 from .config import get_settings
 from .document_segmentation import segment_pages
@@ -43,6 +45,44 @@ def health() -> dict[str, object]:
 @app.get("/api/catalog/status")
 def catalog_status() -> dict[str, object]:
     return _catalog().status()
+
+
+@app.get("/api/admin/catalog/status", dependencies=[Depends(require_admin)])
+def admin_catalog_status() -> dict[str, object]:
+    settings = get_settings()
+    status = _catalog().status()
+    status["backups"] = list_catalog_backups(settings.storage_dir / "catalog-backups")
+    status["admin_token_required"] = bool(settings.admin_token)
+    return status
+
+
+@app.post("/api/admin/catalog/validate", dependencies=[Depends(require_admin)])
+async def validate_catalog_upload(file: UploadFile = File(...)) -> dict[str, object]:
+    settings = get_settings()
+    uploaded_path = await save_upload(file, settings.storage_dir / "admin-catalog-uploads")
+    try:
+        return validate_catalog_database(uploaded_path)
+    except CatalogValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/admin/catalog/upload", dependencies=[Depends(require_admin)])
+async def upload_catalog_database(file: UploadFile = File(...)) -> dict[str, object]:
+    settings = get_settings()
+    uploaded_path = await save_upload(file, settings.storage_dir / "admin-catalog-uploads")
+    try:
+        install_result = install_catalog_database(
+            uploaded_path=uploaded_path,
+            target_path=settings.catalog_db_path,
+            backup_dir=settings.storage_dir / "catalog-backups",
+        )
+    except CatalogValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "import": install_result,
+        "status": admin_catalog_status(),
+    }
 
 
 @app.get("/api/catalog/search")
@@ -109,4 +149,3 @@ def get_analysis(analysis_id: str) -> AnalysisResult:
     if not result:
         raise HTTPException(status_code=404, detail="Analysis not found.")
     return result
-

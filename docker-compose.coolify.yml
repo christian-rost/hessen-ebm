@@ -7,6 +7,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CATALOG_DB_PATH: ${CATALOG_DB_PATH:-/app/catalog/ebm_kbv.sqlite}
       STORAGE_DIR: ${STORAGE_DIR:-/app/storage}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       ENABLE_MISTRAL_OCR: ${ENABLE_MISTRAL_OCR:-false}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       MISTRAL_OCR_MODEL: ${MISTRAL_OCR_MODEL:-mistral-ocr-latest}
@@ -32,4 +33,3 @@ services:
 volumes:
   backend-storage:
   catalog-data:
-
