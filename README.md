@@ -76,7 +76,7 @@ Docker/Coolify-nah:
 
 ```bash
 cp .env.example .env
-docker compose -f docker-compose.coolify.yml up --build
+docker compose -f docker-compose.coolify.yml -f docker-compose.local.yml up --build
 ```
 
 Danach ist das Frontend lokal unter `http://localhost:8080` erreichbar.
@@ -96,6 +96,8 @@ Danach ist das Frontend lokal unter `http://localhost:8080` erreichbar.
 6. Initiale oder neue `ebm_kbv.sqlite` ueber den Admin-Bereich hochladen.
 
 Wichtig: Die aktuelle Katalogdatenbank ist groesser als 200 MB. Das mitgelieferte Nginx-Frontend erlaubt deshalb Uploads bis 600 MB. Falls Coolify oder ein vorgelagerter Proxy eigene Limits setzt, muessen diese ebenfalls passend erhoeht werden.
+
+Das Coolify-Compose bindet keinen festen Host-Port. Das ist Absicht: Coolify routet ueber die generierte Frontend-Domain zum internen Container-Port `80`. Ein fester Host-Port wie `8080` kann auf Shared-Servern mit anderen Anwendungen kollidieren.
 
 ## Aktuell validierte sichere Regeln
 
