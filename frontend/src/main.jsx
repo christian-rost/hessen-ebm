@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { AlertCircle, CheckCircle2, Database, FileJson, FileText, RefreshCw, ShieldCheck, UploadCloud } from "lucide-react";
+import varisanoLogo from "./assets/varisano-logo-neutral-landscape-rgb.svg";
 import "./styles.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
@@ -85,14 +86,15 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="ukb-header">
-        <div className="ukb-brand">
-          <div className="ukb-logo-mark">EBM</div>
-          <div className="ukb-app-name">EBM-/Hessen-GOP-Abrechnung</div>
+      <header className="brand-header">
+        <div className="brand-lockup">
+          <img className="brand-logo" src={varisanoLogo} alt="varisano" />
+          <div className="brand-divider" aria-hidden="true" />
+          <div className="brand-app-name">EBM-/Hessen-GOP-Abrechnung</div>
         </div>
-        <nav className="ukb-nav" aria-label="Arbeitsbereich">
-          <button className={`ukb-nav-btn ${view === "analysis" ? "active" : ""}`} onClick={() => setView("analysis")}>Analyse</button>
-          <button className={`ukb-nav-btn ${view === "admin" ? "active" : ""}`} onClick={() => setView("admin")}>Admin</button>
+        <nav className="brand-nav" aria-label="Arbeitsbereich">
+          <button className={`brand-nav-btn ${view === "analysis" ? "active" : ""}`} onClick={() => setView("analysis")}>Analyse</button>
+          <button className={`brand-nav-btn ${view === "admin" ? "active" : ""}`} onClick={() => setView("admin")}>Admin</button>
         </nav>
         <CatalogStatus catalog={catalog} />
       </header>
@@ -130,7 +132,7 @@ function App() {
             <div className="doc-detail-header">
               <div className="doc-detail-title">
                 <h2>Rechnungsentwurf</h2>
-                <p>PDF-Evidenz, GOP-Kandidaten und Review-Hinweise</p>
+                <p>PDF-Evidenz, GOP-Kandidaten und Review-Hinweise fuer eine nachvollziehbare Abrechnung</p>
               </div>
               {result && (
                 <button className="btn-secondary" onClick={downloadJson}>
@@ -151,13 +153,13 @@ function App() {
 
 function CatalogStatus({ catalog }) {
   if (!catalog) {
-    return <div className="ukb-header-user"><span className="ukb-role">Katalog wird geprueft</span></div>;
+    return <div className="brand-status"><span className="status-pill">Katalog wird geprueft</span></div>;
   }
   return (
-    <div className="ukb-header-user">
+    <div className="brand-status">
       <div>
-        <span className="ukb-username">{catalog.available ? "Katalog verbunden" : "Katalog fehlt"}</span>
-        <span className="ukb-role">{catalog.available ? `${catalog.snapshots?.length || 0} EBM / ${catalog.regional_catalogs?.length || 0} regional` : "Admin"}</span>
+        <span className="status-title">{catalog.available ? "Katalog verbunden" : "Katalog fehlt"}</span>
+        <span className="status-pill">{catalog.available ? `${catalog.snapshots?.length || 0} EBM / ${catalog.regional_catalogs?.length || 0} regional` : "Admin"}</span>
       </div>
     </div>
   );
