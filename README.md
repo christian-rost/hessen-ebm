@@ -21,7 +21,8 @@ Die Anwendung nimmt ein klinisches PDF entgegen, extrahiert Text/OCR, trennt Dok
   - Datenerfassung
   - sonstige Seiten
 - Evidenzextraktion aus relevanten Segmenten
-- Regel-Engine fuer die validierten GOP-Regeln aus den Faellen `25130195` und `25124444`
+- semantische LLM-Herleitung von GOPs aus Evidenz und Katalogkandidaten
+- deterministische Regel-Engine als Fallback fuer die validierten GOP-Regeln aus den Faellen `25130195` und `25124444`
 - Katalogvalidierung gegen SQLite-EBM/Hessen-GOP
 - JSON-Exportprofil `EBM_KVDT_ADT_LIKE_V1_DRAFT`
 - Admin-Bereich zum Validieren und Einspielen neuer Katalogdatenbanken
@@ -90,7 +91,9 @@ Danach ist das Frontend lokal unter `http://localhost:8080` erreichbar.
    - `STORAGE_DIR=/app/storage`
    - `ADMIN_TOKEN=...`
    - optional `ENABLE_MISTRAL_OCR=true`
+   - `ENABLE_SEMANTIC_BILLING=true`
    - optional `MISTRAL_API_KEY=...`
+   - optional `MISTRAL_LLM_MODEL=mistral-large-latest`
 4. Volume fuer `/app/catalog` anlegen.
 5. Volume fuer `/app/storage` anlegen.
 6. Initiale oder neue `ebm_kbv.sqlite` ueber den Admin-Bereich hochladen.
@@ -100,6 +103,16 @@ Wichtig: Die aktuelle Katalogdatenbank ist groesser als 200 MB. Das mitgeliefert
 Das Coolify-Compose bindet keinen festen Host-Port. Das ist Absicht: Coolify routet ueber die generierte Frontend-Domain zum internen Container-Port `80`. Ein fester Host-Port wie `8080` kann auf Shared-Servern mit anderen Anwendungen kollidieren.
 
 ## Aktuell validierte sichere Regeln
+
+Diese Regeln bleiben als Fallback erhalten. Der normale Ableitungspfad ist semantisch:
+
+1. Aus dem PDF werden abrechnungsrelevante Evidenzen extrahiert.
+2. Der Server sucht passende EBM-/Hessen-GOP-Kandidaten im aktiven Quartalskatalog.
+3. Mistral Chat erhaelt nur diese Evidenzen und Kandidaten und muss ein JSON mit `items`, `review_candidates` und `excluded_evidence` liefern.
+4. Der Server uebernimmt nur GOPs, die im bereitgestellten Kandidatenpool enthalten sind und im aktiven Katalog validiert werden koennen.
+5. Jede Rechnungsposition enthaelt `derivation_source`, `semantic_reason` und die verwendeten Katalogkandidaten.
+
+Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, faellt die Analyse auf die folgenden deterministischen Regeln zurueck und schreibt den Grund in `catalog_context.analysis_warnings`.
 
 | Evidenz | GOP |
 | --- | --- |

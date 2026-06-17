@@ -9,8 +9,10 @@ services:
       STORAGE_DIR: ${STORAGE_DIR:-/app/storage}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       ENABLE_MISTRAL_OCR: ${ENABLE_MISTRAL_OCR:-false}
+      ENABLE_SEMANTIC_BILLING: ${ENABLE_SEMANTIC_BILLING:-true}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       MISTRAL_OCR_MODEL: ${MISTRAL_OCR_MODEL:-mistral-ocr-latest}
+      MISTRAL_LLM_MODEL: ${MISTRAL_LLM_MODEL:-mistral-large-latest}
     volumes:
       - backend-storage:/app/storage
       - catalog-data:/app/catalog

@@ -376,6 +376,7 @@ function ResultPanel({ result, onDownload }) {
               <th>Leistung</th>
               <th>Datum</th>
               <th>Quelle</th>
+              <th>Herleitung</th>
               <th>Punkte</th>
               <th>EUR</th>
             </tr>
@@ -387,6 +388,7 @@ function ResultPanel({ result, onDownload }) {
                 <td>{item.title}</td>
                 <td>{item.service_date || "-"}</td>
                 <td>{item.catalog_source}</td>
+                <td className="reason-cell">{item.semantic_reason || item.rule_id}</td>
                 <td>{item.points ?? "-"}</td>
                 <td>{formatEuro(item.amount_eur)}</td>
               </tr>

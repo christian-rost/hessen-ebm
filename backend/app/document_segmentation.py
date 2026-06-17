@@ -35,6 +35,28 @@ def classify_page(text: str) -> tuple[str, float, list[str]]:
     if "radiologie - befund" in lower or ("befund" in lower and "ctkopf" in compact):
         reasons.append("Radiologiebefund-Marker gefunden")
         return "radiology_report", 0.95, reasons
+    if (
+        "ambulanzaugen-anforderung" in compact
+        or "status:angefordert" in compact
+        or ("anforderung" in lower and "auftragsdatum" in lower)
+        or "indikationspr" in lower
+        or "angeforderte untersuchungen" in lower
+    ):
+        reasons.append("Anforderungs-/Indikationsmarker gefunden")
+        return "request", 0.72, reasons
+    if (
+        "ambulanzaugen-befund" in compact
+        or "notfall-symptomorientierteuntersuchung" in compact
+        or ("notfallambulanzaugenklinik" in compact and "befund" in lower)
+        or ("augenambulanz" in compact and ("anamnese" in lower or "beurteilung" in lower))
+        or "vordereraugenabschnitt" in compact
+        or "hintereraugenabschnitt" in compact
+        or ("beurteilung:" in lower and "therapie" in lower)
+        or ("diagnose:" in lower and "herpeskeratitis" in compact)
+        or "wirberichtenihnen" in compact and "augenambulanz" in compact
+    ):
+        reasons.append("Augenambulanz-/Fachambulanz-Befund gefunden")
+        return "treatment_report", 0.86, reasons
     if "behandlungsbericht zna" in lower or "diagnostik:" in lower and "aufnahme" in lower:
         reasons.append("Behandlungsbericht/ZNA-Marker gefunden")
         return "treatment_report", 0.88, reasons
@@ -50,10 +72,6 @@ def classify_page(text: str) -> tuple[str, float, list[str]]:
     if "datenerfassung" in lower:
         reasons.append("Datenerfassung-Marker gefunden")
         return "data_capture", 0.78, reasons
-    if "indikationspr" in lower or "angeforderte untersuchungen" in lower:
-        reasons.append("Anforderungs-/Indikationsmarker gefunden")
-        return "request", 0.72, reasons
-
     return "other", 0.5, ["kein spezifischer Marker"]
 
 
@@ -106,4 +124,3 @@ def _make_segment(
         confidence=round(sum(confidences) / max(len(confidences), 1), 2),
         reasons=unique_reasons[:5],
     )
-

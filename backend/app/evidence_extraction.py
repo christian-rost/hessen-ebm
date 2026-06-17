@@ -42,6 +42,9 @@ def _service_datetime(text: str, fallback: bool = True) -> tuple[str | None, str
         r"aufnahmezna(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
         r"aufnahme(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
         r"termindgf:?(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
+        r"leistungam(\d{2}\.\d{2}\.\d{4})um(\d{2}:\d{2})",
+        r"befundetam(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
+        r"auftragsdatum(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
     ]
     for pattern in patterns:
         match = re.search(pattern, compact)
@@ -131,12 +134,19 @@ def extract_evidence(
                     )
                 )
 
+            specialty_evidence = _extract_specialty_ambulance(page, segment_type)
+            evidence.extend(specialty_evidence)
+            for item in specialty_evidence:
+                if item.kind == "context.specialty_ambulance_emergency" and item.service_date:
+                    case_context["treatment_start"] = case_context["treatment_start"] or _join_datetime(item.service_date, item.service_time)
+
             end_date, end_time = _treatment_end_datetime(text)
             if end_date:
                 case_context["treatment_end"] = _join_datetime(end_date, end_time)
 
             diagnosis = _extract_icd10(text)
             if diagnosis:
+                diagnosis_date, diagnosis_time = _service_datetime(text)
                 case_context["diagnosis"] = diagnosis
                 evidence.append(
                     _ev(
@@ -144,8 +154,8 @@ def extract_evidence(
                         f"ICD-10 {diagnosis}",
                         page.page,
                         diagnosis,
-                        _first_date(text),
-                        _first_time(text),
+                        diagnosis_date,
+                        diagnosis_time,
                         0.75,
                     )
                 )
@@ -153,6 +163,8 @@ def extract_evidence(
         if page.page in relevant_pages:
             evidence.extend(_extract_radiology(page, segment_type))
             evidence.extend(_extract_labs(page, segment_type, last_lab_datetime))
+
+        evidence.extend(_extract_internal_service_hints(page, segment_type))
 
         if segment_type in {"consult", "ecg", "data_capture", "laboratory_result", "radiology_report"}:
             review.extend(_extract_review_candidates(page, segment_type))
@@ -189,6 +201,7 @@ def _ev(
     confidence: float,
     value: str | None = None,
     unit: str | None = None,
+    metadata: dict[str, object] | None = None,
 ) -> Evidence:
     snippet = re.sub(r"\s+", " ", text).strip()[:240]
     return Evidence(
@@ -202,7 +215,176 @@ def _ev(
         unit=unit,
         text=snippet,
         confidence=confidence,
+        metadata=metadata or {},
     )
+
+
+def _search_terms(*terms: str) -> dict[str, object]:
+    return {"search_terms": [term for term in terms if term]}
+
+
+def _extract_specialty_ambulance(page: PageText, segment_type: str) -> list[Evidence]:
+    if segment_type not in {"case_context", "treatment_report"}:
+        return []
+
+    text = page.text
+    compact = _compact(text)
+    service_date, service_time = _service_datetime(text)
+    found: list[Evidence] = []
+
+    if (
+        "notfallambulanzaugenklinik" in compact
+        or "notfallmassig" in compact
+        or "notfallsymptomorientierteuntersuchung" in compact
+        or "notfall-symptomorientierteuntersuchung" in compact
+    ):
+        found.append(
+            _ev(
+                "context.specialty_ambulance_emergency",
+                "Fachambulanz-Notfallkontakt",
+                page.page,
+                "Notfallkontakt in der Augenambulanz / Fachambulanz dokumentiert",
+                service_date,
+                service_time,
+                0.88,
+                metadata=_search_terms(
+                    "Notfallpauschale",
+                    "Notfall",
+                    "Augenaerztliche Grundpauschale",
+                    "Augenheilkunde",
+                    "Grundpauschale",
+                ),
+            )
+        )
+
+    if "ambulanzaugen-befund" in compact or "augenambulanz" in compact or "augenklinik" in compact:
+        found.append(
+            _ev(
+                "clinical.ophthalmology_report",
+                "Augenaerztlicher Ambulanzbefund",
+                page.page,
+                text,
+                service_date,
+                service_time,
+                0.84,
+                metadata=_search_terms(
+                    "Augenaerztliche Untersuchung",
+                    "Augenheilkunde",
+                    "Ophthalmologische Untersuchung",
+                    "Grundpauschale Augen",
+                ),
+            )
+        )
+
+    if any(
+        token in compact
+        for token in [
+            "visus",
+            "tensio",
+            "vordereraugenabschnitt",
+            "hintereraugenabschnitt",
+            "hornhaut-topographie",
+            "fluoreszein",
+            "schirmer-test",
+        ]
+    ):
+        found.append(
+            _ev(
+                "clinical.ophthalmology_exam",
+                "Ophthalmologische Untersuchung",
+                page.page,
+                text,
+                service_date,
+                service_time,
+                0.86,
+                metadata=_search_terms(
+                    "Augenaerztliche Untersuchung",
+                    "Visus",
+                    "Tonometrie",
+                    "Spaltlampenuntersuchung",
+                    "Hornhaut",
+                ),
+            )
+        )
+
+    if "hintereraugenabschnitt" in compact or "netzhautzentralanliegend" in compact:
+        found.append(
+            _ev(
+                "clinical.ophthalmology_fundus",
+                "Augenhintergrund / Fundus-Hinweis",
+                page.page,
+                text,
+                service_date,
+                service_time,
+                0.78,
+                metadata=_search_terms(
+                    "Augenhintergrund",
+                    "Fundus",
+                    "Binokulare Untersuchung des Augenhintergrundes",
+                ),
+            )
+        )
+
+    return found
+
+
+def _extract_internal_service_hints(page: PageText, segment_type: str) -> list[Evidence]:
+    if segment_type != "data_capture":
+        return []
+
+    text = page.text
+    compact = _compact(text)
+    service_date, service_time = _service_datetime(text)
+    found: list[Evidence] = []
+
+    if "all_ordnot" in compact or "ordinationsgebuhr(notfall)" in compact:
+        found.append(
+            _ev(
+                "internal_service.emergency_ordination",
+                "Interner Hinweis Ordinationsgebuehr Notfall",
+                page.page,
+                "Interner Leistungsbogen enthaelt ALL_ORDNOT / Ordinationsgebuehr Notfall",
+                service_date,
+                service_time,
+                0.7,
+                metadata=_search_terms("Notfallpauschale", "Notfall", "Ordinationsgebuehr", "Grundpauschale"),
+            )
+        )
+
+    if "aua_buahg" in compact or "binokulareuntersuchungdesaugenhintergrundes" in compact:
+        found.append(
+            _ev(
+                "internal_service.ophthalmology_fundus",
+                "Interner Hinweis Augenhintergrund",
+                page.page,
+                "Interner Leistungsbogen enthaelt AUA_BUAHG / binokulare Untersuchung des Augenhintergrundes",
+                service_date,
+                service_time,
+                0.68,
+                metadata=_search_terms("Augenhintergrund", "Fundus", "Binokulare Untersuchung des Augenhintergrundes"),
+            )
+        )
+
+    for code, label, terms in [
+        ("aua_echo", "Interner Hinweis Echographie", ["Echographie", "Ultraschall Auge", "Augenheilkunde"]),
+        ("aua_fag", "Interner Hinweis Fluoreszenzangiographie", ["Fluoreszenzangiographie", "Angiographie Auge"]),
+        ("aua_peri", "Interner Hinweis Perimetrie", ["Perimetrie", "Gesichtsfeld"]),
+    ]:
+        if code in compact:
+            found.append(
+                _ev(
+                    f"internal_service.{code}",
+                    label,
+                    page.page,
+                    f"Interner Leistungsbogen enthaelt {code.upper()}",
+                    service_date,
+                    service_time,
+                    0.62,
+                    metadata=_search_terms(*terms),
+                )
+            )
+
+    return found
 
 
 def _extract_radiology(page: PageText, segment_type: str) -> list[Evidence]:

@@ -67,6 +67,9 @@ class BillingItem(BaseModel):
     evidence_pages: list[int]
     validation_status: Literal["valid", "catalog_missing", "review"] = "valid"
     validation_notes: list[str] = Field(default_factory=list)
+    derivation_source: Literal["semantic_llm", "deterministic_rules"] = "deterministic_rules"
+    semantic_reason: str | None = None
+    semantic_catalog_candidates: list[str] = Field(default_factory=list)
 
 
 class ReviewCandidate(BaseModel):
@@ -105,4 +108,3 @@ class AnalysisResult(BaseModel):
     review_candidates: list[ReviewCandidate]
     excluded_evidence: list[ExcludedEvidence]
     summary: InvoiceSummary
-
