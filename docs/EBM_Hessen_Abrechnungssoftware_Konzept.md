@@ -335,17 +335,32 @@ extractor_version
 5. Relevante und kontextrelevante Segmente bestimmen
 6. Evidenzatome nur aus freigegebenen Segmenten extrahieren
 7. Evidenz normalisieren
-8. Kandidaten über Regeln und Katalog-Retrieval erzeugen
-9. Kandidaten gegen EBM/Hessen-GOP des Leistungsquartals validieren
-10. Regelprüfung ausführen
+8. Katalogkandidaten über EBM-/Hessen-GOP-Retrieval und freigegebene Fallback-Regeln erzeugen
+9. Semantische LLM-Herleitung aus Evidenz und Katalogkandidaten ausführen
+10. LLM-Vorschläge serverseitig gegen Kandidatenpool und Quartalskatalog validieren
 11. Sachbearbeiter entscheidet
 12. Rechnung erzeugen
 13. Rechnung im standardisierten Ausgabeformat exportieren
 ```
 
+### Semantische LLM-Herleitung
+
+Die GOP wird nicht mehr direkt über ein starres Evidence-zu-GOP-Mapping erzeugt. Der Standardpfad ist:
+
+1. Evidenzatome enthalten Typ, Label, Seite, Leistungsdatum/-zeit und Textauszug.
+2. Der Server erzeugt einen begrenzten GOP-Kandidatenpool aus dem aktiven Quartalskatalog.
+3. Das LLM erhält nur Evidenz und diesen Kandidatenpool.
+4. Das LLM liefert ein strukturiertes JSON mit:
+   - `items`: vorgeschlagene Rechnungspositionen
+   - `review_candidates`: unsichere oder fachlich zu prüfende Kandidaten
+   - `excluded_evidence`: bewusst nicht übernommene Evidenz
+5. Der Server übernimmt nur GOPs, die im Kandidatenpool enthalten sind und im aktiven Katalog validiert werden.
+
+Die deterministischen Regeln bleiben als Fallback erhalten, wenn kein LLM-Key konfiguriert ist oder die LLM-Antwort nicht verwertbar ist. Jede akzeptierte Position muss eine Evidenzreferenz, Katalogquelle und Herleitungsbegründung tragen.
+
 ### Regeldefinition
 
-Regeln sollten versioniert in der Datenbank liegen, nicht nur im Code.
+Regeln sollten versioniert in der Datenbank liegen, nicht nur im Code. In der LLM-basierten Pipeline dienen sie vor allem als Guardrail und als Quelle fuer bereits validierte Katalogkandidaten.
 
 Beispielstruktur:
 

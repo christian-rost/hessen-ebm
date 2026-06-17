@@ -20,8 +20,10 @@ class Settings:
     storage_dir: Path
     admin_token: str | None
     enable_mistral_ocr: bool
+    enable_semantic_billing: bool
     mistral_api_key: str | None
     mistral_ocr_model: str
+    mistral_llm_model: str
 
 
 @lru_cache
@@ -33,6 +35,8 @@ def get_settings() -> Settings:
         storage_dir=Path(os.getenv("STORAGE_DIR", "./storage")),
         admin_token=os.getenv("ADMIN_TOKEN") or None,
         enable_mistral_ocr=_as_bool(os.getenv("ENABLE_MISTRAL_OCR"), False),
+        enable_semantic_billing=_as_bool(os.getenv("ENABLE_SEMANTIC_BILLING"), True),
         mistral_api_key=os.getenv("MISTRAL_API_KEY") or None,
         mistral_ocr_model=os.getenv("MISTRAL_OCR_MODEL", "mistral-ocr-latest"),
+        mistral_llm_model=os.getenv("MISTRAL_LLM_MODEL", "mistral-large-latest"),
     )

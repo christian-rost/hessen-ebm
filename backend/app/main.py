@@ -15,6 +15,7 @@ from .invoice_export import load_analysis, save_upload, sha256_file, store_analy
 from .models import AnalysisResult
 from .pdf_text import extract_pages
 from .rule_engine import active_rules_payload, generate_billing_items
+from .semantic_billing import SemanticBillingError, generate_semantic_billing_items
 
 app = FastAPI(title="hessen-ebm", version="0.1.0")
 
@@ -119,11 +120,43 @@ async def analyze_document(file: UploadFile = File(...)) -> AnalysisResult:
 
     catalog = _catalog()
     default_quarter = case_context.get("quarter") or "2025/Q4"
-    items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter)
+    analysis_warnings = list(warnings)
+    billing_derivation: dict[str, object]
+    if settings.enable_semantic_billing:
+        try:
+            semantic_result = generate_semantic_billing_items(
+                evidence,
+                catalog,
+                default_quarter=default_quarter,
+                settings=settings,
+            )
+            items = semantic_result.items
+            summary = semantic_result.summary
+            review_candidates.extend(semantic_result.review_candidates)
+            excluded.extend(semantic_result.excluded_evidence)
+            billing_derivation = semantic_result.context
+        except SemanticBillingError as exc:
+            analysis_warnings.append(f"Semantic billing failed, using deterministic rules: {exc}")
+            items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter)
+            billing_derivation = {
+                "mode": "deterministic_rules",
+                "fallback_reason": str(exc),
+            }
+        except Exception as exc:  # pragma: no cover - safety net for external LLM integration.
+            analysis_warnings.append(f"Semantic billing crashed, using deterministic rules: {exc}")
+            items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter)
+            billing_derivation = {
+                "mode": "deterministic_rules",
+                "fallback_reason": f"unexpected semantic billing error: {exc}",
+            }
+    else:
+        items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter)
+        billing_derivation = {"mode": "deterministic_rules", "fallback_reason": "semantic billing disabled"}
 
     catalog_context = catalog.status()
-    catalog_context["analysis_warnings"] = warnings
+    catalog_context["analysis_warnings"] = analysis_warnings
     catalog_context["case_context"] = case_context
+    catalog_context["billing_derivation"] = billing_derivation
 
     result = AnalysisResult(
         analysis_id=uuid4().hex,
