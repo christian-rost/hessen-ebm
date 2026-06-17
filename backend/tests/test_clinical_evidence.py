@@ -59,3 +59,31 @@ def test_ophthalmology_ambulance_pages_create_clinical_evidence():
     assert all(item.service_date != "1964-11-08" for item in evidence)
     assert review == []
     assert excluded == []
+
+
+def test_ecg_pages_create_semantic_evidence():
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Klinikum Frankfurt Hoechst Fall-Nr. 25124444 "
+                "Standard 12 Ableitungen EKG Durchgefuehrt 04.10.2025 um 00:31 "
+                "Sinusrhythmus, keine akuten Ischaemiezeichen"
+            ),
+        )
+    ]
+
+    segments = segment_pages(pages)
+    evidence, review, excluded, _context = extract_evidence(pages, segments)
+    evidence_by_kind = {item.kind: item for item in evidence}
+
+    assert len(segments) == 1
+    assert segments[0].segment_type == "ecg"
+    assert segments[0].relevant_for_billing is True
+    assert "clinical.ecg_12_lead" in evidence_by_kind
+    assert "clinical.ecg_rhythm_findings" in evidence_by_kind
+    assert evidence_by_kind["clinical.ecg_12_lead"].service_date == "2025-10-04"
+    assert evidence_by_kind["clinical.ecg_12_lead"].service_time == "00:31"
+    assert "12-Kanal-EKG" in evidence_by_kind["clinical.ecg_12_lead"].metadata["search_terms"]
+    assert review == []
+    assert excluded == []
