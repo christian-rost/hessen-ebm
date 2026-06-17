@@ -17,7 +17,7 @@ SEGMENT_LABELS = {
     "other": "Sonstiges Dokument",
 }
 
-RELEVANT_TYPES = {"case_context", "treatment_report", "radiology_report", "laboratory_result"}
+RELEVANT_TYPES = {"case_context", "treatment_report", "radiology_report", "laboratory_result", "ecg"}
 
 
 def _compact(text: str) -> str:

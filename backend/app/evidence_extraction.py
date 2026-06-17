@@ -163,6 +163,7 @@ def extract_evidence(
         if page.page in relevant_pages:
             evidence.extend(_extract_radiology(page, segment_type))
             evidence.extend(_extract_labs(page, segment_type, last_lab_datetime))
+            evidence.extend(_extract_ecg(page, segment_type))
 
         evidence.extend(_extract_internal_service_hints(page, segment_type))
 
@@ -328,6 +329,58 @@ def _extract_specialty_ambulance(page: PageText, segment_type: str) -> list[Evid
     return found
 
 
+def _extract_ecg(page: PageText, segment_type: str) -> list[Evidence]:
+    if segment_type != "ecg":
+        return []
+
+    text = page.text
+    compact = _compact(text)
+    service_date, service_time = _service_datetime(text)
+    found: list[Evidence] = []
+
+    if (
+        "standard12ableitungen" in compact
+        or "12-kanal-ekg" in compact
+        or "12kanalekg" in compact
+        or "ekg" in compact
+        or "sinusrhythmus" in compact
+    ):
+        found.append(
+            _ev(
+                "clinical.ecg_12_lead",
+                "12-Kanal-EKG",
+                page.page,
+                text,
+                service_date,
+                service_time,
+                0.84,
+                metadata=_search_terms(
+                    "EKG",
+                    "12-Kanal-EKG",
+                    "Elektrokardiogramm",
+                    "Standard 12 Ableitungen",
+                    "Ruhe-EKG",
+                ),
+            )
+        )
+
+    if "sinusrhythmus" in compact:
+        found.append(
+            _ev(
+                "clinical.ecg_rhythm_findings",
+                "EKG-Rhythmusbefund",
+                page.page,
+                "Sinusrhythmus im EKG dokumentiert",
+                service_date,
+                service_time,
+                0.72,
+                metadata=_search_terms("EKG", "Rhythmusbefund", "Sinusrhythmus"),
+            )
+        )
+
+    return found
+
+
 def _extract_internal_service_hints(page: PageText, segment_type: str) -> list[Evidence]:
     if segment_type != "data_capture":
         return []
@@ -460,8 +513,6 @@ def _extract_review_candidates(page: PageText, segment_type: str) -> list[Review
     compact = _compact(text)
     candidates: list[ReviewCandidate] = []
 
-    if segment_type == "ecg":
-        candidates.append(ReviewCandidate(evidence="12-Kanal-EKG", evidence_pages=[page.page], reason="Kein freigegebenes Mapping im aktuellen Regelset."))
     if segment_type == "consult" and "neurologie" in text.lower():
         candidates.append(ReviewCandidate(evidence="Neurologisches Konsil", evidence_pages=[page.page], reason="Interne Konsiltypen sind nicht automatisch EBM-GOPs."))
     if segment_type == "consult" and ("psych" in text.lower() or "psychische" in text.lower()):
