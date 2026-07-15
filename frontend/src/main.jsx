@@ -1,7 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { AlertCircle, CheckCircle2, Database, FileJson, FileText, RefreshCw, ShieldCheck, UploadCloud } from "lucide-react";
-import varisanoLogo from "./assets/varisano-logo-neutral-landscape-rgb.svg";
+import lenusLogo from "./assets/logo_lenus.svg";
 import "./styles.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
@@ -88,7 +88,7 @@ function App() {
     <main className="app-shell">
       <header className="brand-header">
         <div className="brand-lockup">
-          <img className="brand-logo" src={varisanoLogo} alt="varisano" />
+          <img className="brand-logo" src={lenusLogo} alt="Lenus" />
           <div className="brand-divider" aria-hidden="true" />
           <div className="brand-app-name">EBM-/Hessen-GOP-Abrechnung</div>
         </div>
