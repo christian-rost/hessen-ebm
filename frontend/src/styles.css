@@ -430,6 +430,39 @@ input {
   margin-top: 0.12rem;
 }
 
+.job-status {
+  background: var(--brand-green-light);
+  border: 1px solid rgba(72, 155, 218, 0.22);
+  border-radius: var(--radius-md);
+  color: var(--brand-green-dark);
+  display: flex;
+  flex-direction: column;
+  font-size: 0.83rem;
+  gap: 0.25rem;
+  overflow-wrap: anywhere;
+  padding: 0.65rem 0.75rem;
+}
+
+.job-status.failed {
+  background: var(--danger-light);
+  border-color: rgba(192, 57, 43, 0.18);
+  color: var(--danger);
+}
+
+.job-status.succeeded {
+  background: var(--success-light);
+  border-color: rgba(26, 115, 64, 0.18);
+  color: var(--success);
+}
+
+.job-status code {
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 3px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  padding: 0.06rem 0.32rem;
+}
+
 .doc-detail {
   background: var(--bg);
   display: flex;

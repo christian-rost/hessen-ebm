@@ -11,6 +11,14 @@ function formatEuro(value) {
   return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(value);
 }
 
+function jobStatusLabel(status) {
+  if (status === "queued") return "wartet";
+  if (status === "running") return "laeuft";
+  if (status === "succeeded") return "abgeschlossen";
+  if (status === "failed") return "fehlgeschlagen";
+  return status || "unbekannt";
+}
+
 function App() {
   const [catalog, setCatalog] = React.useState(null);
   const [view, setView] = React.useState("analysis");
@@ -179,6 +187,7 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
   const [busy, setBusy] = React.useState(null);
   const [message, setMessage] = React.useState(null);
   const [uploadResult, setUploadResult] = React.useState(null);
+  const [scrapeJob, setScrapeJob] = React.useState(null);
 
   function tokenHeaders() {
     return adminToken ? { "X-Admin-Token": adminToken } : {};
@@ -197,11 +206,78 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
     setBusy("refresh");
     setMessage(null);
     try {
-      await onRefresh(adminToken);
+      const payload = await onRefresh(adminToken);
+      if (payload?.active_job?.kind === "ebm_scrape") {
+        setScrapeJob(payload.active_job);
+        setBusy("ebm-scrape");
+        setMessage(payload.active_job.message);
+      }
     } finally {
-      setBusy(null);
+      setBusy((current) => (current === "refresh" ? null : current));
     }
   }
+
+  React.useEffect(() => {
+    if (catalog?.active_job?.kind === "ebm_scrape") {
+      setScrapeJob(catalog.active_job);
+      setBusy("ebm-scrape");
+      setMessage(catalog.active_job.message);
+    }
+  }, [catalog?.active_job?.id]);
+
+  React.useEffect(() => {
+    if (!scrapeJob || ["succeeded", "failed"].includes(scrapeJob.status)) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let intervalId = null;
+
+    async function pollJob() {
+      try {
+        const response = await fetch(`${API_BASE}/api/admin/catalog/jobs/${scrapeJob.id}`, {
+          headers: tokenHeaders()
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.detail || `Job-Status konnte nicht geladen werden (${response.status})`);
+        }
+        if (cancelled) return;
+
+        const job = payload.job;
+        setScrapeJob(job);
+        if (payload.status) {
+          onCatalogUpdated(payload.status);
+        }
+        if (job.status === "succeeded") {
+          if (intervalId) window.clearInterval(intervalId);
+          setBusy(null);
+          setUploadResult(job.result);
+          const details = job.result?.import?.snapshot?.detail_count ?? "?";
+          const quarter = job.params?.quarter || ebmQuarter.trim();
+          setMessage(`KBV-EBM ${quarter} wurde importiert (${details} Details).`);
+        } else if (job.status === "failed") {
+          if (intervalId) window.clearInterval(intervalId);
+          setBusy(null);
+          setUploadResult(null);
+          setMessage(job.error || job.message || "EBM-Scraping fehlgeschlagen.");
+        } else {
+          setBusy("ebm-scrape");
+          setMessage(job.message || `KBV-EBM ${job.params?.quarter || ""} wird importiert.`);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setMessage(err.message);
+      }
+    }
+
+    pollJob();
+    intervalId = window.setInterval(pollJob, 4000);
+    return () => {
+      cancelled = true;
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [scrapeJob?.id, adminToken]);
 
   async function sendCatalog(endpoint) {
     if (!catalogFile) return;
@@ -272,6 +348,7 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
     setBusy("ebm-scrape");
     setMessage(null);
     setUploadResult(null);
+    setScrapeJob(null);
     const formData = new FormData();
     formData.append("quarter", ebmQuarter.trim());
     formData.append("replace_quarter", String(ebmReplace));
@@ -287,16 +364,23 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
       if (!response.ok) {
         throw new Error(payload.detail || `EBM-Scraping fehlgeschlagen (${response.status})`);
       }
-      setUploadResult(payload);
       if (payload.status) {
         onCatalogUpdated(payload.status);
       }
-      const details = payload.import?.snapshot?.detail_count ?? "?";
-      setMessage(`KBV-EBM ${ebmQuarter.trim()} wurde importiert (${details} Details).`);
+      if (payload.job) {
+        setScrapeJob(payload.job);
+        setMessage(`KBV-EBM ${ebmQuarter.trim()} wurde als Hintergrundjob gestartet.`);
+      } else {
+        setUploadResult(payload);
+        setBusy(null);
+        const details = payload.import?.snapshot?.detail_count ?? "?";
+        setMessage(`KBV-EBM ${ebmQuarter.trim()} wurde importiert (${details} Details).`);
+      }
     } catch (err) {
       setMessage(err.message);
-    } finally {
       setBusy(null);
+    } finally {
+      // Background jobs keep the EBM button disabled until polling reaches a terminal state.
     }
   }
 
@@ -428,6 +512,13 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
             <button className="btn-primary btn-block" type="button" disabled={!ebmQuarter.trim() || busy} onClick={scrapeEbmCatalog}>
               {busy === "ebm-scrape" ? "Scrape laeuft..." : "EBM-Quartal online importieren"}
             </button>
+            {scrapeJob && (
+              <div className={`job-status ${scrapeJob.status}`}>
+                <strong>EBM-Job: {jobStatusLabel(scrapeJob.status)}</strong>
+                <span>{scrapeJob.message}</span>
+                <span>Job-ID: <code>{scrapeJob.id}</code></span>
+              </div>
+            )}
           </section>
 
           {message && (

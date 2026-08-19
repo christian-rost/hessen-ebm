@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .admin_auth import require_admin
 from .admin_catalog import CatalogValidationError, install_catalog_database, list_catalog_backups, validate_catalog_database
 from .admin_catalog_imports import CatalogImportError, import_regional_catalog_pdf, scrape_ebm_quarter_into_catalog
+from .admin_jobs import JobAlreadyRunningError, JobNotFoundError, get_job, running_catalog_job, start_catalog_job
 from .catalog import CatalogRepository
 from .config import get_settings
 from .document_segmentation import segment_pages
@@ -55,6 +56,7 @@ def admin_catalog_status() -> dict[str, object]:
     status = _catalog().status()
     status["backups"] = list_catalog_backups(settings.storage_dir / "catalog-backups")
     status["admin_token_required"] = bool(settings.admin_token)
+    status["active_job"] = running_catalog_job()
     return status
 
 
@@ -70,6 +72,10 @@ async def validate_catalog_upload(file: UploadFile = File(...)) -> dict[str, obj
 
 @app.post("/api/admin/catalog/upload", dependencies=[Depends(require_admin)])
 async def upload_catalog_database(file: UploadFile = File(...)) -> dict[str, object]:
+    active_job = running_catalog_job()
+    if active_job:
+        raise HTTPException(status_code=409, detail=f"Catalog job {active_job['id']} is still running.")
+
     settings = get_settings()
     uploaded_path = await save_upload(file, settings.storage_dir / "admin-catalog-uploads")
     try:
@@ -96,6 +102,10 @@ async def import_regional_catalog(
     catalog_id: str = Form(""),
     replace: bool = Form(True),
 ) -> dict[str, object]:
+    active_job = running_catalog_job()
+    if active_job:
+        raise HTTPException(status_code=409, detail=f"Catalog job {active_job['id']} is still running.")
+
     if file.content_type not in {"application/pdf", "application/octet-stream"} and not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only regional catalog PDFs are supported.")
 
@@ -122,7 +132,7 @@ async def import_regional_catalog(
     }
 
 
-@app.post("/api/admin/catalog/ebm/scrape", dependencies=[Depends(require_admin)])
+@app.post("/api/admin/catalog/ebm/scrape", status_code=202, dependencies=[Depends(require_admin)])
 def scrape_ebm_catalog(
     quarter: str = Form(...),
     replace_quarter: bool = Form(True),
@@ -130,25 +140,57 @@ def scrape_ebm_catalog(
     timeout: int = Form(30),
 ) -> dict[str, object]:
     settings = get_settings()
-    try:
+    requested_quarter = quarter.strip()
+    params = {
+        "quarter": requested_quarter,
+        "replace_quarter": replace_quarter,
+        "delay": delay,
+        "timeout": timeout,
+    }
+
+    def run_scrape() -> dict[str, object]:
         import_result = scrape_ebm_quarter_into_catalog(
             target_path=settings.catalog_db_path,
             backup_dir=settings.storage_dir / "catalog-backups",
             work_dir=settings.storage_dir / "catalog-work",
-            quarter=quarter.strip(),
+            quarter=requested_quarter,
             replace_quarter=replace_quarter,
             delay=delay,
             timeout=timeout,
             commit_every=100,
             progress_every=250,
         )
+        return {
+            "import": import_result,
+            "status": admin_catalog_status(),
+        }
+
+    try:
+        job = start_catalog_job(
+            kind="ebm_scrape",
+            params=params,
+            message=f"KBV-EBM {requested_quarter} wird im Hintergrund importiert.",
+            target=run_scrape,
+        )
+    except JobAlreadyRunningError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (CatalogImportError, CatalogValidationError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"EBM scraping failed: {exc}") from exc
 
     return {
-        "import": import_result,
+        "job": job,
+        "status": admin_catalog_status(),
+    }
+
+
+@app.get("/api/admin/catalog/jobs/{job_id}", dependencies=[Depends(require_admin)])
+def admin_catalog_job(job_id: str) -> dict[str, object]:
+    try:
+        job = get_job(job_id)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Catalog job not found.") from exc
+    return {
+        "job": job,
         "status": admin_catalog_status(),
     }
 
