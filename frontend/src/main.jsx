@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { AlertCircle, CheckCircle2, Database, FileJson, FileText, RefreshCw, ShieldCheck, UploadCloud } from "lucide-react";
+import { AlertCircle, CheckCircle2, Database, FileJson, FileText, Globe2, RefreshCw, ShieldCheck, UploadCloud } from "lucide-react";
 import lenusLogo from "./assets/logo_lenus.svg";
 import "./styles.css";
 
@@ -168,6 +168,14 @@ function CatalogStatus({ catalog }) {
 function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
   const [adminToken, setAdminToken] = React.useState(localStorage.getItem("hessen-ebm-admin-token") || "");
   const [catalogFile, setCatalogFile] = React.useState(null);
+  const [regionalFile, setRegionalFile] = React.useState(null);
+  const [regionalQuarter, setRegionalQuarter] = React.useState("2026/Q3");
+  const [regionalRegion, setRegionalRegion] = React.useState("Hessen");
+  const [regionalSource, setRegionalSource] = React.useState("KV_HESSEN_GOP");
+  const [regionalCatalogId, setRegionalCatalogId] = React.useState("");
+  const [regionalReplace, setRegionalReplace] = React.useState(true);
+  const [ebmQuarter, setEbmQuarter] = React.useState("2026/Q1");
+  const [ebmReplace, setEbmReplace] = React.useState(true);
   const [busy, setBusy] = React.useState(null);
   const [message, setMessage] = React.useState(null);
   const [uploadResult, setUploadResult] = React.useState(null);
@@ -224,6 +232,82 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
     }
   }
 
+  async function importRegionalCatalog() {
+    if (!regionalFile || !regionalQuarter.trim()) return;
+    setBusy("regional-import");
+    setMessage(null);
+    setUploadResult(null);
+    const formData = new FormData();
+    formData.append("file", regionalFile);
+    formData.append("quarter", regionalQuarter.trim());
+    formData.append("region", regionalRegion.trim() || "Hessen");
+    formData.append("source_system", regionalSource.trim() || "KV_HESSEN_GOP");
+    formData.append("catalog_id", regionalCatalogId.trim());
+    formData.append("replace", String(regionalReplace));
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/catalog/regional/import`, {
+        method: "POST",
+        headers: tokenHeaders(),
+        body: formData
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || `Regionalimport fehlgeschlagen (${response.status})`);
+      }
+      setUploadResult(payload);
+      if (payload.status) {
+        onCatalogUpdated(payload.status);
+      }
+      const count = payload.import?.result?.regional_gops ?? "?";
+      setMessage(`Regionaler Katalog wurde importiert (${count} GOP-Eintraege).`);
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function scrapeEbmCatalog() {
+    if (!ebmQuarter.trim()) return;
+    setBusy("ebm-scrape");
+    setMessage(null);
+    setUploadResult(null);
+    const formData = new FormData();
+    formData.append("quarter", ebmQuarter.trim());
+    formData.append("replace_quarter", String(ebmReplace));
+    formData.append("delay", "0.02");
+    formData.append("timeout", "30");
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/catalog/ebm/scrape`, {
+        method: "POST",
+        headers: tokenHeaders(),
+        body: formData
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || `EBM-Scraping fehlgeschlagen (${response.status})`);
+      }
+      setUploadResult(payload);
+      if (payload.status) {
+        onCatalogUpdated(payload.status);
+      }
+      const details = payload.import?.snapshot?.detail_count ?? "?";
+      setMessage(`KBV-EBM ${ebmQuarter.trim()} wurde importiert (${details} Details).`);
+    } catch (err) {
+      setMessage(err.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const backupPath = uploadResult?.import?.backup_path || uploadResult?.import?.install?.backup_path;
+  const messageIsError = message && (
+    message.includes("fehlgeschlagen") ||
+    message.includes("failed") ||
+    message.includes("invalid") ||
+    message.includes("nicht")
+  );
+
   return (
     <section className="workspace">
       <aside className="doc-sidebar">
@@ -238,9 +322,6 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
             <ShieldCheck size={18} />
             <strong>Katalogverwaltung</strong>
           </div>
-          <p className="admin-copy">
-            Lade eine vorbereitete `ebm_kbv.sqlite` hoch. Der aktive Katalog wird validiert, gesichert und atomar ersetzt.
-          </p>
 
           <label className="field-label" htmlFor="admin-token">Admin Token</label>
           <input
@@ -252,30 +333,106 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
             onChange={(event) => rememberToken(event.target.value)}
           />
 
-          <div className="drop-zone compact">
-            <Database size={24} />
-            <label htmlFor="catalog-upload">SQLite auswaehlen</label>
-            <input
-              id="catalog-upload"
-              type="file"
-              accept=".sqlite,.db,application/octet-stream"
-              onChange={(event) => setCatalogFile(event.target.files?.[0] || null)}
-            />
-            <span>{catalogFile ? catalogFile.name : "Keine Datei gewaehlt"}</span>
-          </div>
+          <section className="admin-section">
+            <div className="admin-section-title">
+              <Database size={18} />
+              <strong>Vollstaendige SQLite ersetzen</strong>
+            </div>
+            <p className="admin-copy">
+              Importiert eine vorbereitete komplette <code>ebm_kbv.sqlite</code>. Der aktive Katalog wird validiert, gesichert und atomar ersetzt.
+            </p>
+            <div className="drop-zone compact">
+              <Database size={24} />
+              <label htmlFor="catalog-upload">SQLite auswaehlen</label>
+              <input
+                id="catalog-upload"
+                type="file"
+                accept=".sqlite,.db,application/octet-stream"
+                onChange={(event) => setCatalogFile(event.target.files?.[0] || null)}
+              />
+              <span>{catalogFile ? catalogFile.name : "Keine Datei gewaehlt"}</span>
+            </div>
 
-          <div className="button-row stacked">
-            <button className="btn-secondary btn-block" type="button" disabled={!catalogFile || busy} onClick={() => sendCatalog("validate")}>
-              {busy === "validate" ? "Pruefe..." : "Nur validieren"}
+            <div className="button-row stacked">
+              <button className="btn-secondary btn-block" type="button" disabled={!catalogFile || busy} onClick={() => sendCatalog("validate")}>
+                {busy === "validate" ? "Pruefe..." : "Nur validieren"}
+              </button>
+              <button className="btn-primary btn-block" type="button" disabled={!catalogFile || busy} onClick={() => sendCatalog("upload")}>
+                {busy === "upload" ? "Importiere..." : "Einspielen / ersetzen"}
+              </button>
+            </div>
+          </section>
+
+          <section className="admin-section">
+            <div className="admin-section-title">
+              <FileText size={18} />
+              <strong>Regionalen Katalog importieren</strong>
+            </div>
+            <p className="admin-copy">
+              Importiert ein Hessen-GOP-PDF in die Regionaltabellen der aktiven Datenbank. Vor der Uebernahme wird ein Backup erstellt.
+            </p>
+            <div className="drop-zone compact">
+              <UploadCloud size={24} />
+              <label htmlFor="regional-upload">Regional-PDF auswaehlen</label>
+              <input
+                id="regional-upload"
+                type="file"
+                accept="application/pdf"
+                onChange={(event) => setRegionalFile(event.target.files?.[0] || null)}
+              />
+              <span>{regionalFile ? regionalFile.name : "Keine Datei gewaehlt"}</span>
+            </div>
+            <div className="admin-grid">
+              <label>
+                <span className="field-label">Quartal</span>
+                <input className="text-input" value={regionalQuarter} onChange={(event) => setRegionalQuarter(event.target.value)} placeholder="2026/Q3" />
+              </label>
+              <label>
+                <span className="field-label">Region</span>
+                <input className="text-input" value={regionalRegion} onChange={(event) => setRegionalRegion(event.target.value)} placeholder="Hessen" />
+              </label>
+              <label>
+                <span className="field-label">Quelle</span>
+                <input className="text-input" value={regionalSource} onChange={(event) => setRegionalSource(event.target.value)} placeholder="KV_HESSEN_GOP" />
+              </label>
+              <label>
+                <span className="field-label">Catalog-ID optional</span>
+                <input className="text-input" value={regionalCatalogId} onChange={(event) => setRegionalCatalogId(event.target.value)} placeholder="auto" />
+              </label>
+            </div>
+            <label className="checkbox-row">
+              <input type="checkbox" checked={regionalReplace} onChange={(event) => setRegionalReplace(event.target.checked)} />
+              vorhandenes Quartal/Region ersetzen
+            </label>
+            <button className="btn-primary btn-block" type="button" disabled={!regionalFile || !regionalQuarter.trim() || busy} onClick={importRegionalCatalog}>
+              {busy === "regional-import" ? "Importiere regionalen Katalog..." : "Regional-Katalog uebernehmen"}
             </button>
-            <button className="btn-primary btn-block" type="button" disabled={!catalogFile || busy} onClick={() => sendCatalog("upload")}>
-              {busy === "upload" ? "Importiere..." : "Einspielen / ersetzen"}
+          </section>
+
+          <section className="admin-section">
+            <div className="admin-section-title">
+              <Globe2 size={18} />
+              <strong>KBV-EBM online scrapen</strong>
+            </div>
+            <p className="admin-copy">
+              Ruft ein Quartal von <code>https://ebm.kbv.de/</code> ab und importiert es als EBM-Snapshot in die aktive Datenbank.
+            </p>
+            <label>
+              <span className="field-label">EBM-Quartal</span>
+              <input className="text-input" value={ebmQuarter} onChange={(event) => setEbmQuarter(event.target.value)} placeholder="2026/Q1" />
+            </label>
+            <label className="checkbox-row">
+              <input type="checkbox" checked={ebmReplace} onChange={(event) => setEbmReplace(event.target.checked)} />
+              vorhandenes Quartal ersetzen
+            </label>
+            <button className="btn-primary btn-block" type="button" disabled={!ebmQuarter.trim() || busy} onClick={scrapeEbmCatalog}>
+              {busy === "ebm-scrape" ? "Scrape laeuft..." : "EBM-Quartal online importieren"}
             </button>
-          </div>
+          </section>
 
           {message && (
-            <div className={`message ${message.includes("fehlgeschlagen") || message.includes("invalid") ? "error" : "success"}`}>
-              {message.includes("fehlgeschlagen") || message.includes("invalid") ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+            <div className={`message ${messageIsError ? "error" : "success"}`}>
+              {messageIsError ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
               {message}
             </div>
           )}
@@ -291,9 +448,9 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
         </div>
         <section className="result-panel">
           <CatalogDetails catalog={catalog} />
-          {uploadResult?.import?.backup_path && (
+          {backupPath && (
             <div className="backup-note">
-              Backup angelegt: <code>{uploadResult.import.backup_path}</code>
+              Backup angelegt: <code>{backupPath}</code>
             </div>
           )}
         </section>

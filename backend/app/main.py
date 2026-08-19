@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .admin_auth import require_admin
 from .admin_catalog import CatalogValidationError, install_catalog_database, list_catalog_backups, validate_catalog_database
+from .admin_catalog_imports import CatalogImportError, import_regional_catalog_pdf, scrape_ebm_quarter_into_catalog
 from .catalog import CatalogRepository
 from .config import get_settings
 from .document_segmentation import segment_pages
@@ -82,6 +83,72 @@ async def upload_catalog_database(file: UploadFile = File(...)) -> dict[str, obj
 
     return {
         "import": install_result,
+        "status": admin_catalog_status(),
+    }
+
+
+@app.post("/api/admin/catalog/regional/import", dependencies=[Depends(require_admin)])
+async def import_regional_catalog(
+    file: UploadFile = File(...),
+    quarter: str = Form(...),
+    region: str = Form("Hessen"),
+    source_system: str = Form("KV_HESSEN_GOP"),
+    catalog_id: str = Form(""),
+    replace: bool = Form(True),
+) -> dict[str, object]:
+    if file.content_type not in {"application/pdf", "application/octet-stream"} and not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only regional catalog PDFs are supported.")
+
+    settings = get_settings()
+    uploaded_path = await save_upload(file, settings.storage_dir / "admin-regional-uploads")
+    try:
+        import_result = import_regional_catalog_pdf(
+            pdf_path=uploaded_path,
+            target_path=settings.catalog_db_path,
+            backup_dir=settings.storage_dir / "catalog-backups",
+            work_dir=settings.storage_dir / "catalog-work",
+            catalog_id=catalog_id.strip() or None,
+            source_system=source_system.strip() or "KV_HESSEN_GOP",
+            region=region.strip() or "Hessen",
+            quarter=quarter.strip(),
+            replace=replace,
+        )
+    except (CatalogImportError, CatalogValidationError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "import": import_result,
+        "status": admin_catalog_status(),
+    }
+
+
+@app.post("/api/admin/catalog/ebm/scrape", dependencies=[Depends(require_admin)])
+def scrape_ebm_catalog(
+    quarter: str = Form(...),
+    replace_quarter: bool = Form(True),
+    delay: float = Form(0.02),
+    timeout: int = Form(30),
+) -> dict[str, object]:
+    settings = get_settings()
+    try:
+        import_result = scrape_ebm_quarter_into_catalog(
+            target_path=settings.catalog_db_path,
+            backup_dir=settings.storage_dir / "catalog-backups",
+            work_dir=settings.storage_dir / "catalog-work",
+            quarter=quarter.strip(),
+            replace_quarter=replace_quarter,
+            delay=delay,
+            timeout=timeout,
+            commit_every=100,
+            progress_every=250,
+        )
+    except (CatalogImportError, CatalogValidationError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"EBM scraping failed: {exc}") from exc
+
+    return {
+        "import": import_result,
         "status": admin_catalog_status(),
     }
 
