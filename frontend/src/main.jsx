@@ -13,7 +13,7 @@ function formatEuro(value) {
 
 function jobStatusLabel(status) {
   if (status === "queued") return "wartet";
-  if (status === "running") return "laeuft";
+  if (status === "running") return "läuft";
   if (status === "succeeded") return "abgeschlossen";
   if (status === "failed") return "fehlgeschlagen";
   return status || "unbekannt";
@@ -123,7 +123,7 @@ function App() {
                   accept="application/pdf"
                   onChange={(event) => setFile(event.target.files?.[0] || null)}
                 />
-                <span>{file ? file.name : "Noch keine Datei gewaehlt"}</span>
+                <span>{file ? file.name : "Noch keine Datei gewählt"}</span>
               </div>
               <button className="btn-primary btn-block" type="submit" disabled={!file || loading}>
                 {loading ? "Analysiere..." : "Rechnung erzeugen"}
@@ -140,7 +140,7 @@ function App() {
             <div className="doc-detail-header">
               <div className="doc-detail-title">
                 <h2>Rechnungsentwurf</h2>
-                <p>PDF-Evidenz, GOP-Kandidaten und Review-Hinweise fuer eine nachvollziehbare Abrechnung</p>
+                <p>PDF-Evidenz, GOP-Kandidaten und Review-Hinweise für eine nachvollziehbare Abrechnung</p>
               </div>
               {result && (
                 <button className="btn-secondary" onClick={downloadJson}>
@@ -161,7 +161,7 @@ function App() {
 
 function CatalogStatus({ catalog }) {
   if (!catalog) {
-    return <div className="brand-status"><span className="status-pill">Katalog wird geprueft</span></div>;
+    return <div className="brand-status"><span className="status-pill">Katalog wird geprüft</span></div>;
   }
   return (
     <div className="brand-status">
@@ -335,7 +335,7 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
         onCatalogUpdated(payload.status);
       }
       const count = payload.import?.result?.regional_gops ?? "?";
-      setMessage(`Regionaler Katalog wurde importiert (${count} GOP-Eintraege).`);
+      setMessage(`Regionaler Katalog wurde importiert (${count} GOP-Einträge).`);
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -420,26 +420,26 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
           <section className="admin-section">
             <div className="admin-section-title">
               <Database size={18} />
-              <strong>Vollstaendige SQLite ersetzen</strong>
+              <strong>Vollständige SQLite ersetzen</strong>
             </div>
             <p className="admin-copy">
               Importiert eine vorbereitete komplette <code>ebm_kbv.sqlite</code>. Der aktive Katalog wird validiert, gesichert und atomar ersetzt.
             </p>
             <div className="drop-zone compact">
               <Database size={24} />
-              <label htmlFor="catalog-upload">SQLite auswaehlen</label>
+              <label htmlFor="catalog-upload">SQLite auswählen</label>
               <input
                 id="catalog-upload"
                 type="file"
                 accept=".sqlite,.db,application/octet-stream"
                 onChange={(event) => setCatalogFile(event.target.files?.[0] || null)}
               />
-              <span>{catalogFile ? catalogFile.name : "Keine Datei gewaehlt"}</span>
+              <span>{catalogFile ? catalogFile.name : "Keine Datei gewählt"}</span>
             </div>
 
             <div className="button-row stacked">
               <button className="btn-secondary btn-block" type="button" disabled={!catalogFile || busy} onClick={() => sendCatalog("validate")}>
-                {busy === "validate" ? "Pruefe..." : "Nur validieren"}
+                {busy === "validate" ? "Prüfe..." : "Nur validieren"}
               </button>
               <button className="btn-primary btn-block" type="button" disabled={!catalogFile || busy} onClick={() => sendCatalog("upload")}>
                 {busy === "upload" ? "Importiere..." : "Einspielen / ersetzen"}
@@ -453,18 +453,18 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
               <strong>Regionalen Katalog importieren</strong>
             </div>
             <p className="admin-copy">
-              Importiert ein Hessen-GOP-PDF in die Regionaltabellen der aktiven Datenbank. Vor der Uebernahme wird ein Backup erstellt.
+              Importiert ein Hessen-GOP-PDF in die Regionaltabellen der aktiven Datenbank. Vor der Übernahme wird ein Backup erstellt.
             </p>
             <div className="drop-zone compact">
               <UploadCloud size={24} />
-              <label htmlFor="regional-upload">Regional-PDF auswaehlen</label>
+              <label htmlFor="regional-upload">Regional-PDF auswählen</label>
               <input
                 id="regional-upload"
                 type="file"
                 accept="application/pdf"
                 onChange={(event) => setRegionalFile(event.target.files?.[0] || null)}
               />
-              <span>{regionalFile ? regionalFile.name : "Keine Datei gewaehlt"}</span>
+              <span>{regionalFile ? regionalFile.name : "Keine Datei gewählt"}</span>
             </div>
             <div className="admin-grid">
               <label>
@@ -489,7 +489,7 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
               vorhandenes Quartal/Region ersetzen
             </label>
             <button className="btn-primary btn-block" type="button" disabled={!regionalFile || !regionalQuarter.trim() || busy} onClick={importRegionalCatalog}>
-              {busy === "regional-import" ? "Importiere regionalen Katalog..." : "Regional-Katalog uebernehmen"}
+              {busy === "regional-import" ? "Importiere regionalen Katalog..." : "Regional-Katalog übernehmen"}
             </button>
           </section>
 
@@ -510,7 +510,7 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
               vorhandenes Quartal ersetzen
             </label>
             <button className="btn-primary btn-block" type="button" disabled={!ebmQuarter.trim() || busy} onClick={scrapeEbmCatalog}>
-              {busy === "ebm-scrape" ? "Scrape laeuft..." : "EBM-Quartal online importieren"}
+              {busy === "ebm-scrape" ? "Scrape läuft..." : "EBM-Quartal online importieren"}
             </button>
             {scrapeJob && (
               <div className={`job-status ${scrapeJob.status}`}>
@@ -668,7 +668,7 @@ function ResultPanel({ result, onDownload }) {
         }))} />
       </TwoColumn>
 
-      <DetailList title="Nicht uebernommen" items={result.excluded_evidence.map((item, index) => ({
+      <DetailList title="Nicht übernommen" items={result.excluded_evidence.map((item, index) => ({
         key: `excluded-${index}`,
         title: item.evidence,
         detail: item.reason
@@ -691,7 +691,7 @@ function RegionalCatalogNotes({ checks }) {
           <div className={`catalog-note ${check.checked && hasMatches ? "checked" : "missing"}`} key={`${check.region}-${check.quarter}`}>
             <Database size={17} />
             <div>
-              <strong>{check.checked ? "Regionalkatalog geprueft" : "Regionalkatalog-Hinweis"}</strong>
+              <strong>{check.checked ? "Regionalkatalog geprüft" : "Regionalkatalog-Hinweis"}</strong>
               <span>{check.message}</span>
             </div>
           </div>
@@ -719,7 +719,7 @@ function DetailList({ title, items }) {
     <section className="detail-list">
       <h3>{title}</h3>
       {items.length === 0 ? (
-        <p className="muted-text">Keine Eintraege.</p>
+        <p className="muted-text">Keine Einträge.</p>
       ) : (
         <ul>
           {items.map((item) => (

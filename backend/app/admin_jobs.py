@@ -114,7 +114,7 @@ def _run_job(job_id: str, target: Callable[[], dict[str, Any]]) -> None:
         job = _jobs[job_id]
         job.status = "running"
         job.started_at = _now()
-        job.message = "Katalog-Job laeuft."
+        job.message = "Katalog-Job läuft."
 
     try:
         result = target()

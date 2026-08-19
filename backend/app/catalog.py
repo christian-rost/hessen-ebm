@@ -205,24 +205,24 @@ class CatalogRepository:
             "message": "",
         }
         if not self.available:
-            result["message"] = "Regionalkatalog nicht geprueft: keine aktive Katalogdatenbank."
+            result["message"] = "Regionalkatalog nicht geprüft: keine aktive Katalogdatenbank."
             return result
 
         with self._connect() as conn:
             tables = self._tables(conn)
             if "regional_gops" not in tables:
-                result["message"] = "Regionalkatalog nicht geprueft: keine Regionaltabellen in der aktiven Datenbank."
+                result["message"] = "Regionalkatalog nicht geprüft: keine Regionaltabellen in der aktiven Datenbank."
                 return result
 
             catalogs = self._regional_catalogs_for(conn, tables, quarter, region)
             result["catalogs"] = catalogs
             if not catalogs:
-                result["message"] = f"Kein Regionalkatalog fuer {region} {quarter} in der aktiven Datenbank."
+                result["message"] = f"Kein Regionalkatalog für {region} {quarter} in der aktiven Datenbank."
                 return result
 
             result["checked"] = True
             if not normalized_bases:
-                result["message"] = f"Regionalkatalog geprueft: {self._catalog_labels(catalogs)} ist aktiv."
+                result["message"] = f"Regionalkatalog geprüft: {self._catalog_labels(catalogs)} ist aktiv."
                 return result
 
             matches = self._regional_matches_for(conn, tables, normalized_bases, quarter, region)
@@ -233,13 +233,13 @@ class CatalogRepository:
         result["missing_gop_bases"] = [base for base in normalized_bases if base not in matched_bases]
         if matches:
             result["message"] = (
-                f"Regionalkatalog geprueft: {self._catalog_labels(catalogs)} enthaelt regionale Treffer "
-                f"fuer {', '.join(matched_bases)}."
+                f"Regionalkatalog geprüft: {self._catalog_labels(catalogs)} enthält regionale Treffer "
+                f"für {', '.join(matched_bases)}."
             )
         else:
             result["message"] = (
-                f"Regionalkatalog geprueft: {self._catalog_labels(catalogs)} enthaelt keine passenden "
-                f"regionalen GOPs zu den uebernommenen Positionen ({', '.join(normalized_bases)})."
+                f"Regionalkatalog geprüft: {self._catalog_labels(catalogs)} enthält keine passenden "
+                f"regionalen GOPs zu den übernommenen Positionen ({', '.join(normalized_bases)})."
             )
         return result
 

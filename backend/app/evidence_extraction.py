@@ -51,14 +51,14 @@ DOMAIN_EVIDENCE: list[tuple[str, str, tuple[str, ...], tuple[str, ...], float]] 
         "clinical.domain.ophthalmology",
         "Augenheilkunde",
         ("augenklinik", "augenambulanz", "augenheilkunde", "visus", "tensio", "vordereraugenabschnitt", "hintereraugenabschnitt"),
-        ("Augenheilkunde", "Augenaerztliche Untersuchung", "Visus", "Fundus"),
+        ("Augenheilkunde", "Augenärztliche Untersuchung", "Visus", "Fundus"),
         0.76,
     ),
     (
         "clinical.domain.gynecology_obstetrics",
-        "Gynaekologie / Geburtshilfe",
+        "Gynäkologie / Geburtshilfe",
         ("gynakologie", "geburtshilfe", "frauenklinik", "schwangerschaft", "ssw", "fetale", "pranatal", "vaginal"),
-        ("Schwangerschaft", "Geburtshilfe", "Gynaekologie", "Betreuung einer Schwangeren", "Praenataldiagnostik"),
+        ("Schwangerschaft", "Geburtshilfe", "Gynäkologie", "Betreuung einer Schwangeren", "Pränataldiagnostik"),
         0.8,
     ),
     (
@@ -119,16 +119,16 @@ DOMAIN_EVIDENCE: list[tuple[str, str, tuple[str, ...], tuple[str, ...], float]] 
     ),
     (
         "clinical.domain.orthopedics_trauma",
-        "Orthopaedie / Unfallchirurgie",
+        "Orthopädie / Unfallchirurgie",
         ("orthopadie", "orthopaedie", "unfallchirurgie", "fraktur", "luxation", "gelenk", "wirbelsaule", "trauma"),
-        ("Orthopaedie", "Unfallchirurgie", "Fraktur", "Gelenk", "Wundversorgung"),
+        ("Orthopädie", "Unfallchirurgie", "Fraktur", "Gelenk", "Wundversorgung"),
         0.72,
     ),
     (
         "clinical.domain.pediatrics",
-        "Paediatrie",
+        "Pädiatrie",
         ("paediatrie", "padiatrie", "kinderklinik", "jugendmedizin", "neugeboren", "saugling"),
-        ("Paediatrie", "Kinder- und Jugendmedizin", "U-Untersuchung", "Neugeborene"),
+        ("Pädiatrie", "Kinder- und Jugendmedizin", "U-Untersuchung", "Neugeborene"),
         0.72,
     ),
     (
@@ -140,9 +140,9 @@ DOMAIN_EVIDENCE: list[tuple[str, str, tuple[str, ...], tuple[str, ...], float]] 
     ),
     (
         "clinical.domain.anesthesia_pain",
-        "Anaesthesie / Schmerztherapie",
+        "Anästhesie / Schmerztherapie",
         ("anasthesie", "anaesthesie", "narkose", "schmerztherapie", "palliativ", "sedierung"),
-        ("Anaesthesie", "Narkose", "Schmerztherapie", "Palliativmedizin"),
+        ("Anästhesie", "Narkose", "Schmerztherapie", "Palliativmedizin"),
         0.7,
     ),
     (
@@ -154,23 +154,23 @@ DOMAIN_EVIDENCE: list[tuple[str, str, tuple[str, ...], tuple[str, ...], float]] 
     ),
     (
         "clinical.domain.oncology_hematology",
-        "Onkologie / Haematologie",
+        "Onkologie / Hämatologie",
         ("onkologie", "hamatologie", "haematologie", "tumor", "karzinom", "chemotherapie", "immuntherapie"),
-        ("Onkologie", "Haematologie", "Tumor", "Chemotherapie", "Immuntherapie"),
+        ("Onkologie", "Hämatologie", "Tumor", "Chemotherapie", "Immuntherapie"),
         0.7,
     ),
     (
         "clinical.domain.nephrology_dialysis",
         "Nephrologie / Dialyse",
         ("nephrologie", "dialyse", "hamodialyse", "haemodialyse", "peritonealdialyse", "niereninsuffizienz"),
-        ("Nephrologie", "Dialyse", "Haemodialyse", "Niereninsuffizienz"),
+        ("Nephrologie", "Dialyse", "Hämodialyse", "Niereninsuffizienz"),
         0.7,
     ),
     (
         "clinical.domain.prevention_vaccination",
-        "Praevention / Impfen",
+        "Prävention / Impfen",
         ("impfung", "impfstoff", "vorsorge", "fruherkennung", "screening", "gesundheitsuntersuchung", "dmp"),
-        ("Impfung", "Vorsorge", "Frueherkennung", "Screening", "DMP"),
+        ("Impfung", "Vorsorge", "Früherkennung", "Screening", "DMP"),
         0.68,
     ),
 ]
@@ -198,9 +198,9 @@ SEGMENT_DOMAIN_KIND = {
 SERVICE_EVIDENCE: list[tuple[str, str, tuple[str, ...], tuple[str, ...], float]] = [
     (
         "clinical.service.consultation",
-        "Beratung / Aufklaerung",
+        "Beratung / Aufklärung",
         ("beratung", "aufklarung", "aufklaerung", "gesprach", "empfehlungenerlautert"),
-        ("Beratung", "Aufklaerung", "Gespraech", "Grundpauschale"),
+        ("Beratung", "Aufklärung", "Gespräch", "Grundpauschale"),
         0.68,
     ),
     (
@@ -233,9 +233,9 @@ SERVICE_EVIDENCE: list[tuple[str, str, tuple[str, ...], tuple[str, ...], float]]
     ),
     (
         "clinical.diagnostics.prenatal_biometry",
-        "Fetale Biometrie / Praenataldiagnostik",
+        "Fetale Biometrie / Pränataldiagnostik",
         ("fetalebiometrie", "bpd", "femur", "fruchtwasser", "gestationsalter", "einlingsschwangerschaft"),
-        ("Fetale Biometrie", "Praenataldiagnostik", "Schwangerschaft", "Sonographie"),
+        ("Fetale Biometrie", "Pränataldiagnostik", "Schwangerschaft", "Sonographie"),
         0.76,
     ),
     (
@@ -279,8 +279,8 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
     {
         "codes": ("ALL_KONGEB",),
         "kind": "internal_service.consultation_fee",
-        "label": "Interner Hinweis Konsultationsgebuehr",
-        "text": "Interner Leistungsbogen enthaelt ALL_KONGEB / Konsultationsgebuehr",
+        "label": "Interner Hinweis Konsultationsgebühr",
+        "text": "Interner Leistungsbogen enthält ALL_KONGEB / Konsultationsgebühr",
         "terms": ("Konsultationspauschale",),
         "candidate_gops": ("01436",),
         "confidence": 0.64,
@@ -288,18 +288,18 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
     {
         "codes": ("ALL_ORDGEB",),
         "kind": "internal_service.ordination_fee",
-        "label": "Interner Hinweis Ordinationsgebuehr",
-        "text": "Interner Leistungsbogen enthaelt ALL_ORDGEB / Ordinationsgebuehr",
-        "terms": ("Augenaerztliche Grundpauschale", "Augenärztliche Grundpauschale", "Grundpauschale Augen"),
+        "label": "Interner Hinweis Ordinationsgebühr",
+        "text": "Interner Leistungsbogen enthält ALL_ORDGEB / Ordinationsgebühr",
+        "terms": ("Augenärztliche Grundpauschale", "Grundpauschale Augen"),
         "candidate_gops": ("06210", "06211", "06212"),
         "confidence": 0.66,
     },
     {
         "codes": ("ALL_ORDNOT",),
         "kind": "internal_service.emergency_ordination",
-        "label": "Interner Hinweis Ordinationsgebuehr Notfall",
-        "text": "Interner Leistungsbogen enthaelt ALL_ORDNOT / Ordinationsgebuehr Notfall",
-        "terms": ("Notfallpauschale", "Notfall", "Ordinationsgebuehr", "Grundpauschale"),
+        "label": "Interner Hinweis Ordinationsgebühr Notfall",
+        "text": "Interner Leistungsbogen enthält ALL_ORDNOT / Ordinationsgebühr Notfall",
+        "terms": ("Notfallpauschale", "Notfall", "Ordinationsgebühr", "Grundpauschale"),
         "candidate_gops": ("01210", "01212", "01214", "01216", "01218"),
         "confidence": 0.7,
     },
@@ -307,7 +307,7 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "codes": ("AUA_BUAHG",),
         "kind": "internal_service.ophthalmology_fundus",
         "label": "Interner Hinweis Augenhintergrund",
-        "text": "Interner Leistungsbogen enthaelt AUA_BUAHG / binokulare Untersuchung des Augenhintergrundes",
+        "text": "Interner Leistungsbogen enthält AUA_BUAHG / binokulare Untersuchung des Augenhintergrundes",
         "terms": ("Augenhintergrund", "Fundus", "Binokulare Untersuchung des Augenhintergrundes"),
         "candidate_gops": ("06333",),
         "confidence": 0.68,
@@ -316,7 +316,7 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "codes": ("AUA_ECHO",),
         "kind": "internal_service.aua_echo",
         "label": "Interner Hinweis Echographie Auge",
-        "text": "Interner Leistungsbogen enthaelt AUA_ECHO / Echographie",
+        "text": "Interner Leistungsbogen enthält AUA_ECHO / Echographie",
         "terms": ("Sonographie des Auges", "Ultraschall-Biometrie des Auges", "Ultraschall-Pachymetrie"),
         "candidate_gops": ("33000", "33001", "33002"),
         "confidence": 0.62,
@@ -325,7 +325,7 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "codes": ("AUA_EPU", "ERG", "VEP"),
         "kind": "internal_service.aua_epu",
         "label": "Interner Hinweis elektrophysiologische Untersuchung",
-        "text": "Interner Leistungsbogen enthaelt elektrophysiologische Augen-Diagnostik",
+        "text": "Interner Leistungsbogen enthält elektrophysiologische Augen-Diagnostik",
         "terms": ("Elektrophysiologische Untersuchung", "Elektroretinographie", "VEP"),
         "candidate_gops": ("06312",),
         "confidence": 0.62,
@@ -334,7 +334,7 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "codes": ("AUA_FAG",),
         "kind": "internal_service.aua_fag",
         "label": "Interner Hinweis Fluoreszenzangiographie",
-        "text": "Interner Leistungsbogen enthaelt AUA_FAG / Fluoreszenzangiographie",
+        "text": "Interner Leistungsbogen enthält AUA_FAG / Fluoreszenzangiographie",
         "terms": ("Fluoreszenzangiographie", "Angiographie Auge"),
         "candidate_gops": ("06331",),
         "confidence": 0.62,
@@ -343,7 +343,7 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "codes": ("AUA_PDT",),
         "kind": "internal_service.aua_pdt",
         "label": "Interner Hinweis PDT",
-        "text": "Interner Leistungsbogen enthaelt AUA_PDT / PDT",
+        "text": "Interner Leistungsbogen enthält AUA_PDT / PDT",
         "terms": ("PDT", "Photodynamische Therapie"),
         "candidate_gops": ("06332",),
         "confidence": 0.62,
@@ -352,7 +352,7 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "codes": ("AUA_PERI",),
         "kind": "internal_service.aua_peri",
         "label": "Interner Hinweis Perimetrie",
-        "text": "Interner Leistungsbogen enthaelt AUA_PERI / Perimetrie",
+        "text": "Interner Leistungsbogen enthält AUA_PERI / Perimetrie",
         "terms": ("Perimetrie", "Gesichtsfeld"),
         "candidate_gops": ("06330",),
         "confidence": 0.62,
@@ -361,7 +361,7 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "codes": ("AUA_SCHIEL",),
         "kind": "internal_service.aua_schiel",
         "label": "Interner Hinweis Schielbehandlung",
-        "text": "Interner Leistungsbogen enthaelt AUA_SCHIEL / quantitative Untersuchung des binokularen Sehens",
+        "text": "Interner Leistungsbogen enthält AUA_SCHIEL / quantitative Untersuchung des binokularen Sehens",
         "terms": ("Schielbehandlung", "Quantitative Untersuchung des binokularen Sehens"),
         "candidate_gops": ("06320", "06321"),
         "confidence": 0.62,
@@ -369,9 +369,9 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
     {
         "codes": ("TWS",),
         "kind": "internal_service.aua_tws",
-        "label": "Interner Hinweis Traenenweg-Sondierung",
-        "text": "Interner Leistungsbogen enthaelt TWS / TW-Sondierung",
-        "terms": ("Traenenweg", "Traenenwege", "Sondierung", "Kleinchirurgischer Eingriff am Auge"),
+        "label": "Interner Hinweis Tränenweg-Sondierung",
+        "text": "Interner Leistungsbogen enthält TWS / TW-Sondierung",
+        "terms": ("Tränenweg", "Tränenwege", "Sondierung", "Kleinchirurgischer Eingriff am Auge"),
         "candidate_gops": ("06352",),
         "confidence": 0.58,
     },
@@ -379,7 +379,7 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "codes": ("AUA_LIDHEB",),
         "kind": "internal_service.aua_lidheber",
         "label": "Interner Hinweis Lidheber-Operation",
-        "text": "Interner Leistungsbogen enthaelt AUA_LIDHEB / OP der Lidsenkung mit Lidheber",
+        "text": "Interner Leistungsbogen enthält AUA_LIDHEB / OP der Lidsenkung mit Lidheber",
         "terms": ("Lidheber", "Lidoperation", "Kleinchirurgischer Eingriff am Auge"),
         "candidate_gops": ("06350", "06351", "06352"),
         "confidence": 0.58,
@@ -747,9 +747,9 @@ def _extract_specialty_ambulance(page: PageText, segment_type: str) -> list[Evid
             "Grundpauschale",
         ]
         if "augen" in compact:
-            search_terms.extend(["Augenheilkunde", "Augenaerztliche Grundpauschale"])
+            search_terms.extend(["Augenheilkunde", "Augenärztliche Grundpauschale"])
         if any(token in compact for token in ("frauenklinik", "gynakologie", "geburtshilfe", "schwangerschaft")):
-            search_terms.extend(["Gynaekologie", "Geburtshilfe", "Schwangerschaft"])
+            search_terms.extend(["Gynäkologie", "Geburtshilfe", "Schwangerschaft"])
 
         found.append(
             _ev(
@@ -768,14 +768,14 @@ def _extract_specialty_ambulance(page: PageText, segment_type: str) -> list[Evid
         found.append(
             _ev(
                 "clinical.ophthalmology_report",
-                "Augenaerztlicher Ambulanzbefund",
+                "Augenärztlicher Ambulanzbefund",
                 page.page,
                 text,
                 service_date,
                 service_time,
                 0.84,
                 metadata=_search_terms(
-                    "Augenaerztliche Untersuchung",
+                    "Augenärztliche Untersuchung",
                     "Augenheilkunde",
                     "Ophthalmologische Untersuchung",
                     "Grundpauschale Augen",
@@ -805,7 +805,7 @@ def _extract_specialty_ambulance(page: PageText, segment_type: str) -> list[Evid
                 service_time,
                 0.86,
                 metadata=_search_terms(
-                    "Augenaerztliche Untersuchung",
+                    "Augenärztliche Untersuchung",
                     "Visus",
                     "Tonometrie",
                     "Spaltlampenuntersuchung",
@@ -927,19 +927,19 @@ def _extract_radiology(page: PageText, segment_type: str) -> list[Evidence]:
     found: list[Evidence] = []
 
     if ("ctkopfnativ" in compact or "ctctschadelnativ" in compact) and "durchgefuhrt" in compact:
-        found.append(_ev("radiology.ct_head_native", "CT Kopf nativ", page.page, "CT Kopf nativ durchgefuehrt", service_date, service_time, 0.96))
+        found.append(_ev("radiology.ct_head_native", "CT Kopf nativ", page.page, "CT Kopf nativ durchgeführt", service_date, service_time, 0.96))
 
     if ("rontgenschulter2eb" in compact or "roeschulter2eb" in compact) and "durchgefuhrt" in compact:
-        found.append(_ev("radiology.xray_shoulder_2_planes", "Roentgen Schulter 2 Ebenen", page.page, "Roentgen Schulter 2 Ebenen durchgefuehrt", service_date, service_time, 0.96))
+        found.append(_ev("radiology.xray_shoulder_2_planes", "Röntgen Schulter 2 Ebenen", page.page, "Röntgen Schulter 2 Ebenen durchgeführt", service_date, service_time, 0.96))
 
     if ("rontgenhws2ebenen" in compact or "roehws2ebenen" in compact) and "durchgefuhrt" in compact:
-        found.append(_ev("radiology.xray_spine_hws_2_planes", "Roentgen HWS 2 Ebenen", page.page, "Roentgen HWS 2 Ebenen durchgefuehrt", service_date, service_time, 0.96))
+        found.append(_ev("radiology.xray_spine_hws_2_planes", "Röntgen HWS 2 Ebenen", page.page, "Röntgen HWS 2 Ebenen durchgeführt", service_date, service_time, 0.96))
 
     if ("rontgenlunge" in compact or "roelunge" in compact or "thorax" in compact) and ("2ebenen" in compact or "p.a." in text.lower()):
-        found.append(_ev("radiology.xray_thorax_2_planes", "Roentgen Thorax/Lunge 2 Ebenen", page.page, "Roentgen Thorax/Lunge 2 Ebenen", service_date, service_time, 0.86))
+        found.append(_ev("radiology.xray_thorax_2_planes", "Röntgen Thorax/Lunge 2 Ebenen", page.page, "Röntgen Thorax/Lunge 2 Ebenen", service_date, service_time, 0.86))
 
     if ("ctlws" in compact or "ct-lws" in compact or "ctcthws" in compact or "cthws" in compact) and "durchgefuhrt" in compact and "storniert" not in compact:
-        found.append(_ev("radiology.ct_spine_section", "CT Wirbelsaeulenabschnitt", page.page, "CT Wirbelsaeulenabschnitt durchgefuehrt", service_date, service_time, 0.84))
+        found.append(_ev("radiology.ct_spine_section", "CT Wirbelsäulenabschnitt", page.page, "CT Wirbelsäulenabschnitt durchgeführt", service_date, service_time, 0.84))
 
     if ("+km" in compact or "kontrastmittel" in compact or "imeron" in compact) and "nativ" not in compact:
         found.append(_ev("radiology.ct_contrast", "CT-Kontrastmittel", page.page, "Kontrastmittelgabe dokumentiert", service_date, service_time, 0.8))
@@ -971,8 +971,8 @@ def _extract_labs(
         ("lab.erythrocytes", "Erythrozyten", "erythrozyten"),
         ("lab.leukocytes", "Leukozyten", "leukozyten"),
         ("lab.thrombocytes", "Thrombozyten", "thrombozyten"),
-        ("lab.hemoglobin", "Haemoglobin", "hamoglobin"),
-        ("lab.hematocrit", "Haematokrit", "hamatokrit"),
+        ("lab.hemoglobin", "Hämoglobin", "hamoglobin"),
+        ("lab.hematocrit", "Hämatokrit", "hamatokrit"),
     ]
 
     if "quick" in compact and "probeunterfullt" not in compact:
@@ -995,9 +995,9 @@ def _extract_review_candidates(page: PageText, segment_type: str) -> list[Review
     if segment_type == "consult" and ("psych" in text.lower() or "psychische" in text.lower()):
         candidates.append(ReviewCandidate(evidence="Psychiatrisches Konsil", evidence_pages=[page.page], reason="Interne Konsiltypen sind nicht automatisch EBM-GOPs."))
     if "schwangerschaftstest" in compact or "schwangerschaftsnachweis" in compact:
-        candidates.append(ReviewCandidate(evidence="Schwangerschaftstest Urin", evidence_pages=[page.page], possible_gops=["32132"], reason="Katalogtreffer moeglich, aber noch keine validierte Positivregel."))
+        candidates.append(ReviewCandidate(evidence="Schwangerschaftstest Urin", evidence_pages=[page.page], possible_gops=["32132"], reason="Katalogtreffer möglich, aber noch keine validierte Positivregel."))
     if "drogen" in compact and "urin" in compact:
-        candidates.append(ReviewCandidate(evidence="Drogen-Screening Urin", evidence_pages=[page.page], possible_gops=["32292", "32307"], reason="Panel-/Einzeltestlogik und Abrechnungsfaehigkeit nicht validiert."))
+        candidates.append(ReviewCandidate(evidence="Drogen-Screening Urin", evidence_pages=[page.page], possible_gops=["32292", "32307"], reason="Panel-/Einzeltestlogik und Abrechnungsfähigkeit nicht validiert."))
     if "urinstatus" in compact:
         candidates.append(ReviewCandidate(evidence="Urinstatus", evidence_pages=[page.page], possible_gops=["32720"], reason="Im Goldstandard noch keine Positivregel."))
     if any(token in compact for token in ["crp", "ck-mb", "myoglobin", "harnstoff", "gamma-gt", "ast"]):
@@ -1011,7 +1011,7 @@ def _extract_review_candidates(page: PageText, segment_type: str) -> list[Review
                         evidence=str(hint["label"]),
                         evidence_pages=[page.page],
                         possible_gops=[str(gop) for gop in hint["candidate_gops"]],
-                        reason="Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfaehigkeit pruefen.",
+                        reason="Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen.",
                     )
                 )
 
@@ -1024,11 +1024,11 @@ def _extract_exclusions(page: PageText, segment_type: str) -> list[ExcludedEvide
     excluded: list[ExcludedEvidence] = []
 
     if "ctcthws" in compact and "storniert" in compact:
-        excluded.append(ExcludedEvidence(evidence="CT HWS nativ", evidence_pages=[page.page], not_billed_gop="34311", reason="Nur storniert dokumentiert; kein durchgefuehrter Befund."))
+        excluded.append(ExcludedEvidence(evidence="CT HWS nativ", evidence_pages=[page.page], not_billed_gop="34311", reason="Nur storniert dokumentiert; kein durchgeführter Befund."))
     if "ctkopfnativ" in compact and "nativ" in compact:
         excluded.append(ExcludedEvidence(evidence="CT-Kontrastmittelzuschlag", evidence_pages=[page.page], not_billed_gop="34345", reason="CT als nativ dokumentiert; keine Kontrastmittelgabe."))
     if "probeunterfullt" in compact:
-        excluded.append(ExcludedEvidence(evidence="Gerinnungsprobe", evidence_pages=[page.page], reason="Probe unterfuellt/falsches Mischungsverhaeltnis."))
+        excluded.append(ExcludedEvidence(evidence="Gerinnungsprobe", evidence_pages=[page.page], reason="Probe unterfüllt/falsches Mischungsverhältnis."))
     if "ras9048" in compact:
         excluded.append(ExcludedEvidence(evidence="Interner Radiologie-Zuschlag RAS9048", evidence_pages=[page.page], reason="Lokaler interner Code ohne freigegebenes EBM-/Hessen-GOP-Mapping."))
 

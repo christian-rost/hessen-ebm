@@ -18,23 +18,23 @@ SEGMENT_LABELS = {
     "cardiology_report": "Kardiologie",
     "pulmonology_report": "Pneumologie",
     "gastroenterology_report": "Gastroenterologie / Endoskopie",
-    "gynecology_obstetrics": "Gynaekologie / Geburtshilfe",
+    "gynecology_obstetrics": "Gynäkologie / Geburtshilfe",
     "urology_report": "Urologie",
     "dermatology_report": "Dermatologie",
     "ent_report": "HNO",
     "neurology_report": "Neurologie",
     "psychiatry_report": "Psychiatrie / Psychotherapie",
-    "orthopedics_report": "Orthopaedie / Unfallchirurgie",
-    "pediatrics_report": "Paediatrie",
+    "orthopedics_report": "Orthopädie / Unfallchirurgie",
+    "pediatrics_report": "Pädiatrie",
     "surgery_report": "Chirurgie / OP",
-    "anesthesia_report": "Anaesthesie / Schmerztherapie",
+    "anesthesia_report": "Anästhesie / Schmerztherapie",
     "pathology_report": "Pathologie / Zytologie",
-    "oncology_report": "Onkologie / Haematologie",
+    "oncology_report": "Onkologie / Hämatologie",
     "nephrology_report": "Nephrologie / Dialyse",
-    "prevention_report": "Praevention / Impfen",
+    "prevention_report": "Prävention / Impfen",
     "therapy_report": "Therapie / Heilmittel",
     "data_capture": "Datenerfassung",
-    "request": "Anforderung / Indikationspruefung",
+    "request": "Anforderung / Indikationsprüfung",
     "other": "Sonstiges Dokument",
 }
 
@@ -76,7 +76,7 @@ INTERNAL_SERVICE_CODE_RE = re.compile(
 DOMAIN_MARKERS: list[tuple[str, str, tuple[str, ...]]] = [
     (
         "gynecology_obstetrics",
-        "Gynaekologie-/Geburtshilfe-Marker gefunden",
+        "Gynäkologie-/Geburtshilfe-Marker gefunden",
         (
             "gynakologie",
             "geburtshilfe",
@@ -227,7 +227,7 @@ DOMAIN_MARKERS: list[tuple[str, str, tuple[str, ...]]] = [
     ),
     (
         "orthopedics_report",
-        "Orthopaedie-/Unfallchirurgie-Marker gefunden",
+        "Orthopädie-/Unfallchirurgie-Marker gefunden",
         (
             "orthopadie",
             "orthopaedie",
@@ -243,7 +243,7 @@ DOMAIN_MARKERS: list[tuple[str, str, tuple[str, ...]]] = [
     ),
     (
         "pediatrics_report",
-        "Paediatrie-Marker gefunden",
+        "Pädiatrie-Marker gefunden",
         (
             "paediatrie",
             "padiatrie",
@@ -273,7 +273,7 @@ DOMAIN_MARKERS: list[tuple[str, str, tuple[str, ...]]] = [
     ),
     (
         "anesthesia_report",
-        "Anaesthesie-/Schmerztherapie-Marker gefunden",
+        "Anästhesie-/Schmerztherapie-Marker gefunden",
         (
             "anasthesie",
             "anaesthesie",
@@ -299,7 +299,7 @@ DOMAIN_MARKERS: list[tuple[str, str, tuple[str, ...]]] = [
     ),
     (
         "oncology_report",
-        "Onkologie-/Haematologie-Marker gefunden",
+        "Onkologie-/Hämatologie-Marker gefunden",
         (
             "onkologie",
             "hamatologie",
@@ -325,7 +325,7 @@ DOMAIN_MARKERS: list[tuple[str, str, tuple[str, ...]]] = [
     ),
     (
         "prevention_report",
-        "Praeventions-/Impfmarker gefunden",
+        "Präventions-/Impfmarker gefunden",
         (
             "impfung",
             "impfstoff",

@@ -200,15 +200,15 @@ def _build_messages(
     ]
 
     system = (
-        "Du bist ein vorsichtiger medizinischer Abrechnungsassistent fuer EBM und regionale Hessen-GOP. "
+        "Du bist ein vorsichtiger medizinischer Abrechnungsassistent für EBM und regionale Hessen-GOP. "
         "Leite aus klinischer Evidenz abrechenbare GOP-Positionen ab. "
-        "Nutze ausschliesslich GOPs aus catalog_candidates. Erfinde keine GOPs. "
+        "Nutze ausschließlich GOPs aus catalog_candidates. Erfinde keine GOPs. "
         "Wenn eine Leistung nur angefordert, storniert, intern dokumentiert oder unsicher ist, nimm sie nicht als item auf, "
         "sondern als review_candidate oder excluded_evidence. "
-        "Antworte ausschliesslich als JSON-Objekt."
+        "Antworte ausschließlich als JSON-Objekt."
     )
     user = {
-        "task": "Erzeuge einen semantisch begruendeten Rechnungsentwurf.",
+        "task": "Erzeuge einen semantisch begründeten Rechnungsentwurf.",
         "quarter": quarter,
         "region": region,
         "json_schema": {
@@ -351,7 +351,7 @@ def _billing_items_from_payload(
                     evidence=f"LLM-Vorschlag GOP {gop}",
                     evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
                     possible_gops=[gop],
-                    reason="GOP war nicht im bereitgestellten Katalog-Kandidatenpool und wurde nicht automatisch uebernommen.",
+                    reason="GOP war nicht im bereitgestellten Katalog-Kandidatenpool und wurde nicht automatisch übernommen.",
                 )
             )
             continue
@@ -361,7 +361,7 @@ def _billing_items_from_payload(
                     evidence=f"Doppelter LLM-Vorschlag GOP {gop}",
                     evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
                     possible_gops=[gop],
-                    reason="GOP-Basis wurde bereits als Rechnungsposition uebernommen.",
+                    reason="GOP-Basis wurde bereits als Rechnungsposition übernommen.",
                 )
             )
             continue
@@ -455,7 +455,7 @@ def _review_from_payload(payload: dict[str, Any], evidence: list[Evidence]) -> l
                 evidence=str(item.get("evidence") or "LLM-Review-Kandidat"),
                 evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
                 possible_gops=[str(gop) for gop in _as_list(item.get("possible_gops")) if str(gop).strip()],
-                reason=str(item.get("reason") or "Semantisch unsicher; manuelle Pruefung erforderlich."),
+                reason=str(item.get("reason") or "Semantisch unsicher; manuelle Prüfung erforderlich."),
             )
         )
     return result
@@ -468,7 +468,7 @@ def _excluded_from_payload(payload: dict[str, Any], evidence: list[Evidence]) ->
         evidence_ids = _valid_evidence_ids(item.get("evidence_ids"), evidence_by_id)
         result.append(
             ExcludedEvidence(
-                evidence=str(item.get("evidence") or "Nicht uebernommene Evidenz"),
+                evidence=str(item.get("evidence") or "Nicht übernommene Evidenz"),
                 evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
                 not_billed_gop=_clean_optional_str(item.get("not_billed_gop")),
                 reason=str(item.get("reason") or "Semantisch ausgeschlossen."),

@@ -19,10 +19,10 @@ class BillingRule:
 ACTIVE_RULES: list[BillingRule] = [
     BillingRule("context.kv_notfall_zna.01210.v1", "context.kv_notfall_zna", "01210", "Notfallpauschale I"),
     BillingRule("radiology.ct_head_native.34310.v1", "radiology.ct_head_native", "34310", "CT-Untersuchung des Neurocraniums"),
-    BillingRule("radiology.xray_shoulder_2_planes.34231.v1", "radiology.xray_shoulder_2_planes", "34231", "Aufnahmen der Schulter/des Schulterguertels"),
-    BillingRule("radiology.xray_spine_hws_2_planes.34221.v1", "radiology.xray_spine_hws_2_planes", "34221", "Aufnahmen von Teilen der Wirbelsaeule"),
-    BillingRule("radiology.xray_thorax_2_planes.34241.v1", "radiology.xray_thorax_2_planes", "34241", "Roentgen Thorax/Lunge 2 Ebenen"),
-    BillingRule("radiology.ct_spine_section.34311.v1", "radiology.ct_spine_section", "34311", "CT Wirbelsaeulenabschnitt"),
+    BillingRule("radiology.xray_shoulder_2_planes.34231.v1", "radiology.xray_shoulder_2_planes", "34231", "Aufnahmen der Schulter/des Schultergürtels"),
+    BillingRule("radiology.xray_spine_hws_2_planes.34221.v1", "radiology.xray_spine_hws_2_planes", "34221", "Aufnahmen von Teilen der Wirbelsäule"),
+    BillingRule("radiology.xray_thorax_2_planes.34241.v1", "radiology.xray_thorax_2_planes", "34241", "Röntgen Thorax/Lunge 2 Ebenen"),
+    BillingRule("radiology.ct_spine_section.34311.v1", "radiology.ct_spine_section", "34311", "CT Wirbelsäulenabschnitt"),
     BillingRule("radiology.ct_contrast.34345.v1", "radiology.ct_contrast", "34345", "CT-Kontrastmittelzuschlag"),
     BillingRule("lab.quick.32113.v1", "lab.quick", "32113", "Quick-Wert, Plasma"),
     BillingRule("lab.creatinine.32066.v1", "lab.creatinine", "32066", "Kreatinin"),
@@ -30,11 +30,11 @@ ACTIVE_RULES: list[BillingRule] = [
     BillingRule("lab.potassium.32081.v1", "lab.potassium", "32081", "Kalium"),
     BillingRule("lab.glucose.32025.v1", "lab.glucose", "32025", "Glucose"),
     BillingRule("lab.alt_gpt.32070.v1", "lab.alt_gpt", "32070", "GPT / ALT"),
-    BillingRule("lab.blood_count.erythrocytes.32035.v1", "lab.erythrocytes", "32035A", "Erythrozytenzaehlung"),
-    BillingRule("lab.blood_count.leukocytes.32036.v1", "lab.leukocytes", "32036A", "Leukozytenzaehlung"),
-    BillingRule("lab.blood_count.thrombocytes.32037.v1", "lab.thrombocytes", "32037A", "Thrombozytenzaehlung"),
-    BillingRule("lab.blood_count.hemoglobin.32038.v1", "lab.hemoglobin", "32038A", "Haemoglobin"),
-    BillingRule("lab.blood_count.hematocrit.32039.v1", "lab.hematocrit", "32039A", "Haematokrit"),
+    BillingRule("lab.blood_count.erythrocytes.32035.v1", "lab.erythrocytes", "32035A", "Erythrozytenzählung"),
+    BillingRule("lab.blood_count.leukocytes.32036.v1", "lab.leukocytes", "32036A", "Leukozytenzählung"),
+    BillingRule("lab.blood_count.thrombocytes.32037.v1", "lab.thrombocytes", "32037A", "Thrombozytenzählung"),
+    BillingRule("lab.blood_count.hemoglobin.32038.v1", "lab.hemoglobin", "32038A", "Hämoglobin"),
+    BillingRule("lab.blood_count.hematocrit.32039.v1", "lab.hematocrit", "32039A", "Hämatokrit"),
 ]
 
 

@@ -169,7 +169,7 @@ def internal_candidate_ev(kind: str, page: int = 1) -> Evidence:
         page=page,
         service_date="2026-04-24",
         service_time="12:20",
-        text="Interner Leistungsbogen enthaelt AUA_PERI / Perimetrie",
+        text="Interner Leistungsbogen enthält AUA_PERI / Perimetrie",
         metadata={"candidate_gops": ["06330"], "search_terms": ["nicht-treffender Suchtext"]},
     )
 
@@ -182,7 +182,7 @@ def regional_candidate_ev(kind: str, page: int = 1) -> Evidence:
         page=page,
         service_date="2026-04-24",
         service_time="12:20",
-        text="Regionaler Hessen-Zuschlag fuer den Notfallkontakt ist dokumentiert",
+        text="Regionaler Hessen-Zuschlag für den Notfallkontakt ist dokumentiert",
         metadata={"search_terms": ["Hessen-Zuschlag"]},
     )
 
