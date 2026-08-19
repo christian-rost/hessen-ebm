@@ -275,6 +275,117 @@ SERVICE_EVIDENCE: list[tuple[str, str, tuple[str, ...], tuple[str, ...], float]]
     ),
 ]
 
+INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
+    {
+        "codes": ("ALL_KONGEB",),
+        "kind": "internal_service.consultation_fee",
+        "label": "Interner Hinweis Konsultationsgebuehr",
+        "text": "Interner Leistungsbogen enthaelt ALL_KONGEB / Konsultationsgebuehr",
+        "terms": ("Konsultationspauschale",),
+        "candidate_gops": ("01436",),
+        "confidence": 0.64,
+    },
+    {
+        "codes": ("ALL_ORDGEB",),
+        "kind": "internal_service.ordination_fee",
+        "label": "Interner Hinweis Ordinationsgebuehr",
+        "text": "Interner Leistungsbogen enthaelt ALL_ORDGEB / Ordinationsgebuehr",
+        "terms": ("Augenaerztliche Grundpauschale", "Augenärztliche Grundpauschale", "Grundpauschale Augen"),
+        "candidate_gops": ("06210", "06211", "06212"),
+        "confidence": 0.66,
+    },
+    {
+        "codes": ("ALL_ORDNOT",),
+        "kind": "internal_service.emergency_ordination",
+        "label": "Interner Hinweis Ordinationsgebuehr Notfall",
+        "text": "Interner Leistungsbogen enthaelt ALL_ORDNOT / Ordinationsgebuehr Notfall",
+        "terms": ("Notfallpauschale", "Notfall", "Ordinationsgebuehr", "Grundpauschale"),
+        "candidate_gops": ("01210", "01212", "01214", "01216", "01218"),
+        "confidence": 0.7,
+    },
+    {
+        "codes": ("AUA_BUAHG",),
+        "kind": "internal_service.ophthalmology_fundus",
+        "label": "Interner Hinweis Augenhintergrund",
+        "text": "Interner Leistungsbogen enthaelt AUA_BUAHG / binokulare Untersuchung des Augenhintergrundes",
+        "terms": ("Augenhintergrund", "Fundus", "Binokulare Untersuchung des Augenhintergrundes"),
+        "candidate_gops": ("06333",),
+        "confidence": 0.68,
+    },
+    {
+        "codes": ("AUA_ECHO",),
+        "kind": "internal_service.aua_echo",
+        "label": "Interner Hinweis Echographie Auge",
+        "text": "Interner Leistungsbogen enthaelt AUA_ECHO / Echographie",
+        "terms": ("Sonographie des Auges", "Ultraschall-Biometrie des Auges", "Ultraschall-Pachymetrie"),
+        "candidate_gops": ("33000", "33001", "33002"),
+        "confidence": 0.62,
+    },
+    {
+        "codes": ("AUA_EPU", "ERG", "VEP"),
+        "kind": "internal_service.aua_epu",
+        "label": "Interner Hinweis elektrophysiologische Untersuchung",
+        "text": "Interner Leistungsbogen enthaelt elektrophysiologische Augen-Diagnostik",
+        "terms": ("Elektrophysiologische Untersuchung", "Elektroretinographie", "VEP"),
+        "candidate_gops": ("06312",),
+        "confidence": 0.62,
+    },
+    {
+        "codes": ("AUA_FAG",),
+        "kind": "internal_service.aua_fag",
+        "label": "Interner Hinweis Fluoreszenzangiographie",
+        "text": "Interner Leistungsbogen enthaelt AUA_FAG / Fluoreszenzangiographie",
+        "terms": ("Fluoreszenzangiographie", "Angiographie Auge"),
+        "candidate_gops": ("06331",),
+        "confidence": 0.62,
+    },
+    {
+        "codes": ("AUA_PDT",),
+        "kind": "internal_service.aua_pdt",
+        "label": "Interner Hinweis PDT",
+        "text": "Interner Leistungsbogen enthaelt AUA_PDT / PDT",
+        "terms": ("PDT", "Photodynamische Therapie"),
+        "candidate_gops": ("06332",),
+        "confidence": 0.62,
+    },
+    {
+        "codes": ("AUA_PERI",),
+        "kind": "internal_service.aua_peri",
+        "label": "Interner Hinweis Perimetrie",
+        "text": "Interner Leistungsbogen enthaelt AUA_PERI / Perimetrie",
+        "terms": ("Perimetrie", "Gesichtsfeld"),
+        "candidate_gops": ("06330",),
+        "confidence": 0.62,
+    },
+    {
+        "codes": ("AUA_SCHIEL",),
+        "kind": "internal_service.aua_schiel",
+        "label": "Interner Hinweis Schielbehandlung",
+        "text": "Interner Leistungsbogen enthaelt AUA_SCHIEL / quantitative Untersuchung des binokularen Sehens",
+        "terms": ("Schielbehandlung", "Quantitative Untersuchung des binokularen Sehens"),
+        "candidate_gops": ("06320", "06321"),
+        "confidence": 0.62,
+    },
+    {
+        "codes": ("TWS",),
+        "kind": "internal_service.aua_tws",
+        "label": "Interner Hinweis Traenenweg-Sondierung",
+        "text": "Interner Leistungsbogen enthaelt TWS / TW-Sondierung",
+        "terms": ("Traenenweg", "Traenenwege", "Sondierung", "Kleinchirurgischer Eingriff am Auge"),
+        "candidate_gops": ("06352",),
+        "confidence": 0.58,
+    },
+    {
+        "codes": ("AUA_LIDHEB",),
+        "kind": "internal_service.aua_lidheber",
+        "label": "Interner Hinweis Lidheber-Operation",
+        "text": "Interner Leistungsbogen enthaelt AUA_LIDHEB / OP der Lidsenkung mit Lidheber",
+        "terms": ("Lidheber", "Lidoperation", "Kleinchirurgischer Eingriff am Auge"),
+        "candidate_gops": ("06350", "06351", "06352"),
+        "confidence": 0.58,
+    },
+]
+
 
 def _compact(text: str) -> str:
     normalized = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
@@ -519,7 +630,31 @@ def _search_terms(*terms: str) -> dict[str, object]:
     return {"search_terms": [term for term in terms if term]}
 
 
+def _candidate_metadata(terms: tuple[str, ...], candidate_gops: tuple[str, ...]) -> dict[str, object]:
+    metadata = _search_terms(*terms)
+    if candidate_gops:
+        metadata["candidate_gops"] = list(candidate_gops)
+    return metadata
+
+
+def _has_internal_code(text: str, *codes: str) -> bool:
+    folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower()
+    for code in codes:
+        pattern = rf"(?<![a-z0-9_])(?:\d+(?:[,.]\d+)?\s*)?{re.escape(code.lower())}(?![a-z0-9_])"
+        if re.search(pattern, folded):
+            return True
+    return False
+
+
 def _matches_markers(kind: str, compact: str, markers: tuple[str, ...]) -> bool:
+    if kind == "clinical.domain.surgery" and any(marker in compact for marker in ("geplantereingriff", "opplanung", "kanngeplantwerden")):
+        if not any(marker in compact for marker in ("durchgefuhrt", "opbericht", "operationsbericht")):
+            return False
+    if kind == "clinical.domain.dermatology":
+        clear_dermatology = tuple(marker for marker in markers if marker != "haut")
+        if any(marker in compact for marker in clear_dermatology):
+            return True
+        return "haut" in compact and "netzhaut" not in compact and "netzahut" not in compact
     if kind == "clinical.domain.urology":
         clear_urology = ("prostata", "harnblase", "zystoskopie", "cystoskopie", "uroflow", "harnstau", "ureter", "urin")
         if "neurologie" in compact and not any(marker in compact for marker in clear_urology):
@@ -757,54 +892,25 @@ def _extract_internal_service_hints(page: PageText, segment_type: str) -> list[E
         return []
 
     text = page.text
-    compact = _compact(text)
     service_date, service_time = _service_datetime(text)
     found: list[Evidence] = []
 
-    if "all_ordnot" in compact or "ordinationsgebuhr(notfall)" in compact:
-        found.append(
-            _ev(
-                "internal_service.emergency_ordination",
-                "Interner Hinweis Ordinationsgebuehr Notfall",
-                page.page,
-                "Interner Leistungsbogen enthaelt ALL_ORDNOT / Ordinationsgebuehr Notfall",
-                service_date,
-                service_time,
-                0.7,
-                metadata=_search_terms("Notfallpauschale", "Notfall", "Ordinationsgebuehr", "Grundpauschale"),
-            )
-        )
-
-    if "aua_buahg" in compact or "binokulareuntersuchungdesaugenhintergrundes" in compact:
-        found.append(
-            _ev(
-                "internal_service.ophthalmology_fundus",
-                "Interner Hinweis Augenhintergrund",
-                page.page,
-                "Interner Leistungsbogen enthaelt AUA_BUAHG / binokulare Untersuchung des Augenhintergrundes",
-                service_date,
-                service_time,
-                0.68,
-                metadata=_search_terms("Augenhintergrund", "Fundus", "Binokulare Untersuchung des Augenhintergrundes"),
-            )
-        )
-
-    for code, label, terms in [
-        ("aua_echo", "Interner Hinweis Echographie", ["Echographie", "Ultraschall Auge", "Augenheilkunde"]),
-        ("aua_fag", "Interner Hinweis Fluoreszenzangiographie", ["Fluoreszenzangiographie", "Angiographie Auge"]),
-        ("aua_peri", "Interner Hinweis Perimetrie", ["Perimetrie", "Gesichtsfeld"]),
-    ]:
-        if code in compact:
+    for hint in INTERNAL_SERVICE_HINTS:
+        codes = tuple(str(code) for code in hint["codes"])
+        if _has_internal_code(text, *codes):
             found.append(
                 _ev(
-                    f"internal_service.{code}",
-                    label,
+                    str(hint["kind"]),
+                    str(hint["label"]),
                     page.page,
-                    f"Interner Leistungsbogen enthaelt {code.upper()}",
+                    str(hint["text"]),
                     service_date,
                     service_time,
-                    0.62,
-                    metadata=_search_terms(*terms),
+                    float(hint["confidence"]),
+                    metadata=_candidate_metadata(
+                        tuple(str(term) for term in hint["terms"]),
+                        tuple(str(gop) for gop in hint["candidate_gops"]),
+                    ),
                 )
             )
 
@@ -896,6 +1002,18 @@ def _extract_review_candidates(page: PageText, segment_type: str) -> list[Review
         candidates.append(ReviewCandidate(evidence="Urinstatus", evidence_pages=[page.page], possible_gops=["32720"], reason="Im Goldstandard noch keine Positivregel."))
     if any(token in compact for token in ["crp", "ck-mb", "myoglobin", "harnstoff", "gamma-gt", "ast"]):
         candidates.append(ReviewCandidate(evidence="Erweiterte Laborwerte", evidence_pages=[page.page], possible_gops=["32065", "32069", "32071", "32074", "32092", "32128", "32450"], reason="Nicht jeder dokumentierte Laborwert wird automatisch abgerechnet."))
+    if segment_type == "data_capture":
+        for hint in INTERNAL_SERVICE_HINTS:
+            codes = tuple(str(code) for code in hint["codes"])
+            if _has_internal_code(text, *codes):
+                candidates.append(
+                    ReviewCandidate(
+                        evidence=str(hint["label"]),
+                        evidence_pages=[page.page],
+                        possible_gops=[str(gop) for gop in hint["candidate_gops"]],
+                        reason="Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfaehigkeit pruefen.",
+                    )
+                )
 
     return candidates
 

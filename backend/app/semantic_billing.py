@@ -98,6 +98,8 @@ def _collect_catalog_candidates(
             return
         gop = requested_gop or entry.gop
         gop_base, _ = normalize_gop(gop)
+        if not re.fullmatch(r"\d{5}", gop_base):
+            return
         key = (gop, entry.source)
         if key not in by_key:
             by_key[key] = {
@@ -123,6 +125,10 @@ def _collect_catalog_candidates(
         for gop in rules_by_kind.get(item.kind, []):
             add(catalog.lookup(gop, quarter, region), [item.evidence_id], f"validated prior rule for {item.kind}", gop)
 
+        for gop in _candidate_gops(item):
+            add(catalog.lookup(gop, quarter, region), [item.evidence_id], f"explicit candidate GOP for {item.kind}", gop)
+
+    for item in evidence:
         for term in _search_terms(item):
             for entry in catalog.search(term, quarter, limit=8):
                 add(entry, [item.evidence_id], f"catalog text search for '{term}'")
@@ -131,6 +137,13 @@ def _collect_catalog_candidates(
             break
 
     return list(by_key.values())[:max_candidates]
+
+
+def _candidate_gops(item: Evidence) -> list[str]:
+    metadata_gops = item.metadata.get("candidate_gops") if isinstance(item.metadata, dict) else None
+    if not isinstance(metadata_gops, list):
+        return []
+    return list(dict.fromkeys(str(gop).strip().upper() for gop in metadata_gops if str(gop).strip()))
 
 
 def _search_terms(item: Evidence) -> list[str]:

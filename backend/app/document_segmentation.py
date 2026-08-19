@@ -66,7 +66,12 @@ CLINICAL_TYPES = {
     "therapy_report",
 }
 
-RELEVANT_TYPES = CLINICAL_TYPES
+RELEVANT_TYPES = CLINICAL_TYPES | {"data_capture"}
+
+INTERNAL_SERVICE_CODE_RE = re.compile(
+    r"(?<![a-z0-9_])(?:\d+(?:[,.]\d+)?\s*)?(?:all_[a-z0-9]+|aua_[a-z0-9]+|erg|vep|tws)(?![a-z0-9_])",
+    re.IGNORECASE,
+)
 
 DOMAIN_MARKERS: list[tuple[str, str, tuple[str, ...]]] = [
     (
@@ -357,6 +362,14 @@ def _fold(text: str) -> str:
 
 
 def _matches_domain(segment_type: str, compact: str, markers: tuple[str, ...]) -> bool:
+    if segment_type == "pulmonology_report" and "einstellungen" in compact:
+        clear_pulmonology = tuple(marker for marker in markers if marker not in {"lunge", "sauerstoff"})
+        return any(marker in compact for marker in clear_pulmonology)
+    if segment_type == "dermatology_report":
+        clear_dermatology = tuple(marker for marker in markers if marker != "haut")
+        if any(marker in compact for marker in clear_dermatology):
+            return True
+        return "haut" in compact and "netzhaut" not in compact and "netzahut" not in compact
     if segment_type == "urology_report":
         clear_urology = ("prostata", "harnblase", "zystoskopie", "cystoskopie", "uroflow", "harnstau", "ureter", "urin")
         if "neurologie" in compact and not any(marker in compact for marker in clear_urology):
@@ -370,6 +383,13 @@ def classify_page(text: str) -> tuple[str, float, list[str]]:
     lower = _fold(text)
     compact = _compact(text)
     reasons: list[str] = []
+
+    if _is_data_capture_page(lower):
+        reasons.append("Datenerfassung-/Leistungsbogen-Marker gefunden")
+        return "data_capture", 0.88, reasons
+    if _is_administrative_page(compact):
+        reasons.append("Administrative Patienten-/Einwilligungsseite erkannt")
+        return "other", 0.82, reasons
 
     if "laborbefund" in lower or ("untersuchung" in lower and "referenzbereich" in lower):
         reasons.append("Laborbefund-Marker gefunden")
@@ -393,6 +413,9 @@ def classify_page(text: str) -> tuple[str, float, list[str]]:
         or ("augenambulanz" in compact and ("anamnese" in lower or "beurteilung" in lower))
         or "vordereraugenabschnitt" in compact
         or "hintereraugenabschnitt" in compact
+        or ("vorderer" in compact and "augenabschnitt" in compact)
+        or ("hinterer" in compact and "augenabschnitt" in compact)
+        or "glaskorperblutung" in compact
         or ("beurteilung:" in lower and "therapie" in lower)
         or ("diagnose:" in lower and "herpeskeratitis" in compact)
         or "wirberichtenihnen" in compact and "augenambulanz" in compact
@@ -430,10 +453,44 @@ def classify_page(text: str) -> tuple[str, float, list[str]]:
         reasons.append("Allgemeiner klinischer Bericht gefunden")
         return "clinical_report", 0.74, reasons
 
-    if "datenerfassung" in lower:
-        reasons.append("Datenerfassung-Marker gefunden")
-        return "data_capture", 0.78, reasons
     return "other", 0.5, ["kein spezifischer Marker"]
+
+
+def _is_data_capture_page(lower: str) -> bool:
+    if "datenerfassung" in lower or "leistungsbogen" in lower:
+        return True
+    if "durchgefuhrte leistungen" in lower and INTERNAL_SERVICE_CODE_RE.search(lower):
+        return True
+    if "privatliquidation" in lower and INTERNAL_SERVICE_CODE_RE.search(lower):
+        return True
+    return False
+
+
+def _is_administrative_page(compact: str) -> bool:
+    if any(
+        marker in compact
+        for marker in (
+            "behandlungsvertrag",
+            "datenschutzeinwilligung",
+            "patientenidentifikationsarmband",
+            "patienten-identifikationsarmband",
+            "schweigepflichtentbindung",
+            "auskunftubermeinenkrankheitsverlauf",
+        )
+    ):
+        return not any(
+            marker in compact
+            for marker in (
+                "ambulanzaugenbefund",
+                "behandlungsbericht",
+                "datenerfassung",
+                "durchgefuhrteleistungen",
+                "laborbefund",
+                "radiologiebefund",
+                "standard12ableitungen",
+            )
+        )
+    return False
 
 
 def segment_pages(pages: list[PageText]) -> list[DocumentSegment]:

@@ -54,10 +54,81 @@ def test_ophthalmology_ambulance_pages_create_clinical_evidence():
     assert "clinical.ophthalmology_exam" in kinds
     assert "clinical.ophthalmology_fundus" in kinds
     assert "diagnosis.icd10" in kinds
+    assert "clinical.domain.dermatology" not in kinds
     assert "internal_service.emergency_ordination" in kinds
     assert "internal_service.ophthalmology_fundus" in kinds
     assert all(item.service_date != "1964-11-08" for item in evidence)
-    assert review == []
+    assert any("01210" in item.possible_gops for item in review)
+    assert any("06333" in item.possible_gops for item in review)
+    assert excluded == []
+
+
+def test_ophthalmology_data_capture_continuation_creates_all_internal_hints():
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Behandlungsvertrag ueber Krankenhausleistungen "
+                "Patienten-Identifikationsarmband bei Notfallbehandlung"
+            ),
+        ),
+        PageText(
+            page=2,
+            text=(
+                "Musterklinik Datenerfassung Durchgefuehrte Leistungen "
+                "1.Leistung am24.04.2026 um 12:20 Dauer min. Bereitschaftsdienst "
+                "Leistungsbogen(9080902 Institutsambul. Augenklinik) "
+                "1.00ALL_KONGEB Konsultationsgebuehr "
+                "1.00ALL_ORDGEB Ordinationsgebuehr "
+                "1.00ALL_ORDNOT Ordinationsgebuehr(Notfall) "
+                "1.00AUA_BUAHG Binokulare Untersuchung des Augenhintergrundes "
+                "1.00AUA_ECHO Echographie "
+                "1.00AUA_EPU Elektrophysiologische Untersuchung "
+                "1.00AUA_FAG Fluoreszenzangiographie "
+                "1.00AUA_LIDHEB"
+            ),
+        ),
+        PageText(
+            page=3,
+            text=(
+                "Durchgefuehrte Leistungen OP der Lidsenkung mit Lidheber "
+                "1.00AUA_PDT PDT "
+                "1.00AUA_PERI Perimetrie "
+                "1.00AUA_SCHIEL Quant. Untersuchung des binokularen Sehens "
+                "1.00ERG ERG "
+                "1.00TWS TW-Sondierung "
+                "1.00VEP VEP "
+                "Privatliquidation Selbstzahler/Notfaelle Augenambulanz&EBM Prozeduren"
+            ),
+        ),
+    ]
+
+    segments = segment_pages(pages)
+    evidence, review, excluded, _context = extract_evidence(pages, segments)
+    kinds = {item.kind for item in evidence}
+    metadata_by_kind = {item.kind: item.metadata for item in evidence}
+
+    assert [segment.segment_type for segment in segments] == ["other", "data_capture"]
+    assert segments[1].relevant_for_billing is True
+    assert "clinical.domain.pulmonology" not in kinds
+    assert {
+        "internal_service.consultation_fee",
+        "internal_service.ordination_fee",
+        "internal_service.emergency_ordination",
+        "internal_service.ophthalmology_fundus",
+        "internal_service.aua_echo",
+        "internal_service.aua_epu",
+        "internal_service.aua_fag",
+        "internal_service.aua_lidheber",
+        "internal_service.aua_pdt",
+        "internal_service.aua_peri",
+        "internal_service.aua_schiel",
+        "internal_service.aua_tws",
+    }.issubset(kinds)
+    assert metadata_by_kind["internal_service.ophthalmology_fundus"]["candidate_gops"] == ["06333"]
+    assert metadata_by_kind["internal_service.aua_peri"]["candidate_gops"] == ["06330"]
+    assert metadata_by_kind["internal_service.aua_pdt"]["candidate_gops"] == ["06332"]
+    assert any("06331" in item.possible_gops for item in review)
     assert excluded == []
 
 

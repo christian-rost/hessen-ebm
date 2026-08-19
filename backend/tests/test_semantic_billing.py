@@ -56,6 +56,22 @@ class SearchCatalog(FakeCatalog):
         return super().lookup(gop, quarter, region)
 
 
+class DirectCandidateCatalog(FakeCatalog):
+    def lookup(self, gop: str, quarter: str, region: str = "Hessen"):
+        base, _ = normalize_gop(gop)
+        if base == "06330":
+            return CatalogEntry(
+                source="EBM_KBV",
+                quarter=quarter,
+                gop="06330",
+                gop_base="06330",
+                title="Perimetrie",
+                points=156,
+                euro=19.88,
+            )
+        return super().lookup(gop, quarter, region)
+
+
 def settings() -> Settings:
     return Settings(
         app_env="test",
@@ -93,6 +109,19 @@ def clinical_ev(kind: str, page: int = 1) -> Evidence:
         service_time="19:37",
         text="Binokulare Untersuchung des Augenhintergrundes dokumentiert",
         metadata={"search_terms": ["Augenhintergrund", "Fundus"]},
+    )
+
+
+def internal_candidate_ev(kind: str, page: int = 1) -> Evidence:
+    return Evidence(
+        evidence_id=f"ev-{kind}",
+        kind=kind,
+        label="Interner Hinweis Perimetrie",
+        page=page,
+        service_date="2026-04-24",
+        service_time="12:20",
+        text="Interner Leistungsbogen enthaelt AUA_PERI / Perimetrie",
+        metadata={"candidate_gops": ["06330"], "search_terms": ["nicht-treffender Suchtext"]},
     )
 
 
@@ -197,4 +226,35 @@ def test_semantic_billing_uses_evidence_metadata_search_terms_for_candidates():
     )
 
     assert [item.gop_original for item in result.items] == ["06333"]
+    assert result.items[0].semantic_catalog_candidates == ["cand-001"]
+
+
+def test_semantic_billing_uses_explicit_metadata_gop_candidates_before_text_search():
+    evidence = [internal_candidate_ev("internal_service.aua_peri")]
+
+    def fake_llm(messages, _settings):
+        assert "06330" in messages[1]["content"]
+        return {
+            "items": [
+                {
+                    "gop": "06330",
+                    "quantity": 1,
+                    "evidence_ids": ["ev-internal_service.aua_peri"],
+                    "confidence": "medium",
+                    "reason": "Perimetrie steht als interner Leistungsbogenhinweis bereit.",
+                }
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence,
+        DirectCandidateCatalog(),
+        default_quarter="2026/Q2",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    assert [item.gop_original for item in result.items] == ["06330"]
     assert result.items[0].semantic_catalog_candidates == ["cand-001"]
