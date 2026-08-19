@@ -925,26 +925,87 @@ def _extract_radiology(page: PageText, segment_type: str) -> list[Evidence]:
     compact = _compact(text)
     service_date, service_time = _service_datetime(text, fallback=False)
     found: list[Evidence] = []
+    performed = "durchgefuhrt" in compact and "storniert" not in compact
 
-    if ("ctkopfnativ" in compact or "ctctschadelnativ" in compact) and "durchgefuhrt" in compact:
+    if ("ctkopfnativ" in compact or "ctctschadelnativ" in compact) and performed:
         found.append(_ev("radiology.ct_head_native", "CT Kopf nativ", page.page, "CT Kopf nativ durchgeführt", service_date, service_time, 0.96))
 
-    if ("rontgenschulter2eb" in compact or "roeschulter2eb" in compact) and "durchgefuhrt" in compact:
+    if ("rontgenschulter2eb" in compact or "roeschulter2eb" in compact) and performed:
         found.append(_ev("radiology.xray_shoulder_2_planes", "Röntgen Schulter 2 Ebenen", page.page, "Röntgen Schulter 2 Ebenen durchgeführt", service_date, service_time, 0.96))
 
-    if ("rontgenhws2ebenen" in compact or "roehws2ebenen" in compact) and "durchgefuhrt" in compact:
+    if ("rontgenhws2ebenen" in compact or "roehws2ebenen" in compact) and performed:
         found.append(_ev("radiology.xray_spine_hws_2_planes", "Röntgen HWS 2 Ebenen", page.page, "Röntgen HWS 2 Ebenen durchgeführt", service_date, service_time, 0.96))
 
     if ("rontgenlunge" in compact or "roelunge" in compact or "thorax" in compact) and ("2ebenen" in compact or "p.a." in text.lower()):
         found.append(_ev("radiology.xray_thorax_2_planes", "Röntgen Thorax/Lunge 2 Ebenen", page.page, "Röntgen Thorax/Lunge 2 Ebenen", service_date, service_time, 0.86))
 
-    if ("ctlws" in compact or "ct-lws" in compact or "ctcthws" in compact or "cthws" in compact) and "durchgefuhrt" in compact and "storniert" not in compact:
+    if ("ctlws" in compact or "ct-lws" in compact or "ctcthws" in compact or "cthws" in compact) and performed:
         found.append(_ev("radiology.ct_spine_section", "CT Wirbelsäulenabschnitt", page.page, "CT Wirbelsäulenabschnitt durchgeführt", service_date, service_time, 0.84))
+
+    if _has_any(compact, "rontgenhand", "roehand", "rontgenfuss", "roefuss") and performed:
+        found.append(
+            _ev(
+                "radiology.xray_hand_foot",
+                "Röntgen Hand/Fuß",
+                page.page,
+                "Röntgen Hand/Fuß durchgeführt",
+                service_date,
+                service_time,
+                0.94,
+                metadata=_candidate_metadata(("Aufnahmen der Hand, des Fußes", "Röntgen Hand", "Röntgen Fuß"), ("34232",)),
+            )
+        )
+
+    if _has_any(compact, "rontgenunterarm", "roeunterarm", "rontgenoberarm", "roeoberarm", "rontgenellenbogen", "roeellenbogen", "rontgenknie", "roeknie", "rontgenunterschenkel", "roeunterschenkel", "rontgenoberschenkel", "roeoberschenkel", "rontgensprunggelenk", "roesprunggelenk") and performed:
+        found.append(
+            _ev(
+                "radiology.xray_extremities",
+                "Röntgen Extremitäten",
+                page.page,
+                "Röntgen Extremitäten durchgeführt",
+                service_date,
+                service_time,
+                0.94,
+                metadata=_candidate_metadata(("Aufnahmen der Extremitäten", "Röntgen Extremität", "Röntgen Unterarm"), ("34233",)),
+            )
+        )
+
+    if _has_any(compact, "cthandgelenk", "ctcthandgelenk", "cthand", "ctcthand", "ctfuss", "ctctfuss") and performed:
+        found.append(
+            _ev(
+                "radiology.ct_hand_foot",
+                "CT Hand/Fuß",
+                page.page,
+                "CT Hand/Fuß nativ durchgeführt",
+                service_date,
+                service_time,
+                0.94,
+                metadata=_candidate_metadata(("CT-Untersuchung der Hand, des Fußes", "CT Hand", "CT Fuß"), ("34351",)),
+            )
+        )
+
+    if _has_any(compact, "ctunterarm", "ctctunterarm", "ctoberarm", "ctctoberarm", "ctellenbogen", "ctctellenbogen", "ctknie", "ctctknie", "ctunterschenkel", "ctctunterschenkel", "ctoberschenkel", "ctctoberschenkel") and performed:
+        found.append(
+            _ev(
+                "radiology.ct_extremities",
+                "CT Extremitäten",
+                page.page,
+                "CT Extremitäten nativ durchgeführt",
+                service_date,
+                service_time,
+                0.9,
+                metadata=_candidate_metadata(("CT-Untersuchung der Extremitäten", "CT Extremität"), ("34350",)),
+            )
+        )
 
     if ("+km" in compact or "kontrastmittel" in compact or "imeron" in compact) and "nativ" not in compact:
         found.append(_ev("radiology.ct_contrast", "CT-Kontrastmittel", page.page, "Kontrastmittelgabe dokumentiert", service_date, service_time, 0.8))
 
     return found
+
+
+def _has_any(text: str, *needles: str) -> bool:
+    return any(needle in text for needle in needles)
 
 
 def _extract_labs(

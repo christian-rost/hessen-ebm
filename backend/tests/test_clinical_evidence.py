@@ -160,6 +160,43 @@ def test_ecg_pages_create_semantic_evidence():
     assert excluded == []
 
 
+def test_radiology_hand_forearm_and_wrist_ct_create_billable_evidence():
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Klinik für Radiologie, Neuroradiologie und Nuklearmedizin "
+                "Radiologie - Befund "
+                "RöntgenUnterarmmitHandgelenkrechts,durchgeführtam17.02.2026um13:46 "
+                "RöntgenHandrechts,durchgeführtam17.02.2026um13:36 "
+                "KeinNachweiseinerfrischenFrakturoderLuxationalsTraumafolge."
+            ),
+        ),
+        PageText(
+            page=2,
+            text=(
+                "Radiologie - Befund "
+                "CTHandgelenkrechts,nativ,durchgeführtam17.02.2026um15:23 "
+                "Handgelenk,OssaCarpaliaundteilerfassteOssaMetacarpaliarechtsohneNachweis"
+            ),
+        ),
+    ]
+
+    segments = segment_pages(pages)
+    evidence, review, excluded, context = extract_evidence(pages, segments)
+    evidence_by_kind = {item.kind: item for item in evidence}
+
+    assert len(segments) == 1
+    assert segments[0].segment_type == "radiology_report"
+    assert context["quarter"] == "2026/Q1"
+    assert evidence_by_kind["radiology.xray_extremities"].metadata["candidate_gops"] == ["34233"]
+    assert evidence_by_kind["radiology.xray_hand_foot"].metadata["candidate_gops"] == ["34232"]
+    assert evidence_by_kind["radiology.ct_hand_foot"].metadata["candidate_gops"] == ["34351"]
+    assert evidence_by_kind["radiology.ct_hand_foot"].service_time == "15:23"
+    assert review == []
+    assert excluded == []
+
+
 def test_obstetric_gynecology_pages_create_generic_semantic_evidence():
     pages = [
         PageText(

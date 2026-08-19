@@ -15,6 +15,10 @@ class FakeCatalog(CatalogRepository):
             "34310": ("CT-Untersuchung des Neurocraniums", 534, 66.18),
             "34231": ("Aufnahmen der Schulter", 137, 16.98),
             "34221": ("Aufnahmen von Teilen der Wirbelsäule", 140, 17.35),
+            "34232": ("Aufnahmen der Hand, des Fußes", 99, 12.61),
+            "34233": ("Aufnahmen der Extremitäten", 99, 12.61),
+            "34350": ("CT-Untersuchung der Extremitäten außer Hand/Fuß", 500, 63.70),
+            "34351": ("CT-Untersuchung der Hand, des Fußes", 500, 63.70),
             "32113": ("Quick-Wert, Plasma", None, 0.58),
             "32066": ("Kreatinin", None, 0.25),
             "32083": ("Natrium", None, 0.25),
@@ -72,3 +76,17 @@ def test_case_FALL-B_rule_total():
     assert summary.amount_total_eur == 119.81
     assert [item.gop_original for item in items[:4]] == ["01210", "34310", "34231", "34221"]
     assert items[0].catalog_source_label == "KBV EBM 2025/Q4"
+
+
+def test_radiology_extremity_hand_and_wrist_ct_rules():
+    evidence = [
+        ev("radiology.xray_extremities"),
+        ev("radiology.xray_hand_foot"),
+        ev("radiology.ct_hand_foot"),
+    ]
+
+    items, summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
+
+    assert [item.gop_original for item in items] == ["34232", "34233", "34351"]
+    assert summary.points_total == 698
+    assert summary.amount_total_eur == 88.92
