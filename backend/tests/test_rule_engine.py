@@ -29,7 +29,17 @@ class FakeCatalog(CatalogRepository):
         }
         base = gop[:5]
         title, points, euro = values[base]
-        return CatalogEntry(source="EBM_KBV", quarter=quarter, gop=base, gop_base=base, title=title, points=points, euro=euro)
+        return CatalogEntry(
+            source="EBM_KBV",
+            quarter=quarter,
+            catalog_id=f"ebm_kbv_{quarter.lower().replace('/', '_')}",
+            catalog_label=f"KBV EBM {quarter}",
+            gop=base,
+            gop_base=base,
+            title=title,
+            points=points,
+            euro=euro,
+        )
 
 
 def ev(kind: str, page: int = 1) -> Evidence:
@@ -61,3 +71,4 @@ def test_case_FALL-B_rule_total():
     assert summary.points_total == 931
     assert summary.amount_total_eur == 119.81
     assert [item.gop_original for item in items[:4]] == ["01210", "34310", "34231", "34221"]
+    assert items[0].catalog_source_label == "KBV EBM 2025/Q4"

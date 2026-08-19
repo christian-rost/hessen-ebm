@@ -108,6 +108,9 @@ def _collect_catalog_candidates(
                 "gop_base": gop_base,
                 "title": entry.title,
                 "source": entry.source,
+                "catalog_id": entry.catalog_id,
+                "catalog_label": entry.catalog_label,
+                "data_stand": entry.data_stand,
                 "points": entry.points,
                 "euro": entry.euro,
                 "region": entry.region,
@@ -185,6 +188,9 @@ def _build_messages(
             "gop_base": item["gop_base"],
             "title": item["title"],
             "source": item["source"],
+            "catalog_id": item.get("catalog_id"),
+            "catalog_label": item.get("catalog_label"),
+            "data_stand": item.get("data_stand"),
             "points": item["points"],
             "euro": item["euro"],
             "evidence_ids": item["evidence_ids"],
@@ -361,7 +367,7 @@ def _billing_items_from_payload(
             continue
         used_bases.add(gop_base)
 
-        entry = catalog.lookup(gop, quarter, region=region)
+        entry = _lookup_candidate_entry(catalog, gop, quarter, region, candidate)
         validation_notes: list[str] = []
         if not entry:
             validation_status = "catalog_missing"
@@ -369,7 +375,10 @@ def _billing_items_from_payload(
             title = candidate["title"]
             points = None
             amount = None
-            source = "UNKNOWN"
+            source = candidate.get("source") or "UNKNOWN"
+            source_label = candidate.get("catalog_label")
+            catalog_id = candidate.get("catalog_id")
+            catalog_data_stand = candidate.get("data_stand")
         else:
             confidence = str(proposal.get("confidence") or "medium").lower()
             validation_status = "review" if confidence == "low" else "valid"
@@ -377,6 +386,9 @@ def _billing_items_from_payload(
             points = entry.points
             amount = entry.euro
             source = entry.source
+            source_label = entry.catalog_label
+            catalog_id = entry.catalog_id
+            catalog_data_stand = entry.data_stand
 
         selected = _select_evidence_for_item(evidence_ids, evidence_by_id)
         service_date = _clean_optional_str(proposal.get("service_date")) or (selected.service_date if selected else None)
@@ -394,6 +406,9 @@ def _billing_items_from_payload(
                 gop_suffix=gop_suffix,
                 title=title,
                 catalog_source=source,
+                catalog_source_label=source_label,
+                catalog_id=catalog_id,
+                catalog_data_stand=catalog_data_stand,
                 quarter=quarter,
                 service_date=service_date,
                 service_time=service_time,
@@ -413,6 +428,21 @@ def _billing_items_from_payload(
         )
 
     return items, review
+
+
+def _lookup_candidate_entry(
+    catalog: CatalogRepository,
+    gop: str,
+    quarter: str,
+    region: str,
+    candidate: dict[str, Any],
+) -> CatalogEntry | None:
+    source = candidate.get("source")
+    if source == "KV_HESSEN_GOP":
+        return catalog.lookup_hessen(gop, quarter, region)
+    if source == "EBM_KBV":
+        return catalog.lookup_ebm(gop, quarter)
+    return catalog.lookup(gop, quarter, region=region)
 
 
 def _review_from_payload(payload: dict[str, Any], evidence: list[Evidence]) -> list[ReviewCandidate]:

@@ -635,7 +635,11 @@ function ResultPanel({ result, onDownload }) {
                 <td><code>{item.gop_original}</code></td>
                 <td>{item.title}</td>
                 <td>{item.service_date || "-"}</td>
-                <td>{item.catalog_source}</td>
+                <td className="source-cell">
+                  <strong>{item.catalog_source_label || item.catalog_source}</strong>
+                  {item.catalog_id && <span>{item.catalog_id}</span>}
+                  {item.catalog_data_stand && <span>Stand {item.catalog_data_stand}</span>}
+                </td>
                 <td className="reason-cell">{item.semantic_reason || item.rule_id}</td>
                 <td>{item.points ?? "-"}</td>
                 <td>{formatEuro(item.amount_eur)}</td>

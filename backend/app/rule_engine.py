@@ -86,11 +86,17 @@ def generate_billing_items(
             points = None
             amount = None
             source = "UNKNOWN"
+            source_label = None
+            catalog_id = None
+            catalog_data_stand = None
         else:
             title = entry.title
             points = entry.points
             amount = entry.euro
             source = entry.source
+            source_label = entry.catalog_label
+            catalog_id = entry.catalog_id
+            catalog_data_stand = entry.data_stand
 
         items.append(
             BillingItem(
@@ -100,6 +106,9 @@ def generate_billing_items(
                 gop_suffix=gop_suffix,
                 title=title,
                 catalog_source=source,
+                catalog_source_label=source_label,
+                catalog_id=catalog_id,
+                catalog_data_stand=catalog_data_stand,
                 quarter=quarter,
                 service_date=selected.service_date,
                 service_time=selected.service_time,

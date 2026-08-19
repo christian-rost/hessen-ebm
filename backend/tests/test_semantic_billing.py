@@ -19,7 +19,23 @@ class FakeCatalog(CatalogRepository):
         if base not in values:
             return None
         title, points, euro = values[base]
-        return CatalogEntry(source="EBM_KBV", quarter=quarter, gop=base, gop_base=base, title=title, points=points, euro=euro)
+        return CatalogEntry(
+            source="EBM_KBV",
+            quarter=quarter,
+            catalog_id=f"ebm_kbv_{quarter.lower().replace('/', '_')}",
+            catalog_label=f"KBV EBM {quarter}",
+            gop=base,
+            gop_base=base,
+            title=title,
+            points=points,
+            euro=euro,
+        )
+
+    def lookup_ebm(self, gop: str, quarter: str):
+        return self.lookup(gop, quarter)
+
+    def lookup_hessen(self, gop: str, quarter: str, region: str = "Hessen"):
+        return None
 
     def search(self, query: str, quarter: str, limit: int = 25):
         return []
@@ -33,6 +49,8 @@ class SearchCatalog(FakeCatalog):
             CatalogEntry(
                 source="EBM_KBV",
                 quarter=quarter,
+                catalog_id=f"ebm_kbv_{quarter.lower().replace('/', '_')}",
+                catalog_label=f"KBV EBM {quarter}",
                 gop="06333",
                 gop_base="06333",
                 title="Binokulare Untersuchung des Augenhintergrundes",
@@ -47,6 +65,8 @@ class SearchCatalog(FakeCatalog):
             return CatalogEntry(
                 source="EBM_KBV",
                 quarter=quarter,
+                catalog_id=f"ebm_kbv_{quarter.lower().replace('/', '_')}",
+                catalog_label=f"KBV EBM {quarter}",
                 gop="06333",
                 gop_base="06333",
                 title="Binokulare Untersuchung des Augenhintergrundes",
@@ -63,6 +83,8 @@ class DirectCandidateCatalog(FakeCatalog):
             return CatalogEntry(
                 source="EBM_KBV",
                 quarter=quarter,
+                catalog_id=f"ebm_kbv_{quarter.lower().replace('/', '_')}",
+                catalog_label=f"KBV EBM {quarter}",
                 gop="06330",
                 gop_base="06330",
                 title="Perimetrie",
@@ -70,6 +92,33 @@ class DirectCandidateCatalog(FakeCatalog):
                 euro=19.88,
             )
         return super().lookup(gop, quarter, region)
+
+
+class RegionalCandidateCatalog(FakeCatalog):
+    def lookup_hessen(self, gop: str, quarter: str, region: str = "Hessen"):
+        base, _ = normalize_gop(gop)
+        if base != "01210":
+            return None
+        return CatalogEntry(
+            source="KV_HESSEN_GOP",
+            quarter=quarter,
+            catalog_id=f"kv_hessen_gop_{quarter.lower().replace('/', '_')}",
+            catalog_label=f"KV_HESSEN_GOP {region} {quarter}",
+            data_stand="01.04.2026",
+            gop="01210H",
+            gop_base="01210",
+            title="Hessen-Zuschlag Notfall",
+            points=26,
+            euro=3.21,
+            region=region,
+            page=7,
+        )
+
+    def search(self, query: str, quarter: str, limit: int = 25):
+        if "Hessen-Zuschlag" not in query:
+            return []
+        entry = self.lookup_hessen("01210H", quarter)
+        return [entry] if entry else []
 
 
 def settings() -> Settings:
@@ -122,6 +171,19 @@ def internal_candidate_ev(kind: str, page: int = 1) -> Evidence:
         service_time="12:20",
         text="Interner Leistungsbogen enthaelt AUA_PERI / Perimetrie",
         metadata={"candidate_gops": ["06330"], "search_terms": ["nicht-treffender Suchtext"]},
+    )
+
+
+def regional_candidate_ev(kind: str, page: int = 1) -> Evidence:
+    return Evidence(
+        evidence_id=f"ev-{kind}",
+        kind=kind,
+        label="Hessen-Zuschlag Notfall",
+        page=page,
+        service_date="2026-04-24",
+        service_time="12:20",
+        text="Regionaler Hessen-Zuschlag fuer den Notfallkontakt ist dokumentiert",
+        metadata={"search_terms": ["Hessen-Zuschlag"]},
     )
 
 
@@ -258,3 +320,37 @@ def test_semantic_billing_uses_explicit_metadata_gop_candidates_before_text_sear
 
     assert [item.gop_original for item in result.items] == ["06330"]
     assert result.items[0].semantic_catalog_candidates == ["cand-001"]
+
+
+def test_semantic_billing_preserves_regional_catalog_source():
+    evidence = [regional_candidate_ev("regional.hessen_notfall_zuschlag")]
+
+    def fake_llm(messages, _settings):
+        assert "KV_HESSEN_GOP Hessen 2026/Q2" in messages[1]["content"]
+        return {
+            "items": [
+                {
+                    "gop": "01210H",
+                    "quantity": 1,
+                    "evidence_ids": ["ev-regional.hessen_notfall_zuschlag"],
+                    "confidence": "medium",
+                    "reason": "Regionaler Hessen-Zuschlag wurde aus der Evidenz abgeleitet.",
+                }
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence,
+        RegionalCandidateCatalog(),
+        default_quarter="2026/Q2",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    assert [item.gop_original for item in result.items] == ["01210H"]
+    assert result.items[0].catalog_source == "KV_HESSEN_GOP"
+    assert result.items[0].catalog_source_label == "KV_HESSEN_GOP Hessen 2026/Q2"
+    assert result.items[0].catalog_id == "kv_hessen_gop_2026_q2"
+    assert result.items[0].catalog_data_stand == "01.04.2026"

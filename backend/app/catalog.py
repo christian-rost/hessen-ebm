@@ -37,6 +37,19 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def _ebm_catalog_id(quarter: str) -> str:
+    return f"ebm_kbv_{quarter.lower().replace('/', '_')}"
+
+
+def _ebm_catalog_label(quarter: str) -> str:
+    return f"KBV EBM {quarter}"
+
+
+def _regional_catalog_label(source_system: str | None, region: str | None, quarter: str) -> str:
+    parts = [part for part in (source_system, region, quarter) if part]
+    return " ".join(parts) if parts else f"Regionaler Katalog {quarter}"
+
+
 class CatalogRepository:
     def __init__(self, db_path: Path):
         self.db_path = db_path
@@ -97,17 +110,30 @@ class CatalogRepository:
             return None
         gop_base, _ = normalize_gop(gop)
         with self._connect() as conn:
-            if "details" not in self._tables(conn):
+            tables = self._tables(conn)
+            if "details" not in tables:
                 return None
-            row = conn.execute(
-                "select gop, title, points, euro from details where quarter = ? and gop = ?",
-                (quarter, gop_base),
-            ).fetchone()
+            if "snapshots" in tables:
+                row = conn.execute(
+                    "select d.gop, d.title, d.points, d.euro, s.data_stand "
+                    "from details d left join snapshots s on s.quarter = d.quarter "
+                    "where d.quarter = ? and d.gop = ?",
+                    (quarter, gop_base),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "select gop, title, points, euro, null as data_stand "
+                    "from details where quarter = ? and gop = ?",
+                    (quarter, gop_base),
+                ).fetchone()
         if not row:
             return None
         return CatalogEntry(
             source="EBM_KBV",
             quarter=quarter,
+            catalog_id=_ebm_catalog_id(quarter),
+            catalog_label=_ebm_catalog_label(quarter),
+            data_stand=row["data_stand"],
             gop=row["gop"],
             gop_base=gop_base,
             title=row["title"] or gop_base,
@@ -120,20 +146,36 @@ class CatalogRepository:
             return None
         gop_base, _ = normalize_gop(gop)
         with self._connect() as conn:
-            if "regional_gops" not in self._tables(conn):
+            tables = self._tables(conn)
+            if "regional_gops" not in tables:
                 return None
-            row = conn.execute(
-                "select gop_code, gop_base, title, points, euro, page from regional_gops "
-                "where quarter = ? and region = ? and gop_base = ? "
-                "order by gop_code limit 1",
-                (quarter, region, gop_base),
-            ).fetchone()
+            if "regional_catalogs" in tables:
+                row = conn.execute(
+                    "select g.catalog_id, g.gop_code, g.gop_base, g.title, g.points, g.euro, g.page, "
+                    "c.source_system, c.region, c.quarter, c.data_stand "
+                    "from regional_gops g "
+                    "join regional_catalogs c on c.catalog_id = g.catalog_id "
+                    "where g.quarter = ? and g.region = ? and g.gop_base = ? "
+                    "order by g.gop_code limit 1",
+                    (quarter, region, gop_base),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "select null as catalog_id, gop_code, gop_base, title, points, euro, page, "
+                    "source_system, region, quarter, null as data_stand "
+                    "from regional_gops where quarter = ? and region = ? and gop_base = ? "
+                    "order by gop_code limit 1",
+                    (quarter, region, gop_base),
+                ).fetchone()
         if not row:
             return None
         return CatalogEntry(
             source="KV_HESSEN_GOP",
             quarter=quarter,
             region=region,
+            catalog_id=row["catalog_id"],
+            catalog_label=_regional_catalog_label(row["source_system"], row["region"], row["quarter"]),
+            data_stand=row["data_stand"],
             gop=row["gop_code"],
             gop_base=row["gop_base"],
             title=row["title"] or row["gop_code"],
@@ -151,21 +193,43 @@ class CatalogRepository:
         term = f"%{query.strip()}%"
         with self._connect() as conn:
             tables = self._tables(conn)
-            ebm_rows = conn.execute(
-                "select gop, title, points, euro from details "
-                "where quarter = ? and (gop like ? or title like ? or text like ?) "
-                "order by case when gop = ? then 0 when gop like ? then 1 else 2 end, gop "
-                "limit ?",
-                (quarter, term, term, term, query.strip(), f"{query.strip()}%", limit),
-            ).fetchall()
+            if "snapshots" in tables:
+                ebm_rows = conn.execute(
+                    "select d.gop, d.title, d.points, d.euro, s.data_stand "
+                    "from details d left join snapshots s on s.quarter = d.quarter "
+                    "where d.quarter = ? and (d.gop like ? or d.title like ? or d.text like ?) "
+                    "order by case when d.gop = ? then 0 when d.gop like ? then 1 else 2 end, d.gop "
+                    "limit ?",
+                    (quarter, term, term, term, query.strip(), f"{query.strip()}%", limit),
+                ).fetchall()
+            else:
+                ebm_rows = conn.execute(
+                    "select gop, title, points, euro, null as data_stand from details "
+                    "where quarter = ? and (gop like ? or title like ? or text like ?) "
+                    "order by case when gop = ? then 0 when gop like ? then 1 else 2 end, gop "
+                    "limit ?",
+                    (quarter, term, term, term, query.strip(), f"{query.strip()}%", limit),
+                ).fetchall()
             regional_rows = []
             if "regional_gops" in tables:
-                regional_rows = conn.execute(
-                    "select gop_code, gop_base, title, points, euro, region, page from regional_gops "
-                    "where quarter = ? and (gop_code like ? or title like ? or description like ?) "
-                    "order by gop_code limit ?",
-                    (quarter, term, term, term, limit),
-                ).fetchall()
+                if "regional_catalogs" in tables:
+                    regional_rows = conn.execute(
+                        "select g.catalog_id, g.gop_code, g.gop_base, g.title, g.points, g.euro, "
+                        "g.region, g.page, c.source_system, c.data_stand "
+                        "from regional_gops g "
+                        "join regional_catalogs c on c.catalog_id = g.catalog_id "
+                        "where g.quarter = ? and (g.gop_code like ? or g.title like ? or g.description like ?) "
+                        "order by g.gop_code limit ?",
+                        (quarter, term, term, term, limit),
+                    ).fetchall()
+                else:
+                    regional_rows = conn.execute(
+                        "select null as catalog_id, gop_code, gop_base, title, points, euro, "
+                        "region, page, source_system, null as data_stand from regional_gops "
+                        "where quarter = ? and (gop_code like ? or title like ? or description like ?) "
+                        "order by gop_code limit ?",
+                        (quarter, term, term, term, limit),
+                    ).fetchall()
 
         entries: list[CatalogEntry] = []
         for row in ebm_rows:
@@ -173,6 +237,9 @@ class CatalogRepository:
                 CatalogEntry(
                     source="EBM_KBV",
                     quarter=quarter,
+                    catalog_id=_ebm_catalog_id(quarter),
+                    catalog_label=_ebm_catalog_label(quarter),
+                    data_stand=row["data_stand"],
                     gop=row["gop"],
                     gop_base=row["gop"],
                     title=row["title"] or row["gop"],
@@ -185,6 +252,9 @@ class CatalogRepository:
                 CatalogEntry(
                     source="KV_HESSEN_GOP",
                     quarter=quarter,
+                    catalog_id=row["catalog_id"],
+                    catalog_label=_regional_catalog_label(row["source_system"], row["region"], quarter),
+                    data_stand=row["data_stand"],
                     gop=row["gop_code"],
                     gop_base=row["gop_base"],
                     title=row["title"] or row["gop_code"],

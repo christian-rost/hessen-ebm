@@ -39,6 +39,9 @@ class Evidence(BaseModel):
 class CatalogEntry(BaseModel):
     source: Literal["EBM_KBV", "KV_HESSEN_GOP"]
     quarter: str
+    catalog_id: str | None = None
+    catalog_label: str | None = None
+    data_stand: str | None = None
     gop: str
     gop_base: str
     title: str
@@ -55,6 +58,9 @@ class BillingItem(BaseModel):
     gop_suffix: str | None = None
     title: str
     catalog_source: str
+    catalog_source_label: str | None = None
+    catalog_id: str | None = None
+    catalog_data_stand: str | None = None
     quarter: str
     service_date: str | None = None
     service_time: str | None = None

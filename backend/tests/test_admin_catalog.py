@@ -23,6 +23,33 @@ def build_catalog(path: Path):
         conn.execute("insert into details values ('2025/Q4', 'n1', '01210', 'Notfallpauschale I', '120', '14.87')")
 
 
+def add_regional_catalog(path: Path):
+    conn = sqlite3.connect(path)
+    with conn:
+        conn.execute(
+            "create table regional_catalogs (catalog_id text primary key, source_system text not null, "
+            "region text not null, quarter text not null, title text, source_file text, source_url text, "
+            "data_stand text, imported_at text not null, page_count integer not null default 0, "
+            "sha256 text, unique (source_system, region, quarter))"
+        )
+        conn.execute(
+            "create table regional_gops (id integer primary key autoincrement, catalog_id text not null, "
+            "source_system text not null, region text not null, quarter text not null, gop_original text not null, "
+            "gop_code text not null, gop_base text not null, title text, description text, euro real, points text, page integer)"
+        )
+        conn.execute(
+            "insert into regional_catalogs values ("
+            "'kv_hessen_gop_2026_q2', 'KV_HESSEN_GOP', 'Hessen', '2026/Q2', "
+            "'Hessen-GOP Q2', null, null, '01.04.2026', '2026-06-16T00:00:00+00:00', 10, 'abc')"
+        )
+        conn.execute(
+            "insert into regional_gops(catalog_id, source_system, region, quarter, gop_original, gop_code, gop_base, "
+            "title, description, euro, points, page) values ("
+            "'kv_hessen_gop_2026_q2', 'KV_HESSEN_GOP', 'Hessen', '2026/Q2', '01210H', "
+            "'01210H', '01210', 'Hessen-Zuschlag Notfall', 'Regionaler Zuschlag', 3.21, '26', 7)"
+        )
+
+
 def test_validate_catalog_database(tmp_path):
     source = tmp_path / "catalog.sqlite"
     build_catalog(source)
@@ -55,5 +82,25 @@ def test_catalog_lookup_works_without_regional_tables(tmp_path):
 
     repo = CatalogRepository(source)
 
-    assert repo.lookup("01210", "2025/Q4").title == "Notfallpauschale I"
+    entry = repo.lookup("01210", "2025/Q4")
+
+    assert entry.title == "Notfallpauschale I"
+    assert entry.catalog_id == "ebm_kbv_2025_q4"
+    assert entry.catalog_label == "KBV EBM 2025/Q4"
+    assert entry.data_stand == "02.04.2026"
     assert repo.lookup_hessen("01210", "2025/Q4") is None
+
+
+def test_regional_lookup_uses_catalog_metadata(tmp_path):
+    source = tmp_path / "catalog_with_regional.sqlite"
+    build_catalog(source)
+    add_regional_catalog(source)
+
+    repo = CatalogRepository(source)
+    entry = repo.lookup_hessen("01210", "2026/Q2")
+
+    assert entry.source == "KV_HESSEN_GOP"
+    assert entry.gop == "01210H"
+    assert entry.catalog_id == "kv_hessen_gop_2026_q2"
+    assert entry.catalog_label == "KV_HESSEN_GOP Hessen 2026/Q2"
+    assert entry.data_stand == "01.04.2026"
