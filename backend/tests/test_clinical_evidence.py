@@ -87,3 +87,103 @@ def test_ecg_pages_create_semantic_evidence():
     assert "12-Kanal-EKG" in evidence_by_kind["clinical.ecg_12_lead"].metadata["search_terms"]
     assert review == []
     assert excluded == []
+
+
+def test_obstetric_gynecology_pages_create_generic_semantic_evidence():
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Klinik fuer Gynaekologie und Geburtshilfe Frau Hara Sohn geb.: 03.05.1995 "
+                "wir berichten Ihnen ueber Hara Sohn, die sich am 24.02.2026 in ambulanter "
+                "Behandlung befand. Anamnese Wundheilungsstoerung nach Dammriss IIIA mit "
+                "V.a. perianalen Granulationspolypen. Procedere Indikation zur operativen "
+                "Abtragung des Granulationspolypen."
+            ),
+        ),
+        PageText(
+            page=2,
+            text=(
+                "Verlaufskontrolle 01.01.2026 Indikation Kontrolle am Termin "
+                "Einlingsschwangerschaft Fetale Biometrie BPD 97,1mm AU 320,4mm "
+                "Dopplersonographie Arteria umbilicalis unauffaellig CTG alle 2 Tage."
+            ),
+        ),
+        PageText(
+            page=3,
+            text=(
+                "Jeon, Hara - 03.05.1995 CTG-Beurteilung: Normal "
+                "01.01.2026 (Start: 13:05 Uhr, Dauer: 0 h 21 min)"
+            ),
+        ),
+    ]
+
+    segments = segment_pages(pages)
+    evidence, review, excluded, context = extract_evidence(pages, segments)
+    kinds = {item.kind for item in evidence}
+
+    assert [segment.segment_type for segment in segments] == ["gynecology_obstetrics", "ctg"]
+    assert context["treatment_start"] == "2026-02-24T00:00:00"
+    assert context["quarter"] == "2026/Q1"
+    assert "clinical.domain.gynecology_obstetrics" in kinds
+    assert "clinical.diagnostics.sonography" in kinds
+    assert "clinical.diagnostics.doppler_sonography" in kinds
+    assert "clinical.diagnostics.ctg" in kinds
+    assert "clinical.diagnostics.prenatal_biometry" in kinds
+    assert "clinical.procedure.wound_or_minor_surgery" in kinds
+    assert all(item.service_date != "1995-05-03" for item in evidence)
+    assert review == []
+    assert excluded == []
+
+
+def test_major_ebm_domains_are_segmented_as_billing_relevant():
+    pages = [
+        PageText(page=1, text="Kardiologie Echokardiographie und Herzkatheter Befund am 04.01.2026"),
+        PageText(page=2, text="Pneumologie Lungenfunktion Spirometrie bei COPD am 05.01.2026"),
+        PageText(page=3, text="Gastroenterologie Koloskopie Endoskopie Befund am 06.01.2026"),
+        PageText(page=4, text="Urologie Uroflow und Zystoskopie bei Harnstau am 07.01.2026"),
+        PageText(page=5, text="Dermatologie Dermatoskopie Haut Naevus Exzision am 08.01.2026"),
+        PageText(page=6, text="HNO Audiometrie Tympanometrie Laryngoskopie am 09.01.2026"),
+        PageText(page=7, text="Neurologie EEG EMG NLG bei Parese am 10.01.2026"),
+        PageText(page=8, text="Psychiatrie Psychotherapie Depression Gespraech am 11.01.2026"),
+        PageText(page=9, text="Orthopaedie Unfallchirurgie Fraktur Gelenk Trauma am 12.01.2026"),
+        PageText(page=10, text="Onkologie Haematologie Tumor Chemotherapie am 13.01.2026"),
+        PageText(page=11, text="Nephrologie Dialyse Haemodialyse Niereninsuffizienz am 14.01.2026"),
+        PageText(page=12, text="Impfung Vorsorge Frueherkennung Screening DMP am 15.01.2026"),
+    ]
+
+    segments = segment_pages(pages)
+    evidence, _review, _excluded, context = extract_evidence(pages, segments)
+    segment_types = {segment.segment_type for segment in segments}
+    kinds = {item.kind for item in evidence}
+
+    assert all(segment.relevant_for_billing for segment in segments)
+    assert {
+        "cardiology_report",
+        "pulmonology_report",
+        "gastroenterology_report",
+        "urology_report",
+        "dermatology_report",
+        "ent_report",
+        "neurology_report",
+        "psychiatry_report",
+        "orthopedics_report",
+        "oncology_report",
+        "nephrology_report",
+        "prevention_report",
+    }.issubset(segment_types)
+    assert {
+        "clinical.domain.cardiology",
+        "clinical.domain.pulmonology",
+        "clinical.domain.gastroenterology",
+        "clinical.domain.urology",
+        "clinical.domain.dermatology",
+        "clinical.domain.ent",
+        "clinical.domain.neurology",
+        "clinical.domain.psychiatry",
+        "clinical.domain.orthopedics_trauma",
+        "clinical.domain.oncology_hematology",
+        "clinical.domain.nephrology_dialysis",
+        "clinical.domain.prevention_vaccination",
+    }.issubset(kinds)
+    assert context["quarter"] == "2026/Q1"

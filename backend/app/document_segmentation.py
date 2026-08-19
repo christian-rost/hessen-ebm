@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from .models import DocumentSegment, PageText
 
@@ -12,20 +13,361 @@ SEGMENT_LABELS = {
     "laboratory_result": "Laborbefund",
     "consult": "Konsil",
     "ecg": "EKG",
+    "ctg": "CTG / Tokographie",
+    "clinical_report": "Klinischer Bericht",
+    "cardiology_report": "Kardiologie",
+    "pulmonology_report": "Pneumologie",
+    "gastroenterology_report": "Gastroenterologie / Endoskopie",
+    "gynecology_obstetrics": "Gynaekologie / Geburtshilfe",
+    "urology_report": "Urologie",
+    "dermatology_report": "Dermatologie",
+    "ent_report": "HNO",
+    "neurology_report": "Neurologie",
+    "psychiatry_report": "Psychiatrie / Psychotherapie",
+    "orthopedics_report": "Orthopaedie / Unfallchirurgie",
+    "pediatrics_report": "Paediatrie",
+    "surgery_report": "Chirurgie / OP",
+    "anesthesia_report": "Anaesthesie / Schmerztherapie",
+    "pathology_report": "Pathologie / Zytologie",
+    "oncology_report": "Onkologie / Haematologie",
+    "nephrology_report": "Nephrologie / Dialyse",
+    "prevention_report": "Praevention / Impfen",
+    "therapy_report": "Therapie / Heilmittel",
     "data_capture": "Datenerfassung",
     "request": "Anforderung / Indikationspruefung",
     "other": "Sonstiges Dokument",
 }
 
-RELEVANT_TYPES = {"case_context", "treatment_report", "radiology_report", "laboratory_result", "ecg"}
+CLINICAL_TYPES = {
+    "case_context",
+    "treatment_report",
+    "radiology_report",
+    "laboratory_result",
+    "ecg",
+    "ctg",
+    "clinical_report",
+    "cardiology_report",
+    "pulmonology_report",
+    "gastroenterology_report",
+    "gynecology_obstetrics",
+    "urology_report",
+    "dermatology_report",
+    "ent_report",
+    "neurology_report",
+    "psychiatry_report",
+    "orthopedics_report",
+    "pediatrics_report",
+    "surgery_report",
+    "anesthesia_report",
+    "pathology_report",
+    "oncology_report",
+    "nephrology_report",
+    "prevention_report",
+    "therapy_report",
+}
+
+RELEVANT_TYPES = CLINICAL_TYPES
+
+DOMAIN_MARKERS: list[tuple[str, str, tuple[str, ...]]] = [
+    (
+        "gynecology_obstetrics",
+        "Gynaekologie-/Geburtshilfe-Marker gefunden",
+        (
+            "gynakologie",
+            "geburtshilfe",
+            "frauenklinik",
+            "notfallambulanzfrauenklinik",
+            "pranatal",
+            "praenatal",
+            "schwangerschaft",
+            "ssw",
+            "fetale",
+            "fetal",
+            "ctg",
+            "tokographie",
+            "dopplersonographie",
+            "vaginal",
+            "zervix",
+            "uterus",
+            "ovar",
+            "mamma",
+            "granulationspolyp",
+            "dammriss",
+        ),
+    ),
+    (
+        "cardiology_report",
+        "Kardiologie-Marker gefunden",
+        (
+            "kardiologie",
+            "herz",
+            "koronar",
+            "angina",
+            "herzinsuffizienz",
+            "echokardiographie",
+            "herzkatheter",
+            "schrittmacher",
+            "defibrillator",
+            "langzeit-ekg",
+            "belastungs-ekg",
+        ),
+    ),
+    (
+        "pulmonology_report",
+        "Pneumologie-Marker gefunden",
+        (
+            "pneumologie",
+            "lunge",
+            "bronchoskopie",
+            "spirometrie",
+            "lungenfunktion",
+            "asthma",
+            "copd",
+            "sauerstoff",
+            "schlafapnoe",
+        ),
+    ),
+    (
+        "gastroenterology_report",
+        "Gastroenterologie-/Endoskopie-Marker gefunden",
+        (
+            "gastroenterologie",
+            "gastroskopie",
+            "koloskopie",
+            "coloskopie",
+            "rektoskopie",
+            "endoskopie",
+            "abdomen",
+            "leber",
+            "galle",
+            "pankreas",
+            "hepatitis",
+        ),
+    ),
+    (
+        "urology_report",
+        "Urologie-Marker gefunden",
+        (
+            "urologie",
+            "prostata",
+            "harnblase",
+            "zystoskopie",
+            "cystoskopie",
+            "uroflow",
+            "harnstau",
+            "niere",
+            "ureter",
+            "urin",
+        ),
+    ),
+    (
+        "dermatology_report",
+        "Dermatologie-Marker gefunden",
+        (
+            "dermatologie",
+            "haut",
+            "naevus",
+            "navi",
+            "melanom",
+            "ekzem",
+            "psoriasis",
+            "dermatoskopie",
+            "exzision",
+        ),
+    ),
+    (
+        "ent_report",
+        "HNO-Marker gefunden",
+        (
+            "hno",
+            "hals-nasen-ohren",
+            "audiometrie",
+            "tympanometrie",
+            "laryngoskopie",
+            "rhinologie",
+            "tonsillen",
+            "ohr",
+            "nase",
+            "kehlkopf",
+        ),
+    ),
+    (
+        "neurology_report",
+        "Neurologie-Marker gefunden",
+        (
+            "neurologie",
+            "eeg",
+            "emg",
+            "nlg",
+            "epilepsie",
+            "schlaganfall",
+            "parese",
+            "parkinson",
+            "demenz",
+        ),
+    ),
+    (
+        "psychiatry_report",
+        "Psychiatrie-/Psychotherapie-Marker gefunden",
+        (
+            "psychiatrie",
+            "psychotherapie",
+            "psychosomatik",
+            "depression",
+            "angststorung",
+            "suizid",
+            "sucht",
+            "gesprachstherapie",
+        ),
+    ),
+    (
+        "orthopedics_report",
+        "Orthopaedie-/Unfallchirurgie-Marker gefunden",
+        (
+            "orthopadie",
+            "orthopaedie",
+            "unfallchirurgie",
+            "fraktur",
+            "luxation",
+            "gelenk",
+            "wirbelsaule",
+            "knie",
+            "schulter",
+            "trauma",
+        ),
+    ),
+    (
+        "pediatrics_report",
+        "Paediatrie-Marker gefunden",
+        (
+            "paediatrie",
+            "padiatrie",
+            "kinderklinik",
+            "jugendmedizin",
+            "u-untersuchung",
+            "saugling",
+            "kind",
+            "neugeboren",
+        ),
+    ),
+    (
+        "surgery_report",
+        "Chirurgie-/OP-Marker gefunden",
+        (
+            "chirurgie",
+            "op-bericht",
+            "operationsbericht",
+            "operation",
+            "eingriff",
+            "wundversorgung",
+            "naht",
+            "biopsie",
+            "exzision",
+            "abtragung",
+        ),
+    ),
+    (
+        "anesthesia_report",
+        "Anaesthesie-/Schmerztherapie-Marker gefunden",
+        (
+            "anasthesie",
+            "anaesthesie",
+            "narkose",
+            "schmerztherapie",
+            "palliativ",
+            "regionalanasthesie",
+            "sedierung",
+        ),
+    ),
+    (
+        "pathology_report",
+        "Pathologie-/Zytologie-Marker gefunden",
+        (
+            "pathologie",
+            "histologie",
+            "zytologie",
+            "zytologisch",
+            "biopsat",
+            "papanicolaou",
+            "mikroskopie",
+        ),
+    ),
+    (
+        "oncology_report",
+        "Onkologie-/Haematologie-Marker gefunden",
+        (
+            "onkologie",
+            "hamatologie",
+            "haematologie",
+            "tumor",
+            "karzinom",
+            "chemotherapie",
+            "immuntherapie",
+            "strahlentherapie",
+        ),
+    ),
+    (
+        "nephrology_report",
+        "Nephrologie-/Dialyse-Marker gefunden",
+        (
+            "nephrologie",
+            "dialyse",
+            "hamodialyse",
+            "haemodialyse",
+            "peritonealdialyse",
+            "niereninsuffizienz",
+        ),
+    ),
+    (
+        "prevention_report",
+        "Praeventions-/Impfmarker gefunden",
+        (
+            "impfung",
+            "impfstoff",
+            "vorsorge",
+            "fruherkennung",
+            "screening",
+            "gesundheitsuntersuchung",
+            "dmp",
+        ),
+    ),
+    (
+        "therapy_report",
+        "Therapie-/Heilmittel-Marker gefunden",
+        (
+            "physiotherapie",
+            "ergotherapie",
+            "logopadie",
+            "heilmittel",
+            "injektion",
+            "infusion",
+            "verband",
+        ),
+    ),
+]
 
 
 def _compact(text: str) -> str:
-    return re.sub(r"\s+", "", text.lower())
+    normalized = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", "", normalized.lower())
+
+
+def _fold(text: str) -> str:
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower()
+
+
+def _matches_domain(segment_type: str, compact: str, markers: tuple[str, ...]) -> bool:
+    if segment_type == "urology_report":
+        clear_urology = ("prostata", "harnblase", "zystoskopie", "cystoskopie", "uroflow", "harnstau", "ureter", "urin")
+        if "neurologie" in compact and not any(marker in compact for marker in clear_urology):
+            return False
+        if any(marker in compact for marker in ("nephrologie", "dialyse", "niereninsuffizienz")) and not any(marker in compact for marker in clear_urology):
+            return False
+    return any(marker in compact for marker in markers)
 
 
 def classify_page(text: str) -> tuple[str, float, list[str]]:
-    lower = text.lower()
+    lower = _fold(text)
     compact = _compact(text)
     reasons: list[str] = []
 
@@ -69,6 +411,25 @@ def classify_page(text: str) -> tuple[str, float, list[str]]:
     if "standard 12 ableitungen" in lower or "ekg" in lower or "sinusrhythmus" in lower:
         reasons.append("EKG-Marker gefunden")
         return "ecg", 0.78, reasons
+    if "ctg" in compact or "tokographie" in compact or "cardiotokographie" in compact:
+        reasons.append("CTG-/Tokographie-Marker gefunden")
+        return "ctg", 0.82, reasons
+
+    for segment_type, reason, markers in DOMAIN_MARKERS:
+        if _matches_domain(segment_type, compact, markers):
+            reasons.append(reason)
+            return segment_type, 0.82, reasons
+
+    if (
+        "wirberichten" in compact
+        or "behandlungsbericht" in compact
+        or "arztbrief" in compact
+        or ("anamnese" in compact and any(marker in compact for marker in ("befund", "beurteilung", "procedere", "therapie", "diagnose")))
+        or ("verlauf" in compact and any(marker in compact for marker in ("kontrolle", "befund", "beurteilung")))
+    ):
+        reasons.append("Allgemeiner klinischer Bericht gefunden")
+        return "clinical_report", 0.74, reasons
+
     if "datenerfassung" in lower:
         reasons.append("Datenerfassung-Marker gefunden")
         return "data_capture", 0.78, reasons
