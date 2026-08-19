@@ -558,6 +558,52 @@ input {
   margin-top: 0.25rem;
 }
 
+.catalog-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.catalog-note {
+  align-items: flex-start;
+  background: var(--brand-green-light);
+  border: 1px solid rgba(72, 155, 218, 0.24);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  display: flex;
+  gap: 0.55rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.catalog-note.missing {
+  background: var(--warn-light);
+  border-color: rgba(125, 90, 0, 0.18);
+}
+
+.catalog-note svg {
+  color: var(--brand-green);
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.catalog-note.missing svg {
+  color: var(--warn);
+}
+
+.catalog-note strong,
+.catalog-note span {
+  display: block;
+}
+
+.catalog-note strong {
+  font-size: 0.86rem;
+}
+
+.catalog-note span {
+  color: var(--text-muted);
+  font-size: 0.83rem;
+}
+
 .section-header {
   align-items: center;
   color: var(--brand-green);

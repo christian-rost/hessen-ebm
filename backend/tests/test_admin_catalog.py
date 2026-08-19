@@ -104,3 +104,33 @@ def test_regional_lookup_uses_catalog_metadata(tmp_path):
     assert entry.catalog_id == "kv_hessen_gop_2026_q2"
     assert entry.catalog_label == "KV_HESSEN_GOP Hessen 2026/Q2"
     assert entry.data_stand == "01.04.2026"
+
+
+def test_regional_catalog_check_reports_matches(tmp_path):
+    source = tmp_path / "catalog_with_regional.sqlite"
+    build_catalog(source)
+    add_regional_catalog(source)
+
+    repo = CatalogRepository(source)
+    check = repo.regional_catalog_check(["01210", "06333"], "2026/Q2")
+
+    assert check["checked"] is True
+    assert check["catalogs"][0]["catalog_id"] == "kv_hessen_gop_2026_q2"
+    assert check["matched_gop_bases"] == ["01210"]
+    assert check["matched_gops"][0]["gop"] == "01210H"
+    assert check["missing_gop_bases"] == ["06333"]
+    assert "regionale Treffer" in check["message"]
+
+
+def test_regional_catalog_check_reports_no_matching_regional_gops(tmp_path):
+    source = tmp_path / "catalog_with_regional.sqlite"
+    build_catalog(source)
+    add_regional_catalog(source)
+
+    repo = CatalogRepository(source)
+    check = repo.regional_catalog_check(["06333"], "2026/Q2")
+
+    assert check["checked"] is True
+    assert check["matched_gops"] == []
+    assert check["missing_gop_bases"] == ["06333"]
+    assert "keine passenden regionalen GOPs" in check["message"]

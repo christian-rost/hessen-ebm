@@ -187,6 +187,147 @@ class CatalogRepository:
     def lookup(self, gop: str, quarter: str, region: str = "Hessen") -> CatalogEntry | None:
         return self.lookup_ebm(gop, quarter) or self.lookup_hessen(gop, quarter, region)
 
+    def regional_catalog_check(self, gop_bases: list[str], quarter: str, region: str = "Hessen") -> dict[str, Any]:
+        normalized_base_set: set[str] = set()
+        for gop in gop_bases:
+            gop_base, _ = normalize_gop(gop)
+            if re.fullmatch(r"\d{5}", gop_base):
+                normalized_base_set.add(gop_base)
+        normalized_bases = sorted(normalized_base_set)
+        result: dict[str, Any] = {
+            "checked": False,
+            "quarter": quarter,
+            "region": region,
+            "catalogs": [],
+            "matched_gops": [],
+            "matched_gop_bases": [],
+            "missing_gop_bases": normalized_bases,
+            "message": "",
+        }
+        if not self.available:
+            result["message"] = "Regionalkatalog nicht geprueft: keine aktive Katalogdatenbank."
+            return result
+
+        with self._connect() as conn:
+            tables = self._tables(conn)
+            if "regional_gops" not in tables:
+                result["message"] = "Regionalkatalog nicht geprueft: keine Regionaltabellen in der aktiven Datenbank."
+                return result
+
+            catalogs = self._regional_catalogs_for(conn, tables, quarter, region)
+            result["catalogs"] = catalogs
+            if not catalogs:
+                result["message"] = f"Kein Regionalkatalog fuer {region} {quarter} in der aktiven Datenbank."
+                return result
+
+            result["checked"] = True
+            if not normalized_bases:
+                result["message"] = f"Regionalkatalog geprueft: {self._catalog_labels(catalogs)} ist aktiv."
+                return result
+
+            matches = self._regional_matches_for(conn, tables, normalized_bases, quarter, region)
+
+        matched_bases = sorted({str(row["gop_base"]) for row in matches})
+        result["matched_gops"] = matches
+        result["matched_gop_bases"] = matched_bases
+        result["missing_gop_bases"] = [base for base in normalized_bases if base not in matched_bases]
+        if matches:
+            result["message"] = (
+                f"Regionalkatalog geprueft: {self._catalog_labels(catalogs)} enthaelt regionale Treffer "
+                f"fuer {', '.join(matched_bases)}."
+            )
+        else:
+            result["message"] = (
+                f"Regionalkatalog geprueft: {self._catalog_labels(catalogs)} enthaelt keine passenden "
+                f"regionalen GOPs zu den uebernommenen Positionen ({', '.join(normalized_bases)})."
+            )
+        return result
+
+    def _regional_catalogs_for(
+        self,
+        conn: sqlite3.Connection,
+        tables: set[str],
+        quarter: str,
+        region: str,
+    ) -> list[dict[str, Any]]:
+        if "regional_catalogs" in tables:
+            return [
+                dict(row)
+                for row in conn.execute(
+                    "select catalog_id, source_system, region, quarter, title, data_stand, page_count "
+                    "from regional_catalogs where quarter = ? and region = ? order by catalog_id",
+                    (quarter, region),
+                )
+            ]
+        return [
+            {
+                "catalog_id": None,
+                "source_system": row["source_system"],
+                "region": row["region"],
+                "quarter": row["quarter"],
+                "title": None,
+                "data_stand": None,
+                "page_count": None,
+            }
+            for row in conn.execute(
+                "select distinct source_system, region, quarter from regional_gops "
+                "where quarter = ? and region = ? order by source_system",
+                (quarter, region),
+            )
+        ]
+
+    def _regional_matches_for(
+        self,
+        conn: sqlite3.Connection,
+        tables: set[str],
+        gop_bases: list[str],
+        quarter: str,
+        region: str,
+    ) -> list[dict[str, Any]]:
+        placeholders = ", ".join("?" for _ in gop_bases)
+        params: list[Any] = [quarter, region, *gop_bases]
+        if "regional_catalogs" in tables:
+            rows = conn.execute(
+                "select g.catalog_id, g.gop_code, g.gop_base, g.title, g.points, g.euro, g.page, "
+                "c.source_system, c.region, c.quarter, c.data_stand "
+                "from regional_gops g "
+                "join regional_catalogs c on c.catalog_id = g.catalog_id "
+                f"where g.quarter = ? and g.region = ? and g.gop_base in ({placeholders}) "
+                "order by g.gop_base, g.gop_code limit 50",
+                params,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "select null as catalog_id, gop_code, gop_base, title, points, euro, page, "
+                "source_system, region, quarter, null as data_stand "
+                "from regional_gops "
+                f"where quarter = ? and region = ? and gop_base in ({placeholders}) "
+                "order by gop_base, gop_code limit 50",
+                params,
+            ).fetchall()
+        return [
+            {
+                "catalog_id": row["catalog_id"],
+                "catalog_label": _regional_catalog_label(row["source_system"], row["region"], row["quarter"]),
+                "source": "KV_HESSEN_GOP",
+                "gop": row["gop_code"],
+                "gop_base": row["gop_base"],
+                "title": row["title"] or row["gop_code"],
+                "points": _to_int(row["points"]),
+                "euro": _to_float(row["euro"]),
+                "page": _to_int(row["page"]),
+                "data_stand": row["data_stand"],
+            }
+            for row in rows
+        ]
+
+    def _catalog_labels(self, catalogs: list[dict[str, Any]]) -> str:
+        labels = [
+            _regional_catalog_label(catalog.get("source_system"), catalog.get("region"), catalog.get("quarter") or "")
+            for catalog in catalogs
+        ]
+        return ", ".join(labels)
+
     def search(self, query: str, quarter: str, limit: int = 25) -> list[CatalogEntry]:
         if not self.available:
             return []

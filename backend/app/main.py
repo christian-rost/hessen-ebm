@@ -229,6 +229,7 @@ async def analyze_document(file: UploadFile = File(...)) -> AnalysisResult:
 
     catalog = _catalog()
     default_quarter = case_context.get("quarter") or "2025/Q4"
+    region = str(case_context.get("region") or "Hessen")
     analysis_warnings = list(warnings)
     billing_derivation: dict[str, object]
     if settings.enable_semantic_billing:
@@ -238,6 +239,7 @@ async def analyze_document(file: UploadFile = File(...)) -> AnalysisResult:
                 catalog,
                 default_quarter=default_quarter,
                 settings=settings,
+                region=region,
             )
             items = semantic_result.items
             summary = semantic_result.summary
@@ -246,26 +248,37 @@ async def analyze_document(file: UploadFile = File(...)) -> AnalysisResult:
             billing_derivation = semantic_result.context
         except SemanticBillingError as exc:
             analysis_warnings.append(f"Semantic billing failed, using deterministic rules: {exc}")
-            items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter)
+            items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter, region=region)
             billing_derivation = {
                 "mode": "deterministic_rules",
                 "fallback_reason": str(exc),
             }
         except Exception as exc:  # pragma: no cover - safety net for external LLM integration.
             analysis_warnings.append(f"Semantic billing crashed, using deterministic rules: {exc}")
-            items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter)
+            items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter, region=region)
             billing_derivation = {
                 "mode": "deterministic_rules",
                 "fallback_reason": f"unexpected semantic billing error: {exc}",
             }
     else:
-        items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter)
+        items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter, region=region)
         billing_derivation = {"mode": "deterministic_rules", "fallback_reason": "semantic billing disabled"}
+
+    item_quarters = sorted({item.quarter for item in items}) or [str(default_quarter)]
+    regional_catalog_checks = [
+        catalog.regional_catalog_check(
+            [item.gop_base for item in items if item.quarter == quarter],
+            quarter=quarter,
+            region=region,
+        )
+        for quarter in item_quarters
+    ]
 
     catalog_context = catalog.status()
     catalog_context["analysis_warnings"] = analysis_warnings
     catalog_context["case_context"] = case_context
     catalog_context["billing_derivation"] = billing_derivation
+    catalog_context["regional_catalog_checks"] = regional_catalog_checks
 
     result = AnalysisResult(
         analysis_id=uuid4().hex,

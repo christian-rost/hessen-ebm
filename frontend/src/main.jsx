@@ -600,6 +600,10 @@ function ResultPanel({ result, onDownload }) {
     );
   }
 
+  const regionalChecks = Array.isArray(result.catalog_context?.regional_catalog_checks)
+    ? result.catalog_context.regional_catalog_checks
+    : [];
+
   return (
     <section className="result-panel">
       <div className="summary-row">
@@ -611,6 +615,8 @@ function ResultPanel({ result, onDownload }) {
           JSON Export
         </button>
       </div>
+
+      <RegionalCatalogNotes checks={regionalChecks} />
 
       <div className="section-header">
         <CheckCircle2 size={20} />
@@ -667,6 +673,30 @@ function ResultPanel({ result, onDownload }) {
         title: item.evidence,
         detail: item.reason
       }))} />
+    </section>
+  );
+}
+
+function RegionalCatalogNotes({ checks }) {
+  const visibleChecks = checks.filter((check) => check?.message);
+  if (visibleChecks.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="catalog-notes">
+      {visibleChecks.map((check) => {
+        const hasMatches = Array.isArray(check.matched_gops) && check.matched_gops.length > 0;
+        return (
+          <div className={`catalog-note ${check.checked && hasMatches ? "checked" : "missing"}`} key={`${check.region}-${check.quarter}`}>
+            <Database size={17} />
+            <div>
+              <strong>{check.checked ? "Regionalkatalog geprueft" : "Regionalkatalog-Hinweis"}</strong>
+              <span>{check.message}</span>
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }
