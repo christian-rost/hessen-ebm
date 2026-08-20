@@ -15,6 +15,7 @@ class FakeCatalog(CatalogRepository):
         values = {
             "01210": ("Notfallpauschale I", 120, 14.87),
             "01212": ("Notfallpauschale II", 195, 24.16),
+            "01226": ("Zuschlag Notfallpauschale zur GOP 01212", 90, 11.15),
             "32066": ("Kreatinin", None, 0.25),
         }
         base, _ = normalize_gop(gop)
@@ -241,6 +242,61 @@ def test_semantic_billing_uses_llm_json_and_catalog_validation():
     assert result.summary.amount_total_eur == 24.41
 
 
+def test_semantic_billing_postprocesses_missing_01226_surcharge():
+    evidence = [
+        ev("context.kv_notfall_zna", service_date="2026-02-25", service_time="01:13"),
+        Evidence(
+            evidence_id="ev-f03",
+            kind="diagnosis.icd10",
+            label="ICD-10 F03",
+            page=28,
+            service_date="2026-02-25",
+            service_time="01:11",
+            value="F03",
+            text="Nicht näher bezeichnete Demenz (H) Nicht näher bezeichnete Demenz (F03)",
+            metadata={"icd10": "F03"},
+        ),
+        Evidence(
+            evidence_id="ev-report",
+            kind="clinical.domain.neurology",
+            label="Neurologie",
+            page=11,
+            service_date="2026-02-25",
+            service_time="01:13",
+            text="Alter 81 J. schwere Demenz, zu allen Qualitäten desorientiert.",
+        ),
+    ]
+
+    def fake_llm(_messages, _settings):
+        return {
+            "items": [
+                {
+                    "gop": "1212",
+                    "quantity": 1,
+                    "evidence_ids": ["ev-context.kv_notfall_zna"],
+                    "service_date": "2026-02-25",
+                    "service_time": "01:13",
+                    "confidence": "high",
+                    "reason": "Notfallkontakt nachts.",
+                }
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence,
+        FakeCatalog(),
+        default_quarter="2026/Q1",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    assert [item.gop_original for item in result.items] == ["01212", "01226"]
+    assert result.items[1].derivation_source == "deterministic_rules"
+    assert result.summary.amount_total_eur == 35.31
+
+
 def test_semantic_billing_keeps_01210_for_weekday_daytime():
     evidence = [ev("context.kv_notfall_zna", service_date="2026-04-24", service_time="12:20")]
 
@@ -346,7 +402,7 @@ def test_semantic_billing_uses_evidence_metadata_search_terms_for_candidates():
         return {
             "items": [
                 {
-                    "gop": "06333",
+                    "gop": "6333",
                     "quantity": 1,
                     "evidence_ids": ["ev-clinical.ophthalmology_fundus"],
                     "confidence": "medium",
@@ -377,7 +433,7 @@ def test_semantic_billing_uses_explicit_metadata_gop_candidates_before_text_sear
         return {
             "items": [
                 {
-                    "gop": "06330",
+                    "gop": "6330",
                     "quantity": 1,
                     "evidence_ids": ["ev-internal_service.aua_peri"],
                     "confidence": "medium",

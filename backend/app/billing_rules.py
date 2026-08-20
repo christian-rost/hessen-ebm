@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
-from typing import Any
 from dataclasses import dataclass
 from datetime import date, time, timedelta
+from typing import Any
+
+from .billing_rule_definitions import (
+    BillingRuleSet,
+    DerivedRuleDefinition,
+    EvidenceRuleDefinition,
+    TemporalRuleDefinition,
+    definition_is_applicable,
+    load_billing_rule_set,
+)
 
 
 @dataclass(frozen=True)
@@ -27,8 +37,20 @@ class GopRuleDecision:
     review_required: bool = False
 
 
-TIME_DEPENDENT_EMERGENCY_GOPS = {"01205", "01207", "01210", "01212", "01214", "01216", "01218"}
-KV_NOTFALL_ZNA_KIND = "context.kv_notfall_zna"
+@dataclass(frozen=True)
+class DerivedGopDecision:
+    gop: str | None
+    rule_id: str
+    evidence_ids: tuple[str, ...] = ()
+    evidence_pages: tuple[int, ...] = ()
+    notes: tuple[str, ...] = ()
+    review_required: bool = False
+    metadata: Mapping[str, Any] | None = None
+    target_gop: str | None = None
+    insert_after: str | None = None
+    title_hint: str | None = None
+    evidence_kind: str | None = None
+
 
 REVIEW_RULE_DIMENSIONS = {
     "time": "Uhrzeit",
@@ -40,10 +62,53 @@ REVIEW_RULE_DIMENSIONS = {
 }
 
 
-def candidate_gops_for_evidence_kind(evidence_kind: str) -> list[str]:
-    if evidence_kind == KV_NOTFALL_ZNA_KIND:
-        return ["01210", "01212"]
-    return []
+@dataclass(frozen=True)
+class _RuleFacts:
+    gops: frozenset[str]
+    evidence: tuple[Mapping[str, Any], ...]
+    service_date: str | None
+    service_time: str | None
+    region: str
+    quarter: str | None
+    text: str
+    diagnoses: tuple[str, ...]
+    patient_age: int | None
+    metadata: Mapping[str, tuple[Any, ...]]
+
+
+def evidence_billing_rules(
+    quarter: str | None = None,
+    region: str = "Hessen",
+    rule_set: BillingRuleSet | None = None,
+) -> list[EvidenceRuleDefinition]:
+    definitions = rule_set or load_billing_rule_set()
+    return [
+        rule
+        for rule in definitions.evidence_rules
+        if definition_is_applicable(rule.valid_from, rule.valid_to, rule.regions, quarter, region)
+    ]
+
+
+def candidate_gops_for_evidence_kind(
+    evidence_kind: str,
+    quarter: str | None = None,
+    region: str = "Hessen",
+    rule_set: BillingRuleSet | None = None,
+) -> list[str]:
+    definitions = rule_set or load_billing_rule_set()
+    direct = [
+        rule.gop
+        for rule in evidence_billing_rules(quarter, region, definitions)
+        if rule.evidence_kind == evidence_kind
+    ]
+    candidates = list(direct)
+    direct_bases = {_normalize_rule_gop(gop) for gop in direct}
+    for rule in definitions.temporal_rules:
+        if not _definition_applies(rule, quarter, region):
+            continue
+        if direct_bases.intersection({_normalize_rule_gop(gop) for gop in rule.gops}):
+            candidates.extend(outcome.gop for outcome in rule.outcomes)
+    return list(dict.fromkeys(candidates))
 
 
 def resolve_evidence_rule_gop(
@@ -52,27 +117,25 @@ def resolve_evidence_rule_gop(
     service_date: str | None,
     service_time: str | None,
     region: str = "Hessen",
+    quarter: str | None = None,
+    rule_set: BillingRuleSet | None = None,
 ) -> GopRuleDecision:
-    if evidence_kind == KV_NOTFALL_ZNA_KIND:
-        decision = evaluate_gop_rules(
-            BillingRuleContext(
-                gop=fallback_gop,
-                service_date=service_date,
-                service_time=service_time,
-                region=region,
-                evidence_kind=evidence_kind,
-            )
-        )
-        if decision.gop:
-            return decision
-        return GopRuleDecision(
-            fallback_gop,
-            decision.rule_id,
-            decision.notes,
-            review_required=True,
-        )
-
-    return GopRuleDecision(fallback_gop, f"static.{fallback_gop}.v1")
+    decision = apply_temporal_gop_rule(
+        fallback_gop,
+        service_date,
+        service_time,
+        region,
+        quarter=quarter,
+        rule_set=rule_set,
+    )
+    if decision.gop:
+        return decision
+    return GopRuleDecision(
+        _normalize_display_gop(fallback_gop),
+        decision.rule_id,
+        decision.notes,
+        review_required=True,
+    )
 
 
 def evaluate_gop_rules(context: BillingRuleContext) -> GopRuleDecision:
@@ -87,39 +150,65 @@ def apply_temporal_gop_rule(
     service_date: str | None,
     service_time: str | None,
     region: str = "Hessen",
+    quarter: str | None = None,
+    rule_set: BillingRuleSet | None = None,
 ) -> GopRuleDecision:
-    normalized = gop.strip().upper()
-    if normalized not in TIME_DEPENDENT_EMERGENCY_GOPS:
+    normalized = _normalize_display_gop(gop)
+    match = re.fullmatch(r"(\d{5})([A-Z0-9*]+)?", normalized)
+    if match and match.group(2):
+        return GopRuleDecision(normalized, f"static.{normalized}.v1")
+    normalized = match.group(1) if match else normalized
+    definitions = rule_set or load_billing_rule_set()
+    effective_quarter = quarter or _quarter_from_date(service_date)
+    temporal_rule = next(
+        (
+            rule
+            for rule in definitions.temporal_rules
+            if normalized in {_normalize_rule_gop(value) for value in rule.gops}
+            and _definition_applies(rule, effective_quarter, region)
+        ),
+        None,
+    )
+    if temporal_rule is None:
         return GopRuleDecision(normalized, f"static.{normalized}.v1")
 
-    if normalized in {"01210", "01212"}:
-        decision = emergency_initial_gop(service_date, service_time, region)
-        group = "Notfall-Erstkontakt"
-    elif normalized in {"01214", "01216", "01218"}:
-        decision = emergency_consultation_gop(service_date, service_time, region)
-        group = "Notfall-Konsultation"
-    else:
-        decision = emergency_clarification_gop(service_date, service_time, region)
-        group = "Notfall-Abklärung"
-
-    if not decision.gop:
+    missing = [
+        field
+        for field in temporal_rule.required_context
+        if not {"service_date": service_date, "service_time": service_time, "region": region}.get(field)
+    ]
+    if missing:
+        labels = {"service_date": "Datum", "service_time": "Uhrzeit", "region": "Region"}
+        missing_labels = ", ".join(labels.get(field, field) for field in missing)
         return GopRuleDecision(
-            normalized,
-            decision.rule_id,
-            decision.notes,
+            None,
+            f"{temporal_rule.rule_id}.missing",
+            (
+                "Datum oder Uhrzeit fehlt; die zeitabhängige GOP muss manuell geprüft werden."
+                if set(missing).intersection({"service_date", "service_time"})
+                else f"{missing_labels} fehlt; die zeitabhängige GOP muss manuell geprüft werden."
+            ,),
             review_required=True,
         )
-    if decision.gop != normalized:
-        return GopRuleDecision(
-            decision.gop,
-            decision.rule_id,
-            (
-                f"Zeitregel {group}: GOP {normalized} wurde anhand von Datum/Uhrzeit auf {decision.gop} korrigiert.",
-                *decision.notes,
-            ),
-            review_required=decision.review_required,
-        )
-    return decision
+
+    facts = _facts((), (), service_date, service_time, region, effective_quarter)
+    for outcome in temporal_rule.outcomes:
+        if not _matches_condition(outcome.when, facts):
+            continue
+        notes = (outcome.note,)
+        if outcome.gop != normalized:
+            notes = (
+                f"Zeitregel {temporal_rule.name}: GOP {normalized} wurde anhand von Datum/Uhrzeit auf {outcome.gop} korrigiert.",
+                outcome.note,
+            )
+        return GopRuleDecision(outcome.gop, outcome.rule_id, notes)
+
+    return GopRuleDecision(
+        normalized,
+        f"{temporal_rule.rule_id}.unmatched",
+        (f"Für die Zeitregel {temporal_rule.name} konnte kein eindeutiges Ergebnis ermittelt werden.",),
+        review_required=True,
+    )
 
 
 def evaluate_catalog_context_rules(context: BillingRuleContext) -> GopRuleDecision:
@@ -162,8 +251,14 @@ def evaluate_catalog_context_rules(context: BillingRuleContext) -> GopRuleDecisi
     )
 
 
-def billing_rule_guidance() -> dict[str, Any]:
+def billing_rule_guidance(rule_set: BillingRuleSet | None = None) -> dict[str, Any]:
+    definitions = rule_set or load_billing_rule_set()
     return {
+        "rule_set": {
+            "id": definitions.rule_set_id,
+            "version": definitions.version,
+            "schema_version": definitions.schema_version,
+        },
         "rule_layer": {
             "principle": (
                 "Jede vorgeschlagene GOP wird nach der semantischen Herleitung regelbasiert geprüft. "
@@ -171,23 +266,104 @@ def billing_rule_guidance() -> dict[str, Any]:
             ),
             "dimensions": REVIEW_RULE_DIMENSIONS,
         },
-        "time_dependent_emergency_gops": {
-            "01210_01212": (
-                "Für den Notfall-Erstkontakt ist 01210 werktags von 07:00 Uhr bis vor 19:00 Uhr zu verwenden. "
-                "01212 gilt am Wochenende, an Feiertagen, am 24.12./31.12. und außerhalb 07:00-19:00 Uhr."
-            ),
-            "01214_01216_01218": (
-                "Für weitere Konsultationen im Notfall ist 01214 werktags 07:00-19:00 Uhr, "
-                "01216 werktags 19:00-22:00 Uhr sowie an Wochenenden/Feiertagen/Sondertagen 07:00-19:00 Uhr, "
-                "und 01218 nachts bzw. an Wochenenden/Feiertagen/Sondertagen außerhalb 07:00-19:00 Uhr zu verwenden."
-            ),
-            "01205_01207": (
-                "Für Notfallabklärung ist 01205 werktags 07:00-19:00 Uhr und 01207 am Wochenende, "
-                "an Feiertagen, am 24.12./31.12. oder außerhalb 07:00-19:00 Uhr zu verwenden."
-            ),
-            "missing_datetime": "Wenn Datum oder Uhrzeit fehlen, keine sichere zeitabhängige Notfall-GOP festlegen, sondern als Review-Kandidat markieren.",
-        },
+        "temporal_rules": [
+            {
+                "rule_id": rule.rule_id,
+                "name": rule.name,
+                "gops": list(rule.gops),
+                "outcomes": [{"gop": outcome.gop, "note": outcome.note} for outcome in rule.outcomes],
+            }
+            for rule in definitions.temporal_rules
+        ],
+        "derived_rules": [
+            {
+                "rule_id": rule.rule_id,
+                "gop": rule.gop,
+                "description": rule.description,
+                "criteria": [criterion.label for criterion in rule.criteria],
+                "exclusions": [exclusion.label for exclusion in rule.exclusions],
+            }
+            for rule in definitions.derived_rules
+        ],
     }
+
+
+def derive_additional_gops(
+    existing_gops: Sequence[str],
+    evidence: Sequence[Mapping[str, Any]],
+    quarter: str | None = None,
+    region: str = "Hessen",
+    rule_set: BillingRuleSet | None = None,
+) -> list[DerivedGopDecision]:
+    definitions = rule_set or load_billing_rule_set()
+    normalized_gops = {_normalize_rule_gop(gop) for gop in existing_gops}
+    decisions: list[DerivedGopDecision] = []
+
+    # Regeln dürfen auf zuvor abgeleiteten GOPs aufbauen. Der Fixpunkt ist durch
+    # die endliche Zahl eindeutiger Ziel-GOPs begrenzt.
+    pending = list(definitions.derived_rules)
+    while pending:
+        matched_in_pass = False
+        for rule in list(pending):
+            target = _normalize_rule_gop(rule.gop)
+            if target in normalized_gops or not _definition_applies(rule, quarter, region):
+                pending.remove(rule)
+                continue
+            facts = _facts(normalized_gops, evidence, None, None, region, quarter)
+            if not all(_matches_condition(condition, facts) for condition in rule.requirements):
+                continue
+
+            matched_criteria = [
+                criterion.label for criterion in rule.criteria if _matches_condition(criterion.when, facts)
+            ]
+            if rule.criteria and not matched_criteria:
+                pending.remove(rule)
+                continue
+
+            exclusions = [
+                exclusion for exclusion in rule.exclusions if _matches_condition(exclusion.when, facts)
+            ]
+            if exclusions:
+                pending.remove(rule)
+                continue
+
+            supporting = _supporting_evidence(rule, evidence, normalized_gops, region, quarter)
+            evidence_ids = tuple(
+                dict.fromkeys(str(item.get("evidence_id")) for item in supporting if item.get("evidence_id"))
+            )
+            evidence_pages = tuple(
+                sorted({int(item.get("page")) for item in supporting if str(item.get("page") or "").isdigit()})
+            )
+            notes = (
+                f"{rule.gop} ergänzt: {', '.join(matched_criteria)}."
+                if matched_criteria
+                else f"{rule.gop} gemäß Regel {rule.rule_id} ergänzt."
+            ,)
+            decision = DerivedGopDecision(
+                gop=rule.gop,
+                target_gop=rule.gop,
+                rule_id=rule.rule_id,
+                evidence_ids=evidence_ids,
+                evidence_pages=evidence_pages,
+                notes=notes,
+                metadata={
+                    "diagnoses": list(facts.diagnoses),
+                    "patient_age": facts.patient_age,
+                    "derivation_criteria": matched_criteria,
+                    "rule_set_id": definitions.rule_set_id,
+                    "rule_set_version": definitions.version,
+                },
+                insert_after=rule.insert_after,
+                title_hint=rule.title_hint,
+                evidence_kind=rule.evidence_kind,
+            )
+            decisions.append(decision)
+            normalized_gops.add(target)
+            pending.remove(rule)
+            matched_in_pass = True
+        if not matched_in_pass:
+            break
+    return decisions
 
 
 def emergency_initial_gop(
@@ -195,21 +371,7 @@ def emergency_initial_gop(
     service_time: str | None,
     region: str = "Hessen",
 ) -> GopRuleDecision:
-    parsed = _parse_rule_datetime(service_date, service_time)
-    if parsed is None:
-        return _missing_datetime_decision("time.notfall.initial.missing.v1")
-    day, clock = parsed
-    if is_special_notfall_day(day, region) or not _is_daytime(clock):
-        return GopRuleDecision(
-            "01212",
-            "time.notfall.initial.01212.v1",
-            ("Notfallpauschale II: Wochenende/Feiertag/Sondertag oder außerhalb 07:00-19:00 Uhr.",),
-        )
-    return GopRuleDecision(
-        "01210",
-        "time.notfall.initial.01210.v1",
-        ("Notfallpauschale I: Werktag von 07:00 Uhr bis vor 19:00 Uhr.",),
-    )
+    return apply_temporal_gop_rule("01210", service_date, service_time, region)
 
 
 def emergency_consultation_gop(
@@ -217,42 +379,7 @@ def emergency_consultation_gop(
     service_time: str | None,
     region: str = "Hessen",
 ) -> GopRuleDecision:
-    parsed = _parse_rule_datetime(service_date, service_time)
-    if parsed is None:
-        return _missing_datetime_decision("time.notfall.consultation.missing.v1")
-    day, clock = parsed
-    special_day = is_special_notfall_day(day, region)
-
-    if special_day:
-        if _is_daytime(clock):
-            return GopRuleDecision(
-                "01216",
-                "time.notfall.consultation.01216.v1",
-                ("Konsultation im Notfall: Wochenende/Feiertag/Sondertag von 07:00 Uhr bis vor 19:00 Uhr.",),
-            )
-        return GopRuleDecision(
-            "01218",
-            "time.notfall.consultation.01218.v1",
-            ("Konsultation im Notfall: Wochenende/Feiertag/Sondertag außerhalb 07:00-19:00 Uhr.",),
-        )
-
-    if time(19, 0) <= clock < time(22, 0):
-        return GopRuleDecision(
-            "01216",
-            "time.notfall.consultation.01216.v1",
-            ("Konsultation im Notfall: Werktag von 19:00 Uhr bis vor 22:00 Uhr.",),
-        )
-    if clock >= time(22, 0) or clock < time(7, 0):
-        return GopRuleDecision(
-            "01218",
-            "time.notfall.consultation.01218.v1",
-            ("Konsultation im Notfall: Werktag von 22:00 Uhr bis vor 07:00 Uhr.",),
-        )
-    return GopRuleDecision(
-        "01214",
-        "time.notfall.consultation.01214.v1",
-        ("Konsultation im Notfall: Werktag von 07:00 Uhr bis vor 19:00 Uhr.",),
-    )
+    return apply_temporal_gop_rule("01214", service_date, service_time, region)
 
 
 def emergency_clarification_gop(
@@ -260,21 +387,7 @@ def emergency_clarification_gop(
     service_time: str | None,
     region: str = "Hessen",
 ) -> GopRuleDecision:
-    parsed = _parse_rule_datetime(service_date, service_time)
-    if parsed is None:
-        return _missing_datetime_decision("time.notfall.clarification.missing.v1")
-    day, clock = parsed
-    if is_special_notfall_day(day, region) or not _is_daytime(clock):
-        return GopRuleDecision(
-            "01207",
-            "time.notfall.clarification.01207.v1",
-            ("Notfallabklärung: Wochenende/Feiertag/Sondertag oder außerhalb 07:00-19:00 Uhr.",),
-        )
-    return GopRuleDecision(
-        "01205",
-        "time.notfall.clarification.01205.v1",
-        ("Notfallabklärung: Werktag von 07:00 Uhr bis vor 19:00 Uhr.",),
-    )
+    return apply_temporal_gop_rule("01205", service_date, service_time, region)
 
 
 def is_special_notfall_day(service_date: str | date, region: str = "Hessen") -> bool:
@@ -309,23 +422,6 @@ def german_core_public_holidays(year: int) -> set[date]:
     }
 
 
-def _missing_datetime_decision(rule_id: str) -> GopRuleDecision:
-    return GopRuleDecision(
-        None,
-        rule_id,
-        ("Datum oder Uhrzeit fehlt; zeitabhängige Notfall-GOP muss manuell geprüft werden.",),
-        review_required=True,
-    )
-
-
-def _parse_rule_datetime(service_date: str | None, service_time: str | None) -> tuple[date, time] | None:
-    day = _parse_date(service_date)
-    clock = _parse_time(service_time)
-    if day is None or clock is None:
-        return None
-    return day, clock
-
-
 def _parse_date(value: str | None) -> date | None:
     if not value:
         return None
@@ -348,8 +444,279 @@ def _parse_time(value: str | None) -> time | None:
         return None
 
 
-def _is_daytime(clock: time) -> bool:
-    return time(7, 0) <= clock < time(19, 0)
+def _normalize_rule_gop(gop: str) -> str:
+    cleaned = _normalize_display_gop(gop)
+    return cleaned[:5] if re.fullmatch(r"\d{5}[A-Z0-9*]*", cleaned) else cleaned
+
+
+def _normalize_display_gop(gop: str) -> str:
+    cleaned = str(gop).strip().upper().replace(" ", "")
+    if cleaned.isdigit() and len(cleaned) == 4:
+        cleaned = cleaned.zfill(5)
+    return cleaned
+
+
+def _fold(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return ascii_text.lower()
+
+
+def _diagnoses_from_evidence(evidence: Sequence[Mapping[str, Any]]) -> list[str]:
+    diagnoses: list[str] = []
+    pattern = re.compile(r"\b([A-Z]\d{2}(?:\.\d{1,2})?)\b")
+    for item in evidence:
+        metadata = item.get("metadata")
+        if isinstance(metadata, Mapping):
+            for key in ("icd10", "icd", "diagnosis"):
+                value = metadata.get(key)
+                if isinstance(value, str) and pattern.fullmatch(value.strip().upper()):
+                    diagnoses.append(value.strip().upper())
+            values = metadata.get("diagnoses")
+            if isinstance(values, Sequence) and not isinstance(values, (str, bytes)):
+                for value in values:
+                    if isinstance(value, str) and pattern.fullmatch(value.strip().upper()):
+                        diagnoses.append(value.strip().upper())
+        for key in ("value", "label", "text"):
+            value = item.get(key)
+            if isinstance(value, str):
+                diagnoses.extend(match.group(1).upper() for match in pattern.finditer(value.upper()))
+    return list(dict.fromkeys(diagnoses))
+
+
+def _patient_age_from_evidence(evidence: Sequence[Mapping[str, Any]]) -> int | None:
+    for item in evidence:
+        metadata = item.get("metadata")
+        if isinstance(metadata, Mapping):
+            for key in ("patient_age", "age"):
+                value = metadata.get(key)
+                try:
+                    age = int(str(value))
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= age <= 130:
+                    return age
+        for value in (item.get("text"), item.get("label")):
+            if not isinstance(value, str):
+                continue
+            folded = _fold(value)
+            patterns = (
+                r"\balter\s*0?(\d{1,3})\s*(?:j|y|a|jahre?)\b",
+                r"\b0?(\d{1,3})\s*(?:j|y)\b",
+                r"\((\d{1,3})a\)",
+            )
+            for pattern in patterns:
+                match = re.search(pattern, folded)
+                if match:
+                    age = int(match.group(1))
+                    if 0 <= age <= 130:
+                        return age
+    return None
+
+
+def _definition_applies(
+    definition: TemporalRuleDefinition | DerivedRuleDefinition,
+    quarter: str | None,
+    region: str,
+) -> bool:
+    return definition_is_applicable(
+        definition.valid_from,
+        definition.valid_to,
+        definition.regions,
+        quarter,
+        region,
+    )
+
+
+def _facts(
+    gops: Sequence[str] | set[str] | frozenset[str],
+    evidence: Sequence[Mapping[str, Any]],
+    service_date: str | None,
+    service_time: str | None,
+    region: str,
+    quarter: str | None,
+) -> _RuleFacts:
+    evidence_items = tuple(evidence)
+    effective_date = service_date or _first_evidence_value(evidence_items, "service_date")
+    effective_time = service_time or _first_evidence_value(evidence_items, "service_time")
+    effective_quarter = quarter or _quarter_from_date(effective_date)
+    text = _fold(
+        " ".join(
+            str(item.get(key) or "")
+            for item in evidence_items
+            for key in ("label", "text", "value")
+        )
+    )
+    metadata_values: dict[str, list[Any]] = {}
+    for item in evidence_items:
+        metadata = item.get("metadata")
+        if isinstance(metadata, Mapping):
+            for key, value in metadata.items():
+                metadata_values.setdefault(str(key), []).append(value)
+    return _RuleFacts(
+        gops=frozenset(_normalize_rule_gop(gop) for gop in gops),
+        evidence=evidence_items,
+        service_date=effective_date,
+        service_time=effective_time,
+        region=region,
+        quarter=effective_quarter,
+        text=text,
+        diagnoses=tuple(_diagnoses_from_evidence(evidence_items)),
+        patient_age=_patient_age_from_evidence(evidence_items),
+        metadata={key: tuple(values) for key, values in metadata_values.items()},
+    )
+
+
+def _matches_condition(condition: Mapping[str, Any], facts: _RuleFacts) -> bool:
+    results: list[bool] = []
+    for operator, operand in condition.items():
+        if operator == "all":
+            results.append(all(_matches_condition(item, facts) for item in _condition_list(operand)))
+        elif operator == "any":
+            results.append(any(_matches_condition(item, facts) for item in _condition_list(operand)))
+        elif operator == "not":
+            results.append(not _matches_condition(_condition_object(operand), facts))
+        elif operator == "always":
+            results.append(bool(operand))
+        elif operator == "gop_present":
+            results.append(all(_normalize_rule_gop(value) in facts.gops for value in _string_values(operand)))
+        elif operator == "gop_any":
+            results.append(any(_normalize_rule_gop(value) in facts.gops for value in _string_values(operand)))
+        elif operator == "gop_absent":
+            results.append(all(_normalize_rule_gop(value) not in facts.gops for value in _string_values(operand)))
+        elif operator in {"evidence_kind", "evidence_kind_any"}:
+            expected = set(_string_values(operand))
+            results.append(any(str(item.get("kind") or "") in expected for item in facts.evidence))
+        elif operator == "evidence_kind_prefix":
+            prefixes = tuple(_string_values(operand))
+            results.append(any(str(item.get("kind") or "").startswith(prefixes) for item in facts.evidence))
+        elif operator == "icd_any":
+            expected = {value.upper() for value in _string_values(operand)}
+            results.append(any(code.upper() in expected for code in facts.diagnoses))
+        elif operator == "icd_prefix_any":
+            prefixes = tuple(value.upper() for value in _string_values(operand))
+            results.append(any(code.upper().startswith(prefixes) for code in facts.diagnoses))
+        elif operator == "text_any":
+            results.append(any(_fold(value) in facts.text for value in _string_values(operand)))
+        elif operator == "text_all":
+            results.append(all(_fold(value) in facts.text for value in _string_values(operand)))
+        elif operator == "text_none":
+            results.append(all(_fold(value) not in facts.text for value in _string_values(operand)))
+        elif operator == "age":
+            results.append(_matches_age(operand, facts.patient_age))
+        elif operator == "special_day":
+            day = _parse_date(facts.service_date)
+            results.append(day is not None and is_special_notfall_day(day, facts.region) is bool(operand))
+        elif operator == "weekday_any":
+            day = _parse_date(facts.service_date)
+            weekdays = {int(value) for value in _value_list(operand)}
+            results.append(day is not None and day.weekday() in weekdays)
+        elif operator == "time_window":
+            results.append(_matches_time_window(operand, facts.service_time))
+        elif operator == "region_any":
+            regions = {value.casefold() for value in _string_values(operand)}
+            results.append(facts.region.casefold() in regions or "*" in regions)
+        elif operator == "quarter_between":
+            results.append(_matches_quarter_range(operand, facts.quarter))
+        elif operator == "metadata":
+            results.append(_matches_metadata(operand, facts.metadata))
+        else:
+            raise ValueError(f"Unbekannter Regeloperator: {operator}")
+    return bool(results) and all(results)
+
+
+def _supporting_evidence(
+    rule: DerivedRuleDefinition,
+    evidence: Sequence[Mapping[str, Any]],
+    gops: set[str],
+    region: str,
+    quarter: str | None,
+) -> list[Mapping[str, Any]]:
+    if not rule.supporting_evidence:
+        return list(evidence)
+    matches = [
+        item
+        for item in evidence
+        if _matches_condition(rule.supporting_evidence, _facts(gops, (item,), None, None, region, quarter))
+    ]
+    return matches or list(evidence)
+
+
+def _matches_age(operand: Any, age: int | None) -> bool:
+    if not isinstance(operand, Mapping) or age is None:
+        return False
+    minimum = operand.get("min")
+    maximum = operand.get("max")
+    return (minimum is None or age >= int(minimum)) and (maximum is None or age <= int(maximum))
+
+
+def _matches_time_window(operand: Any, service_time: str | None) -> bool:
+    if not isinstance(operand, Mapping):
+        return False
+    clock = _parse_time(service_time)
+    start = _parse_time(str(operand.get("start") or ""))
+    end = _parse_time(str(operand.get("end") or ""))
+    if clock is None or start is None or end is None:
+        return False
+    inside = start <= clock < end if start < end else clock >= start or clock < end
+    return inside is bool(operand.get("inside", True))
+
+
+def _matches_quarter_range(operand: Any, quarter: str | None) -> bool:
+    if not isinstance(operand, Mapping):
+        return False
+    current = _quarter_index(quarter)
+    lower = _quarter_index(str(operand.get("from") or "")) if operand.get("from") else None
+    upper = _quarter_index(str(operand.get("to") or "")) if operand.get("to") else None
+    return current is not None and (lower is None or current >= lower) and (upper is None or current <= upper)
+
+
+def _matches_metadata(operand: Any, metadata: Mapping[str, tuple[Any, ...]]) -> bool:
+    if not isinstance(operand, Mapping):
+        return False
+    key = str(operand.get("key") or "")
+    values = metadata.get(key, ())
+    if "present" in operand and bool(values) is not bool(operand.get("present")):
+        return False
+    if "equals" in operand:
+        expected = str(operand.get("equals")).casefold()
+        return any(str(value).casefold() == expected for value in values)
+    if "in" in operand:
+        expected = {value.casefold() for value in _string_values(operand.get("in"))}
+        return any(str(value).casefold() in expected for value in values)
+    return bool(values) if "present" not in operand else True
+
+
+def _first_evidence_value(evidence: Sequence[Mapping[str, Any]], key: str) -> str | None:
+    return next((str(item.get(key)) for item in evidence if item.get(key)), None)
+
+
+def _condition_list(value: Any) -> list[Mapping[str, Any]]:
+    return [_condition_object(item) for item in _value_list(value)]
+
+
+def _condition_object(value: Any) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("Eine verschachtelte Regelbedingung muss ein Objekt sein.")
+    return value
+
+
+def _string_values(value: Any) -> list[str]:
+    return [str(item) for item in _value_list(value)]
+
+
+def _value_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, Sequence) and not isinstance(value, (str, bytes)) else [value]
+
+
+def _quarter_from_date(value: str | None) -> str | None:
+    day = _parse_date(value)
+    return f"{day.year}/Q{((day.month - 1) // 3) + 1}" if day else None
+
+
+def _quarter_index(value: str | None) -> int | None:
+    match = re.fullmatch(r"(\d{4})/Q([1-4])", str(value or "").strip().upper())
+    return int(match.group(1)) * 4 + int(match.group(2)) - 1 if match else None
 
 
 def _combine_decisions(original_gop: str, decisions: list[GopRuleDecision]) -> GopRuleDecision:

@@ -22,7 +22,7 @@ Die Anwendung nimmt ein klinisches PDF entgegen, extrahiert Text/OCR, trennt Dok
   - sonstige Seiten
 - Evidenzextraktion aus relevanten Segmenten
 - semantische LLM-Herleitung von GOPs aus Evidenz und Katalogkandidaten
-- deterministische Regel-Engine als Fallback fuer die validierten GOP-Regeln aus den Faellen `FALL-A` und `FALL-B`
+- datengetriebene, versionierte Regel-Engine als deterministischer Fallback und fachliche Prüfschicht
 - Katalogvalidierung gegen SQLite-EBM/Hessen-GOP
 - JSON-Exportprofil `EBM_KVDT_ADT_LIKE_V1_DRAFT`
 - persistierte Rechnungsentwürfe mit Positionsliste in Supabase/Postgres, mit lokalem JSON-Rückfall für Entwicklung
@@ -122,9 +122,9 @@ Wichtig: Die aktuelle Katalogdatenbank ist groesser als 200 MB. Das mitgeliefert
 
 Das Coolify-Compose bindet keinen festen Host-Port. Das ist Absicht: Coolify routet ueber die generierte Frontend-Domain zum internen Container-Port `80`. Ein fester Host-Port wie `8080` kann auf Shared-Servern mit anderen Anwendungen kollidieren.
 
-## Aktuell validierte sichere Regeln
+## Versionierte Fachregeln
 
-Diese Regeln bleiben als Fallback erhalten. Der normale Ableitungspfad ist semantisch:
+Der normale Ableitungspfad ist semantisch:
 
 1. Aus dem PDF werden abrechnungsrelevante Evidenzen extrahiert.
 2. Der Server sucht passende EBM-/Hessen-GOP-Kandidaten im aktiven Quartalskatalog.
@@ -132,7 +132,19 @@ Diese Regeln bleiben als Fallback erhalten. Der normale Ableitungspfad ist seman
 4. Der Server uebernimmt nur GOPs, die im bereitgestellten Kandidatenpool enthalten sind und im aktiven Katalog validiert werden koennen.
 5. Jede Rechnungsposition enthaelt `derivation_source`, `semantic_reason` und die verwendeten Katalogkandidaten.
 
-Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, faellt die Analyse auf die folgenden deterministischen Regeln zurueck und schreibt den Grund in `catalog_context.analysis_warnings`.
+Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, fällt die Analyse auf die deterministische Regel-Engine zurück und schreibt den Grund in `catalog_context.analysis_warnings`.
+
+Das fachliche Regelwerk liegt unter `backend/app/billing_rule_definitions.json`. Es ist vom Python-Code getrennt und enthält:
+
+- direkte Zuordnungen von Evidenzarten zu GOPs
+- zeitabhängige GOP-Gruppen mit beliebig vielen Ergebnisvarianten
+- abgeleitete GOPs und Zuschläge mit Voraussetzungen, Kriterien und Ausschlüssen
+- Gültigkeitszeiträume nach Quartal sowie regionale Gültigkeit
+- Einfügebeziehungen für abgeleitete Rechnungspositionen
+
+Der generische Evaluator unterstützt unter anderem GOP-Voraussetzungen, Evidenzarten, ICD-Präfixe, Volltextmerkmale, Alter, Datum, Uhrzeit, Wochentag, Feiertage, Region, Quartal und strukturierte Metadaten. Weitere Regeln werden als Daten ergänzt; dafür ist keine neue GOP-spezifische Python-Funktion erforderlich. Beide Abrechnungspfade verwenden dasselbe Regelwerk: die deterministische Rechnungserzeugung ebenso wie die Prüfung und Nachbearbeitung der LLM-Vorschläge.
+
+Aktuell enthält das Regelwerk unter anderem folgende direkte Evidenzzuordnungen:
 
 | Evidenz | GOP |
 | --- | --- |
@@ -146,14 +158,16 @@ Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, faellt die A
 | Erythrozyten | `32035A` |
 | Leukozyten | `32036A` |
 | Thrombozyten | `32037A` |
-| Haemoglobin | `32038A` |
-| Haematokrit | `32039A` |
-| Roentgen Thorax/Lunge 2 Ebenen | `34241` |
-| CT Wirbelsaeulenabschnitt | `34311` |
+| Hämoglobin | `32038A` |
+| Hämatokrit | `32039A` |
+| Röntgen Thorax/Lunge 2 Ebenen | `34241` |
+| CT Wirbelsäulenabschnitt | `34311` |
 | CT mit Kontrastmittel | `34345` |
 | CT Kopf nativ | `34310` |
-| Roentgen Schulter 2 Ebenen | `34231` |
-| Roentgen HWS 2 Ebenen | `34221` |
+| Röntgen Schulter 2 Ebenen | `34231` |
+| Röntgen HWS 2 Ebenen | `34221` |
+
+Die Zeitvarianten der Notfall-GOPs und der Zuschlag `01226` stehen ebenfalls ausschließlich im versionierten Regelwerk. `GET /api/rules` liefert die Regelwerk-ID und -Version sowie direkte, zeitabhängige und abgeleitete Regeln.
 
 ## API
 
@@ -165,7 +179,7 @@ Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, faellt die A
 | `GET /api/admin/catalog/status` | Admin-Katalogstatus inklusive Backups |
 | `POST /api/admin/catalog/validate` | SQLite-Katalogdatei nur validieren |
 | `POST /api/admin/catalog/upload` | SQLite-Katalogdatei validieren, Backup anlegen und aktiv ersetzen |
-| `GET /api/rules` | aktuell aktive Regeluebersicht |
+| `GET /api/rules` | aktive Regelwerk-Version sowie direkte, zeitabhängige und abgeleitete Regeln |
 | `POST /api/documents/analyze` | PDF hochladen und Rechnungsentwurf erzeugen |
 | `POST /api/documents/analyze/jobs` | PDF-Analyse als Hintergrundjob starten |
 | `GET /api/documents/analyze/jobs/{job_id}` | Status eines Analysejobs abrufen |

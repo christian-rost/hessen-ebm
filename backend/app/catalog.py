@@ -13,10 +13,17 @@ GOP_RE = re.compile(r"^([0-9]{5})([A-Z0-9*]+)?$")
 
 def normalize_gop(gop: str) -> tuple[str, str | None]:
     cleaned = gop.strip().upper().replace(" ", "")
+    if cleaned.isdigit() and len(cleaned) == 4:
+        cleaned = cleaned.zfill(5)
     match = GOP_RE.match(cleaned)
     if not match:
         return cleaned, None
     return match.group(1), match.group(2)
+
+
+def canonical_gop(gop: str) -> str:
+    base, suffix = normalize_gop(gop)
+    return f"{base}{suffix or ''}"
 
 
 def _to_int(value: Any) -> int | None:

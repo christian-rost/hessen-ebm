@@ -13,13 +13,15 @@ from .billing_rules import (
     apply_temporal_gop_rule,
     billing_rule_guidance,
     candidate_gops_for_evidence_kind,
+    derive_additional_gops,
+    evidence_billing_rules,
     evaluate_catalog_context_rules,
 )
-from .catalog import CatalogRepository, normalize_gop
+from .catalog import CatalogRepository, canonical_gop, normalize_gop
 from .config import Settings
 from .evidence_extraction import quarter_from_date
 from .models import BillingItem, CatalogEntry, Evidence, ExcludedEvidence, InvoiceSummary, ReviewCandidate
-from .rule_engine import ACTIVE_RULES
+from .rule_engine import append_derived_billing_items
 
 
 class SemanticBillingError(RuntimeError):
@@ -61,6 +63,7 @@ def generate_semantic_billing_items(
     payload = _coerce_json_payload(raw_payload)
 
     items, item_review = _billing_items_from_payload(payload, evidence, candidates, catalog, quarter, region)
+    append_derived_billing_items(items, evidence, catalog, quarter, region)
     review = item_review + _review_from_payload(payload, evidence)
     excluded = _excluded_from_payload(payload, evidence)
     summary = InvoiceSummary(
@@ -103,7 +106,7 @@ def _collect_catalog_candidates(
     def add(entry: CatalogEntry | None, evidence_ids: list[str], reason: str, requested_gop: str | None = None) -> None:
         if not entry:
             return
-        gop = requested_gop or entry.gop
+        gop = canonical_gop(requested_gop or entry.gop)
         gop_base, _ = normalize_gop(gop)
         if not re.fullmatch(r"\d{5}", gop_base):
             return
@@ -130,14 +133,14 @@ def _collect_catalog_candidates(
         by_key[key]["evidence_ids"] = sorted(set(by_key[key]["evidence_ids"] + evidence_ids))
 
     rules_by_kind: dict[str, list[str]] = {}
-    for rule in ACTIVE_RULES:
-        rules_by_kind.setdefault(rule.evidence_kind, []).append(rule.gop_original)
+    for rule in evidence_billing_rules(quarter, region):
+        rules_by_kind.setdefault(rule.evidence_kind, []).append(rule.gop)
 
     for item in evidence:
         for gop in rules_by_kind.get(item.kind, []):
             add(catalog.lookup(gop, quarter, region), [item.evidence_id], f"validated prior rule for {item.kind}", gop)
 
-        for gop in candidate_gops_for_evidence_kind(item.kind):
+        for gop in candidate_gops_for_evidence_kind(item.kind, quarter, region):
             add(catalog.lookup(gop, quarter, region), [item.evidence_id], f"time-dependent billing rule for {item.kind}", gop)
 
         for gop in _candidate_gops(item):
@@ -151,14 +154,47 @@ def _collect_catalog_candidates(
         if len(by_key) >= max_candidates:
             break
 
-    return list(by_key.values())[:max_candidates]
+    possible_base_gops: list[str] = []
+    for item in evidence:
+        possible_for_evidence = candidate_gops_for_evidence_kind(item.kind, quarter, region) + _candidate_gops(item)
+        for gop in possible_for_evidence:
+            decision = apply_temporal_gop_rule(
+                gop,
+                item.service_date,
+                item.service_time,
+                region,
+                quarter=quarter,
+            )
+            if decision.gop:
+                possible_base_gops.append(decision.gop)
+    derived_decisions = derive_additional_gops(
+        possible_base_gops,
+        [item.model_dump() for item in evidence],
+        quarter=quarter,
+        region=region,
+    )
+    for derived_decision in derived_decisions:
+        if not derived_decision.gop:
+            continue
+        add(
+            catalog.lookup(derived_decision.gop, quarter, region),
+            list(derived_decision.evidence_ids),
+            f"derived billing rule {derived_decision.rule_id}",
+            derived_decision.gop,
+        )
+
+    candidate_values = list(by_key.values())
+    derived_bases = {normalize_gop(decision.gop or "")[0] for decision in derived_decisions}
+    derived_candidates = [item for item in candidate_values if item["gop_base"] in derived_bases]
+    other_candidates = [item for item in candidate_values if item["gop_base"] not in derived_bases]
+    return (derived_candidates + other_candidates)[:max_candidates]
 
 
 def _candidate_gops(item: Evidence) -> list[str]:
     metadata_gops = item.metadata.get("candidate_gops") if isinstance(item.metadata, dict) else None
     if not isinstance(metadata_gops, list):
         return []
-    return list(dict.fromkeys(str(gop).strip().upper() for gop in metadata_gops if str(gop).strip()))
+    return list(dict.fromkeys(canonical_gop(str(gop)) for gop in metadata_gops if str(gop).strip()))
 
 
 def _search_terms(item: Evidence) -> list[str]:
@@ -343,15 +379,16 @@ def _billing_items_from_payload(
     evidence_by_id = {item.evidence_id: item for item in evidence}
     candidate_by_gop: dict[str, dict[str, Any]] = {}
     for candidate in candidates:
-        candidate_by_gop[candidate["gop"].upper()] = candidate
-        candidate_by_gop[candidate["gop_base"].upper()] = candidate
+        candidate_by_gop[canonical_gop(candidate["gop"])] = candidate
+        candidate_by_gop[canonical_gop(candidate["gop_base"])] = candidate
 
     items: list[BillingItem] = []
     review: list[ReviewCandidate] = []
     used_bases: set[str] = set()
 
     for proposal in _as_list(payload.get("items")):
-        gop = str(proposal.get("gop") or "").strip().upper()
+        raw_gop = str(proposal.get("gop") or "").strip().upper()
+        gop = canonical_gop(raw_gop)
         if not gop:
             continue
         proposed_base, _proposed_suffix = normalize_gop(gop)
@@ -363,7 +400,13 @@ def _billing_items_from_payload(
         service_date = _clean_optional_str(proposal.get("service_date")) or (selected.service_date if selected else None)
         service_time = _clean_optional_str(proposal.get("service_time")) or (selected.service_time if selected else None)
 
-        temporal_decision = apply_temporal_gop_rule(gop, service_date, service_time, region)
+        temporal_decision = apply_temporal_gop_rule(
+            gop,
+            service_date,
+            service_time,
+            region,
+            quarter=quarter,
+        )
         validation_notes = list(temporal_decision.notes)
         if temporal_decision.gop and temporal_decision.gop != gop:
             corrected_base, _corrected_suffix = normalize_gop(temporal_decision.gop)
@@ -373,7 +416,7 @@ def _billing_items_from_payload(
                     ReviewCandidate(
                         evidence=f"Zeitabhängiger LLM-Vorschlag GOP {gop}",
                         evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
-                        possible_gops=[gop, temporal_decision.gop],
+                        possible_gops=[canonical_gop(gop), canonical_gop(temporal_decision.gop)],
                         reason=(
                             f"Nach Datum/Uhrzeit wäre {temporal_decision.gop} plausibel, "
                             "diese GOP war aber nicht im Katalog-Kandidatenpool."
@@ -382,7 +425,7 @@ def _billing_items_from_payload(
                 )
                 continue
             candidate = corrected_candidate
-            gop = temporal_decision.gop
+            gop = canonical_gop(temporal_decision.gop)
 
         gop_base, gop_suffix = normalize_gop(gop)
         if not candidate:
@@ -393,7 +436,7 @@ def _billing_items_from_payload(
                 ReviewCandidate(
                     evidence=f"LLM-Vorschlag GOP {gop}",
                     evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
-                    possible_gops=[gop],
+                    possible_gops=[canonical_gop(gop)],
                     reason="GOP war nicht im bereitgestellten Katalog-Kandidatenpool und wurde nicht automatisch übernommen.",
                 )
             )
@@ -403,7 +446,7 @@ def _billing_items_from_payload(
                 ReviewCandidate(
                     evidence=f"Doppelter LLM-Vorschlag GOP {gop}",
                     evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
-                    possible_gops=[gop],
+                    possible_gops=[canonical_gop(gop)],
                     reason="GOP-Basis wurde bereits als Rechnungsposition übernommen.",
                 )
             )
@@ -530,7 +573,7 @@ def _review_from_payload(payload: dict[str, Any], evidence: list[Evidence]) -> l
             ReviewCandidate(
                 evidence=str(item.get("evidence") or "LLM-Review-Kandidat"),
                 evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
-                possible_gops=[str(gop) for gop in _as_list(item.get("possible_gops")) if str(gop).strip()],
+                possible_gops=[canonical_gop(str(gop)) for gop in _as_list(item.get("possible_gops")) if str(gop).strip()],
                 reason=str(item.get("reason") or "Semantisch unsicher; manuelle Prüfung erforderlich."),
             )
         )
@@ -546,7 +589,7 @@ def _excluded_from_payload(payload: dict[str, Any], evidence: list[Evidence]) ->
             ExcludedEvidence(
                 evidence=str(item.get("evidence") or "Nicht übernommene Evidenz"),
                 evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
-                not_billed_gop=_clean_optional_str(item.get("not_billed_gop")),
+                not_billed_gop=_canonical_optional_gop(item.get("not_billed_gop")),
                 reason=str(item.get("reason") or "Semantisch ausgeschlossen."),
             )
         )
@@ -584,6 +627,11 @@ def _clean_optional_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return None if not text or text.lower() == "null" else text
+
+
+def _canonical_optional_gop(value: Any) -> str | None:
+    text = _clean_optional_str(value)
+    return canonical_gop(text) if text else None
 
 
 def _safe_quantity(value: Any) -> int:

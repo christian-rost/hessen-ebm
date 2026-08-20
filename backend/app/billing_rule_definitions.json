@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "rule_set_id": "kbv-ebm-hessen-core",
+  "version": "2026.1",
+  "evidence_rules": [
+    {"rule_id": "context.kv_notfall_zna.01210.v1", "evidence_kind": "context.kv_notfall_zna", "gop": "01210", "title_hint": "Notfallpauschale I", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "radiology.ct_head_native.34310.v1", "evidence_kind": "radiology.ct_head_native", "gop": "34310", "title_hint": "CT-Untersuchung des Neurocraniums", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "radiology.xray_shoulder_2_planes.34231.v1", "evidence_kind": "radiology.xray_shoulder_2_planes", "gop": "34231", "title_hint": "Aufnahmen der Schulter/des Schultergürtels", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "radiology.xray_spine_hws_2_planes.34221.v1", "evidence_kind": "radiology.xray_spine_hws_2_planes", "gop": "34221", "title_hint": "Aufnahmen von Teilen der Wirbelsäule", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "radiology.xray_thorax_2_planes.34241.v1", "evidence_kind": "radiology.xray_thorax_2_planes", "gop": "34241", "title_hint": "Röntgen Thorax/Lunge 2 Ebenen", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "radiology.xray_hand_foot.34232.v1", "evidence_kind": "radiology.xray_hand_foot", "gop": "34232", "title_hint": "Aufnahmen der Hand, des Fußes", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "radiology.xray_extremities.34233.v1", "evidence_kind": "radiology.xray_extremities", "gop": "34233", "title_hint": "Aufnahmen der Extremitäten", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "radiology.ct_spine_section.34311.v1", "evidence_kind": "radiology.ct_spine_section", "gop": "34311", "title_hint": "CT Wirbelsäulenabschnitt", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "radiology.ct_extremities.34350.v1", "evidence_kind": "radiology.ct_extremities", "gop": "34350", "title_hint": "CT-Untersuchung der Extremitäten außer Hand/Fuß", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "radiology.ct_hand_foot.34351.v1", "evidence_kind": "radiology.ct_hand_foot", "gop": "34351", "title_hint": "CT-Untersuchung der Hand, des Fußes", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "radiology.ct_contrast.34345.v1", "evidence_kind": "radiology.ct_contrast", "gop": "34345", "title_hint": "CT-Kontrastmittelzuschlag", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.quick.32113.v1", "evidence_kind": "lab.quick", "gop": "32113", "title_hint": "Quick-Wert, Plasma", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.creatinine.32066.v1", "evidence_kind": "lab.creatinine", "gop": "32066", "title_hint": "Kreatinin", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.sodium.32083.v1", "evidence_kind": "lab.sodium", "gop": "32083", "title_hint": "Natrium", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.potassium.32081.v1", "evidence_kind": "lab.potassium", "gop": "32081", "title_hint": "Kalium", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.glucose.32025.v1", "evidence_kind": "lab.glucose", "gop": "32025", "title_hint": "Glucose", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.alt_gpt.32070.v1", "evidence_kind": "lab.alt_gpt", "gop": "32070", "title_hint": "GPT / ALT", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.blood_count.erythrocytes.32035.v1", "evidence_kind": "lab.erythrocytes", "gop": "32035A", "title_hint": "Erythrozytenzählung", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.blood_count.leukocytes.32036.v1", "evidence_kind": "lab.leukocytes", "gop": "32036A", "title_hint": "Leukozytenzählung", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.blood_count.thrombocytes.32037.v1", "evidence_kind": "lab.thrombocytes", "gop": "32037A", "title_hint": "Thrombozytenzählung", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.blood_count.hemoglobin.32038.v1", "evidence_kind": "lab.hemoglobin", "gop": "32038A", "title_hint": "Hämoglobin", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.blood_count.hematocrit.32039.v1", "evidence_kind": "lab.hematocrit", "gop": "32039A", "title_hint": "Hämatokrit", "valid_from": "2025/Q1", "regions": ["*"]}
+  ],
+  "temporal_rules": [
+    {
+      "rule_id": "time.notfall.initial.v1",
+      "name": "Notfall-Erstkontakt",
+      "gops": ["01210", "01212"],
+      "required_context": ["service_date", "service_time"],
+      "valid_from": "2025/Q1",
+      "regions": ["*"],
+      "outcomes": [
+        {
+          "rule_id": "time.notfall.initial.01212.v1",
+          "gop": "01212",
+          "when": {"any": [{"special_day": true}, {"time_window": {"start": "07:00", "end": "19:00", "inside": false}}]},
+          "note": "Notfallpauschale II: Wochenende/Feiertag/Sondertag oder außerhalb 07:00-19:00 Uhr."
+        },
+        {
+          "rule_id": "time.notfall.initial.01210.v1",
+          "gop": "01210",
+          "when": {"all": [{"special_day": false}, {"time_window": {"start": "07:00", "end": "19:00", "inside": true}}]},
+          "note": "Notfallpauschale I: Werktag von 07:00 Uhr bis vor 19:00 Uhr."
+        }
+      ]
+    },
+    {
+      "rule_id": "time.notfall.consultation.v1",
+      "name": "Notfall-Konsultation",
+      "gops": ["01214", "01216", "01218"],
+      "required_context": ["service_date", "service_time"],
+      "valid_from": "2025/Q1",
+      "regions": ["*"],
+      "outcomes": [
+        {
+          "rule_id": "time.notfall.consultation.01216.special.v1",
+          "gop": "01216",
+          "when": {"all": [{"special_day": true}, {"time_window": {"start": "07:00", "end": "19:00", "inside": true}}]},
+          "note": "Konsultation im Notfall: Wochenende/Feiertag/Sondertag von 07:00 Uhr bis vor 19:00 Uhr."
+        },
+        {
+          "rule_id": "time.notfall.consultation.01218.special.v1",
+          "gop": "01218",
+          "when": {"all": [{"special_day": true}, {"time_window": {"start": "07:00", "end": "19:00", "inside": false}}]},
+          "note": "Konsultation im Notfall: Wochenende/Feiertag/Sondertag außerhalb 07:00-19:00 Uhr."
+        },
+        {
+          "rule_id": "time.notfall.consultation.01216.evening.v1",
+          "gop": "01216",
+          "when": {"all": [{"special_day": false}, {"time_window": {"start": "19:00", "end": "22:00", "inside": true}}]},
+          "note": "Konsultation im Notfall: Werktag von 19:00 Uhr bis vor 22:00 Uhr."
+        },
+        {
+          "rule_id": "time.notfall.consultation.01218.night.v1",
+          "gop": "01218",
+          "when": {"all": [{"special_day": false}, {"time_window": {"start": "07:00", "end": "22:00", "inside": false}}]},
+          "note": "Konsultation im Notfall: Werktag von 22:00 Uhr bis vor 07:00 Uhr."
+        },
+        {
+          "rule_id": "time.notfall.consultation.01214.v1",
+          "gop": "01214",
+          "when": {"all": [{"special_day": false}, {"time_window": {"start": "07:00", "end": "19:00", "inside": true}}]},
+          "note": "Konsultation im Notfall: Werktag von 07:00 Uhr bis vor 19:00 Uhr."
+        }
+      ]
+    },
+    {
+      "rule_id": "time.notfall.clarification.v1",
+      "name": "Notfall-Abklärung",
+      "gops": ["01205", "01207"],
+      "required_context": ["service_date", "service_time"],
+      "valid_from": "2025/Q1",
+      "regions": ["*"],
+      "outcomes": [
+        {
+          "rule_id": "time.notfall.clarification.01207.v1",
+          "gop": "01207",
+          "when": {"any": [{"special_day": true}, {"time_window": {"start": "07:00", "end": "19:00", "inside": false}}]},
+          "note": "Notfallabklärung: Wochenende/Feiertag/Sondertag oder außerhalb 07:00-19:00 Uhr."
+        },
+        {
+          "rule_id": "time.notfall.clarification.01205.v1",
+          "gop": "01205",
+          "when": {"all": [{"special_day": false}, {"time_window": {"start": "07:00", "end": "19:00", "inside": true}}]},
+          "note": "Notfallabklärung: Werktag von 07:00 Uhr bis vor 19:00 Uhr."
+        }
+      ]
+    }
+  ],
+  "derived_rules": [
+    {
+      "rule_id": "derived.notfall.01226.v1",
+      "gop": "01226",
+      "title_hint": "Zuschlag Notfallpauschale zur GOP 01212",
+      "evidence_kind": "derived.notfall.severity",
+      "insert_after": "01212",
+      "valid_from": "2025/Q1",
+      "regions": ["*"],
+      "description": "Schweregradzuschlag bei 01212 und dokumentierter komplexer Beeinträchtigung beziehungsweise altersbezogenem Versorgungsbedarf.",
+      "requirements": [
+        {"gop_present": "01212"}
+      ],
+      "criteria": [
+        {
+          "label": "gesicherte Demenz-/Alzheimer-/Parkinson-Diagnose",
+          "when": {"icd_prefix_any": ["F00", "F01", "F02", "F03", "G30", "G20.1", "G20.2"]}
+        },
+        {
+          "label": "krankheitsbedingt komplexe kognitive, emotionale oder verhaltensbezogene Beeinträchtigung",
+          "when": {"text_any": ["Demenz", "dement", "Alzheimer", "kognitiv", "desorientiert", "orientierungslos", "Delir", "hirnorganisch", "Weglauftendenz", "verhaltens", "Kommunikationsfähigkeit"]}
+        },
+        {
+          "label": "Neugeborenen-/Säuglings-/Kleinkind-Kontext",
+          "when": {"any": [{"age": {"max": 5}}, {"text_any": ["Neugeboren", "Säugling", "Kleinkind"]}]}
+        },
+        {
+          "label": "geriatrischer Versorgungsbedarf/Frailty-Kontext ab dem 70. Lebensjahr",
+          "when": {"all": [{"age": {"min": 70}}, {"text_any": ["geriatr", "Frailty", "gebrech", "Ganggeschwindigkeit", "Erschöpfung", "muskuläre Schwäche", "verminderte körperliche Aktivität", "Gewichtsverlust", "kognitiv", "desorientiert"]}]}
+        }
+      ],
+      "exclusions": [
+        {
+          "label": "Kognitive oder verhaltensbezogene Beeinträchtigung ist nur substanzbezogen dokumentiert",
+          "action": "review",
+          "when": {
+            "all": [
+              {"text_any": ["Intoxikation", "Alkohol", "Drogen", "psychotrope Substanz", "substanzbedingt"]},
+              {"not": {"any": [{"icd_prefix_any": ["F00", "F01", "F02", "F03", "G30", "G20.1", "G20.2"]}, {"text_any": ["Demenz", "Alzheimer"]}]}}
+            ]
+          }
+        }
+      ],
+      "supporting_evidence": {
+        "any": [
+          {"evidence_kind": "diagnosis.icd10"},
+          {"evidence_kind": "context.kv_notfall_zna"},
+          {"text_any": ["Demenz", "dement", "Alzheimer", "kognitiv", "desorientiert", "orientierungslos", "Frailty", "geriatr", "Säugling", "Kleinkind"]}
+        ]
+      }
+    }
+  ]
+}

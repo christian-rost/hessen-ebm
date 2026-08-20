@@ -160,6 +160,34 @@ def test_ecg_pages_create_semantic_evidence():
     assert excluded == []
 
 
+def test_icd_detection_handles_three_character_codes_and_avoids_lab_false_positives():
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Behandlungsbericht ZNA Diagnose: Exazerbation einer bekannten schweren Demenz. "
+                "Aufnahmediagnosen Nicht näher bezeichnete Demenz (H) "
+                "Nicht näher bezeichnete Demenz (F03) Erfasst am 25.02.2026 / 01:11 "
+                "Alter 81 J."
+            ),
+        ),
+        PageText(
+            page=2,
+            text=(
+                "Laborbefund Hämoglobin 12.7 g/dl Natrium 140 mmol/l "
+                "Kalium 3.9 mmol/l Kreatinin 0.77 mg/dl"
+            ),
+        ),
+    ]
+
+    segments = segment_pages(pages)
+    evidence, _review, _excluded, context = extract_evidence(pages, segments)
+    diagnoses = [item for item in evidence if item.kind == "diagnosis.icd10"]
+
+    assert context["diagnosis"] == "F03"
+    assert [item.value for item in diagnoses] == ["F03"]
+
+
 def test_radiology_hand_forearm_and_wrist_ct_create_billable_evidence():
     pages = [
         PageText(

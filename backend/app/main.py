@@ -19,7 +19,7 @@ from .invoice_export import load_analysis, save_upload, sha256_file, store_analy
 from .invoice_store import delete_invoice, list_invoices, load_invoice, save_invoice
 from .models import AnalysisResult
 from .pdf_text import extract_pages
-from .rule_engine import active_rules_payload, generate_billing_items
+from .rule_engine import generate_billing_items, rule_overview_payload
 from .semantic_billing import SemanticBillingError, generate_semantic_billing_items
 
 app = FastAPI(title="hessen-ebm", version="0.1.0")
@@ -214,7 +214,7 @@ def catalog_search(
 
 @app.get("/api/rules")
 def rules() -> dict[str, object]:
-    return {"rules": active_rules_payload()}
+    return rule_overview_payload()
 
 
 def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Settings) -> AnalysisResult:

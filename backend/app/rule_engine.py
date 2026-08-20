@@ -1,58 +1,40 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from .billing_rules import BillingRuleContext, evaluate_catalog_context_rules, resolve_evidence_rule_gop
-from .catalog import CatalogRepository, normalize_gop
+from .billing_rules import (
+    BillingRuleContext,
+    billing_rule_guidance,
+    derive_additional_gops,
+    evidence_billing_rules,
+    evaluate_catalog_context_rules,
+    resolve_evidence_rule_gop,
+)
+from .catalog import CatalogRepository, canonical_gop, normalize_gop
 from .evidence_extraction import quarter_from_date
 from .models import BillingItem, Evidence, InvoiceSummary
-
-
-@dataclass(frozen=True)
-class BillingRule:
-    rule_id: str
-    evidence_kind: str
-    gop_original: str
-    title_hint: str
-    confidence: str = "high"
-
-
-ACTIVE_RULES: list[BillingRule] = [
-    BillingRule("context.kv_notfall_zna.01210.v1", "context.kv_notfall_zna", "01210", "Notfallpauschale I"),
-    BillingRule("radiology.ct_head_native.34310.v1", "radiology.ct_head_native", "34310", "CT-Untersuchung des Neurocraniums"),
-    BillingRule("radiology.xray_shoulder_2_planes.34231.v1", "radiology.xray_shoulder_2_planes", "34231", "Aufnahmen der Schulter/des Schultergürtels"),
-    BillingRule("radiology.xray_spine_hws_2_planes.34221.v1", "radiology.xray_spine_hws_2_planes", "34221", "Aufnahmen von Teilen der Wirbelsäule"),
-    BillingRule("radiology.xray_thorax_2_planes.34241.v1", "radiology.xray_thorax_2_planes", "34241", "Röntgen Thorax/Lunge 2 Ebenen"),
-    BillingRule("radiology.xray_hand_foot.34232.v1", "radiology.xray_hand_foot", "34232", "Aufnahmen der Hand, des Fußes"),
-    BillingRule("radiology.xray_extremities.34233.v1", "radiology.xray_extremities", "34233", "Aufnahmen der Extremitäten"),
-    BillingRule("radiology.ct_spine_section.34311.v1", "radiology.ct_spine_section", "34311", "CT Wirbelsäulenabschnitt"),
-    BillingRule("radiology.ct_extremities.34350.v1", "radiology.ct_extremities", "34350", "CT-Untersuchung der Extremitäten außer Hand/Fuß"),
-    BillingRule("radiology.ct_hand_foot.34351.v1", "radiology.ct_hand_foot", "34351", "CT-Untersuchung der Hand, des Fußes"),
-    BillingRule("radiology.ct_contrast.34345.v1", "radiology.ct_contrast", "34345", "CT-Kontrastmittelzuschlag"),
-    BillingRule("lab.quick.32113.v1", "lab.quick", "32113", "Quick-Wert, Plasma"),
-    BillingRule("lab.creatinine.32066.v1", "lab.creatinine", "32066", "Kreatinin"),
-    BillingRule("lab.sodium.32083.v1", "lab.sodium", "32083", "Natrium"),
-    BillingRule("lab.potassium.32081.v1", "lab.potassium", "32081", "Kalium"),
-    BillingRule("lab.glucose.32025.v1", "lab.glucose", "32025", "Glucose"),
-    BillingRule("lab.alt_gpt.32070.v1", "lab.alt_gpt", "32070", "GPT / ALT"),
-    BillingRule("lab.blood_count.erythrocytes.32035.v1", "lab.erythrocytes", "32035A", "Erythrozytenzählung"),
-    BillingRule("lab.blood_count.leukocytes.32036.v1", "lab.leukocytes", "32036A", "Leukozytenzählung"),
-    BillingRule("lab.blood_count.thrombocytes.32037.v1", "lab.thrombocytes", "32037A", "Thrombozytenzählung"),
-    BillingRule("lab.blood_count.hemoglobin.32038.v1", "lab.hemoglobin", "32038A", "Hämoglobin"),
-    BillingRule("lab.blood_count.hematocrit.32039.v1", "lab.hematocrit", "32039A", "Hämatokrit"),
-]
-
 
 def active_rules_payload() -> list[dict[str, str]]:
     return [
         {
             "rule_id": rule.rule_id,
             "evidence_kind": rule.evidence_kind,
-            "gop_original": rule.gop_original,
+            "gop_original": rule.gop,
             "title_hint": rule.title_hint,
+            "valid_from": rule.valid_from or "",
+            "valid_to": rule.valid_to or "",
+            "regions": ",".join(rule.regions),
         }
-        for rule in ACTIVE_RULES
+        for rule in evidence_billing_rules()
     ]
+
+
+def rule_overview_payload() -> dict[str, object]:
+    guidance = billing_rule_guidance()
+    return {
+        "rule_set": guidance["rule_set"],
+        "rules": active_rules_payload(),
+        "temporal_rules": guidance["temporal_rules"],
+        "derived_rules": guidance["derived_rules"],
+    }
 
 
 def generate_billing_items(
@@ -68,7 +50,7 @@ def generate_billing_items(
     items: list[BillingItem] = []
     used_bases: set[str] = set()
 
-    for rule in ACTIVE_RULES:
+    for rule in evidence_billing_rules(default_quarter, region):
         matches = evidence_by_kind.get(rule.evidence_kind, [])
         if not matches:
             continue
@@ -76,12 +58,13 @@ def generate_billing_items(
         selected = _select_best_evidence(matches)
         rule_decision = resolve_evidence_rule_gop(
             rule.evidence_kind,
-            rule.gop_original,
+            rule.gop,
             selected.service_date,
             selected.service_time,
             region,
+            quarter=default_quarter,
         )
-        gop_original = rule_decision.gop or rule.gop_original
+        gop_original = canonical_gop(rule_decision.gop or rule.gop)
         gop_base, gop_suffix = normalize_gop(gop_original)
         if gop_base in used_bases:
             continue
@@ -155,6 +138,8 @@ def generate_billing_items(
             )
         )
 
+    append_derived_billing_items(items, evidence, catalog, default_quarter, region)
+
     summary = InvoiceSummary(
         line_count=len(items),
         points_total=sum((item.points or 0) * item.quantity for item in items),
@@ -171,3 +156,113 @@ def _select_best_evidence(matches: list[Evidence]) -> Evidence:
         return has_date, service_datetime, item.confidence
 
     return sorted(matches, key=score, reverse=True)[0]
+
+
+def append_derived_billing_items(
+    items: list[BillingItem],
+    evidence: list[Evidence],
+    catalog: CatalogRepository,
+    default_quarter: str | None,
+    region: str,
+) -> None:
+    decisions = derive_additional_gops(
+        [item.gop_original for item in items],
+        [item.model_dump() for item in evidence],
+        quarter=default_quarter or _quarter_from_evidence(evidence),
+        region=region,
+    )
+    used_bases = {item.gop_base for item in items}
+    for decision in decisions:
+        if not decision.gop:
+            continue
+        gop_original = canonical_gop(decision.gop)
+        gop_base, gop_suffix = normalize_gop(gop_original)
+        if gop_base in used_bases:
+            continue
+        anchor_base, _ = normalize_gop(decision.insert_after or "")
+        base_item = next((item for item in items if item.gop_base == anchor_base), None)
+        quarter = (
+            (base_item.quarter if base_item else None)
+            or default_quarter
+            or _quarter_from_evidence(evidence)
+            or "2025/Q4"
+        )
+        entry = catalog.lookup(gop_original, quarter, region=region)
+        validation_notes = list(decision.notes)
+        validation_status = "review" if decision.review_required else "valid"
+        rule_id = decision.rule_id
+
+        if not entry:
+            validation_status = "catalog_missing"
+            validation_notes.append(f"GOP {gop_base} wurde im Katalog {quarter} nicht gefunden.")
+            title = decision.title_hint or gop_original
+            points = None
+            amount = None
+            source = "UNKNOWN"
+            source_label = None
+            catalog_id = None
+            catalog_data_stand = None
+        else:
+            catalog_decision = evaluate_catalog_context_rules(
+                BillingRuleContext(
+                    gop=gop_original,
+                    service_date=base_item.service_date if base_item else None,
+                    service_time=base_item.service_time if base_item else None,
+                    region=region,
+                    evidence_kind=decision.evidence_kind,
+                    evidence_text=" ".join(item.text for item in evidence),
+                    evidence_metadata=dict(decision.metadata or {}),
+                    catalog_rule_texts=entry.rule_texts,
+                )
+            )
+            validation_notes.extend(catalog_decision.notes)
+            if catalog_decision.review_required:
+                validation_status = "review"
+            if catalog_decision.rule_id != "catalog.context.noop.v1":
+                rule_id = f"{rule_id}+{catalog_decision.rule_id}"
+            title = entry.title
+            points = entry.points
+            amount = entry.euro
+            source = entry.source
+            source_label = entry.catalog_label
+            catalog_id = entry.catalog_id
+            catalog_data_stand = entry.data_stand
+
+        used_bases.add(gop_base)
+        derived_item = BillingItem(
+            line=0,
+            gop_original=gop_original,
+            gop_base=gop_base,
+            gop_suffix=gop_suffix,
+            title=title,
+            catalog_source=source,
+            catalog_source_label=source_label,
+            catalog_id=catalog_id,
+            catalog_data_stand=catalog_data_stand,
+            quarter=quarter,
+            service_date=base_item.service_date if base_item else None,
+            service_time=base_item.service_time if base_item else None,
+            quantity=1,
+            points=points,
+            amount_eur=amount,
+            rule_id=rule_id,
+            confidence="medium" if validation_status == "review" else "high",
+            evidence_ids=list(decision.evidence_ids),
+            evidence_pages=list(decision.evidence_pages),
+            validation_status=validation_status,  # type: ignore[arg-type]
+            validation_notes=validation_notes,
+            derivation_source="deterministic_rules",
+            semantic_reason=decision.notes[0] if decision.notes else None,
+        )
+        insert_index = items.index(base_item) + 1 if base_item in items else len(items)
+        while insert_index < len(items) and items[insert_index].rule_id.startswith("derived."):
+            insert_index += 1
+        items.insert(insert_index, derived_item)
+
+    for index, item in enumerate(items, start=1):
+        item.line = index
+
+
+def _quarter_from_evidence(evidence: list[Evidence]) -> str | None:
+    dates = sorted(item.service_date for item in evidence if item.service_date)
+    return quarter_from_date(dates[0]) if dates else None

@@ -13,6 +13,7 @@ class FakeCatalog(CatalogRepository):
         values = {
             "01210": ("Notfallpauschale I", 120, 14.87),
             "01212": ("Notfallpauschale II", 195, 24.16),
+            "01226": ("Zuschlag Notfallpauschale zur GOP 01212", 90, 11.15),
             "34310": ("CT-Untersuchung des Neurocraniums", 534, 66.18),
             "34231": ("Aufnahmen der Schulter", 137, 16.98),
             "34221": ("Aufnahmen von Teilen der Wirbelsäule", 140, 17.35),
@@ -96,6 +97,40 @@ def test_kv_notfall_zna_daytime_uses_01210():
     assert [item.gop_original for item in items] == ["01210"]
     assert summary.points_total == 120
     assert summary.amount_total_eur == 14.87
+
+
+def test_kv_notfall_zna_night_with_dementia_derives_01226_generically():
+    evidence = [
+        ev("context.kv_notfall_zna", service_date="2026-02-25", service_time="01:13"),
+        Evidence(
+            evidence_id="ev-diagnosis-f03",
+            kind="diagnosis.icd10",
+            label="ICD-10 F03",
+            page=28,
+            service_date="2026-02-25",
+            service_time="01:11",
+            value="F03",
+            text="Aufnahmediagnose Nicht näher bezeichnete Demenz (H) Nicht näher bezeichnete Demenz (F03)",
+            metadata={"icd10": "F03"},
+        ),
+        Evidence(
+            evidence_id="ev-cognitive",
+            kind="clinical.domain.neurology",
+            label="Neurologischer Notfallbericht",
+            page=11,
+            service_date="2026-02-25",
+            service_time="01:13",
+            text="Patient 81a, schwere Demenz, zu allen Qualitäten desorientiert, Weglauftendenz.",
+        ),
+    ]
+
+    items, summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
+
+    assert [item.gop_original for item in items] == ["01212", "01226"]
+    assert items[1].rule_id.startswith("derived.notfall.01226.v1")
+    assert "ev-diagnosis-f03" in items[1].evidence_ids
+    assert summary.points_total == 285
+    assert summary.amount_total_eur == 35.31
 
 
 def test_radiology_extremity_hand_and_wrist_ct_rules():

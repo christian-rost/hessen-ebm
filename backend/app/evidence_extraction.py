@@ -9,7 +9,7 @@ from .models import DocumentSegment, Evidence, ExcludedEvidence, PageText, Revie
 
 DATE_RE = re.compile(r"(\d{2}\.\d{2}\.\d{4})")
 TIME_RE = re.compile(r"(\d{2}:\d{2})")
-ICD_RE = re.compile(r"([A-Z]\d{2}\.\d{1,2})(?![\d.])")
+ICD_RE = re.compile(r"\b([A-Z]\d{2}(?:\.\d{1,2})?)(?![\d.])")
 
 CLINICAL_CONTEXT_SEGMENTS = {
     "case_context",
@@ -472,14 +472,13 @@ def _treatment_end_datetime(text: str) -> tuple[str | None, str | None]:
 
 def _extract_icd10(text: str) -> str | None:
     compact_upper = _compact(text).upper()
-    for marker in ("DIAGNOSE", "DIAGNOSEN"):
+    for marker in ("AUFNAHMEDIAGNOSE", "AUFNAHMEDIAGNOSEN", "DIAGNOSE", "DIAGNOSEN", "ICD"):
         index = compact_upper.find(marker)
         if index >= 0:
             match = ICD_RE.search(compact_upper[index : index + 500])
             if match:
                 return match.group(1)
-    match = ICD_RE.search(compact_upper)
-    return match.group(1) if match else None
+    return None
 
 
 def _evidence_id(kind: str, page: int, text: str) -> str:
@@ -558,6 +557,8 @@ def extract_evidence(
                         diagnosis_date,
                         diagnosis_time,
                         0.75,
+                        value=diagnosis,
+                        metadata={"icd10": diagnosis},
                     )
                 )
 
