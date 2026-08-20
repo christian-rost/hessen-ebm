@@ -9,8 +9,9 @@ from .admin_auth import require_admin
 from .admin_catalog import CatalogValidationError, install_catalog_database, list_catalog_backups, validate_catalog_database
 from .admin_catalog_imports import CatalogImportError, import_regional_catalog_pdf, scrape_ebm_quarter_into_catalog
 from .admin_jobs import JobAlreadyRunningError, JobNotFoundError, get_job, running_catalog_job, start_catalog_job
+from .analysis_jobs import AnalysisJobNotFoundError, get_analysis_job, start_analysis_job
 from .catalog import CatalogRepository
-from .config import get_settings
+from .config import Settings, get_settings
 from .database import supabase_status
 from .document_segmentation import segment_pages
 from .evidence_extraction import extract_evidence
@@ -216,15 +217,8 @@ def rules() -> dict[str, object]:
     return {"rules": active_rules_payload()}
 
 
-@app.post("/api/documents/analyze", response_model=AnalysisResult, dependencies=[Depends(require_admin)])
-async def analyze_document(file: UploadFile = File(...)) -> AnalysisResult:
-    if file.content_type not in {"application/pdf", "application/octet-stream"}:
-        raise HTTPException(status_code=400, detail="Only PDF uploads are supported.")
-
-    settings = get_settings()
-    upload_dir = settings.storage_dir / "uploads"
+def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Settings) -> AnalysisResult:
     analysis_dir = settings.storage_dir / "analyses"
-    uploaded_path = await save_upload(file, upload_dir)
 
     pages, warnings = extract_pages(uploaded_path, settings)
     segments = segment_pages(pages)
@@ -250,14 +244,14 @@ async def analyze_document(file: UploadFile = File(...)) -> AnalysisResult:
             excluded.extend(semantic_result.excluded_evidence)
             billing_derivation = semantic_result.context
         except SemanticBillingError as exc:
-            analysis_warnings.append(f"Semantic billing failed, using deterministic rules: {exc}")
+            analysis_warnings.append(f"Semantische Abrechnung fehlgeschlagen, deterministische Regeln werden verwendet: {exc}")
             items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter, region=region)
             billing_derivation = {
                 "mode": "deterministic_rules",
                 "fallback_reason": str(exc),
             }
         except Exception as exc:  # pragma: no cover - safety net for external LLM integration.
-            analysis_warnings.append(f"Semantic billing crashed, using deterministic rules: {exc}")
+            analysis_warnings.append(f"Semantische Abrechnung ist abgestürzt, deterministische Regeln werden verwendet: {exc}")
             items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter, region=region)
             billing_derivation = {
                 "mode": "deterministic_rules",
@@ -286,7 +280,7 @@ async def analyze_document(file: UploadFile = File(...)) -> AnalysisResult:
     result = AnalysisResult(
         analysis_id=uuid4().hex,
         status="draft_needs_human_review",
-        source_filename=file.filename or uploaded_path.name,
+        source_filename=source_filename,
         source_sha256=sha256_file(uploaded_path),
         catalog_context=catalog_context,
         pages=pages,
@@ -302,8 +296,64 @@ async def analyze_document(file: UploadFile = File(...)) -> AnalysisResult:
         save_invoice(result)
     except Exception as exc:
         if settings.supabase_url and settings.supabase_key:
-            raise HTTPException(status_code=500, detail=f"Rechnungsentwurf konnte nicht in Supabase gespeichert werden: {exc}") from exc
+            raise RuntimeError(f"Rechnungsentwurf konnte nicht in Supabase gespeichert werden: {exc}") from exc
     return result
+
+
+def _analysis_job_result(result: AnalysisResult) -> dict[str, object]:
+    return {
+        "analysis_id": result.analysis_id,
+        "source_filename": result.source_filename,
+        "summary": result.summary.model_dump(),
+    }
+
+
+def _validate_pdf_upload(file: UploadFile) -> None:
+    if file.content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(status_code=400, detail="Nur PDF-Uploads werden unterstützt.")
+
+
+@app.post("/api/documents/analyze", response_model=AnalysisResult, dependencies=[Depends(require_admin)])
+async def analyze_document(file: UploadFile = File(...)) -> AnalysisResult:
+    _validate_pdf_upload(file)
+
+    settings = get_settings()
+    upload_dir = settings.storage_dir / "uploads"
+    uploaded_path = await save_upload(file, upload_dir)
+    try:
+        return _analyze_uploaded_pdf(uploaded_path, file.filename or uploaded_path.name, settings)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/documents/analyze/jobs", status_code=202, dependencies=[Depends(require_admin)])
+async def start_document_analysis(file: UploadFile = File(...)) -> dict[str, object]:
+    _validate_pdf_upload(file)
+
+    settings = get_settings()
+    upload_dir = settings.storage_dir / "uploads"
+    uploaded_path = await save_upload(file, upload_dir)
+    source_filename = file.filename or uploaded_path.name
+
+    def run_analysis() -> dict[str, object]:
+        result = _analyze_uploaded_pdf(uploaded_path, source_filename, settings)
+        return _analysis_job_result(result)
+
+    job = start_analysis_job(
+        params={"source_filename": source_filename},
+        message="Analyse wurde gestartet.",
+        target=run_analysis,
+    )
+    return {"job": job}
+
+
+@app.get("/api/documents/analyze/jobs/{job_id}", dependencies=[Depends(require_admin)])
+def document_analysis_job(job_id: str) -> dict[str, object]:
+    try:
+        job = get_analysis_job(job_id)
+    except AnalysisJobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Analysejob nicht gefunden.") from exc
+    return {"job": job}
 
 
 @app.get("/api/analyses/{analysis_id}", response_model=AnalysisResult, dependencies=[Depends(require_admin)])

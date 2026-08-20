@@ -37,6 +37,7 @@ function App() {
   const [result, setResult] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
+  const [analysisMessage, setAnalysisMessage] = React.useState(null);
   const [invoices, setInvoices] = React.useState({ items: [], storage_backend: "local_json" });
   const [invoicesLoading, setInvoicesLoading] = React.useState(false);
   const [invoiceError, setInvoiceError] = React.useState(null);
@@ -107,6 +108,7 @@ function App() {
   async function loadInvoice(analysisId) {
     setLoading(true);
     setError(null);
+    setAnalysisMessage(null);
     try {
       const response = await fetch(`${API_BASE}/api/invoices/${encodeURIComponent(analysisId)}`, {
         headers: authHeaders()
@@ -128,11 +130,12 @@ function App() {
     if (!file) return;
     setLoading(true);
     setError(null);
+    setAnalysisMessage("Analyse wird gestartet.");
     setResult(null);
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const response = await fetch(`${API_BASE}/api/documents/analyze`, {
+      const response = await fetch(`${API_BASE}/api/documents/analyze/jobs`, {
         method: "POST",
         headers: authHeaders(),
         body: formData
@@ -141,13 +144,60 @@ function App() {
         const payload = await response.json().catch(() => ({}));
         throw new Error(payload.detail || `Analyse fehlgeschlagen (${response.status})`);
       }
-      setResult(await response.json());
+      const payload = await response.json();
+      const jobId = payload.job?.id;
+      if (!jobId) {
+        throw new Error("Analysejob konnte nicht gestartet werden.");
+      }
+      setAnalysisMessage(payload.job.message || "Analyse läuft.");
+      await pollAnalysisJob(jobId);
       refreshInvoices();
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setAnalysisMessage(null);
     }
+  }
+
+  async function pollAnalysisJob(jobId) {
+    for (let attempt = 0; attempt < 900; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      const response = await fetch(`${API_BASE}/api/documents/analyze/jobs/${encodeURIComponent(jobId)}`, {
+        headers: authHeaders()
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || `Analyse-Status konnte nicht geladen werden (${response.status})`);
+      }
+
+      const job = payload.job;
+      setAnalysisMessage(job?.message || "Analyse läuft.");
+
+      if (job?.status === "succeeded") {
+        const analysisId = job.result?.analysis_id;
+        if (!analysisId) {
+          throw new Error("Analyse wurde abgeschlossen, aber ohne Ergebnis-ID.");
+        }
+        await loadCompletedInvoice(analysisId);
+        return;
+      }
+      if (job?.status === "failed") {
+        throw new Error(job.error || job.message || "Analyse fehlgeschlagen.");
+      }
+    }
+    throw new Error("Analyse dauert länger als erwartet. Bitte später erneut laden.");
+  }
+
+  async function loadCompletedInvoice(analysisId) {
+    const response = await fetch(`${API_BASE}/api/invoices/${encodeURIComponent(analysisId)}`, {
+      headers: authHeaders()
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.detail || `Rechnung konnte nicht geladen werden (${response.status})`);
+    }
+    setResult(payload);
   }
 
   function downloadJson() {
@@ -212,6 +262,12 @@ function App() {
                 <div className="message error">
                   <AlertCircle size={18} />
                   {error}
+                </div>
+              )}
+              {analysisMessage && (
+                <div className="message success">
+                  <RefreshCw size={18} />
+                  {analysisMessage}
                 </div>
               )}
             </form>

@@ -167,6 +167,8 @@ Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, faellt die A
 | `POST /api/admin/catalog/upload` | SQLite-Katalogdatei validieren, Backup anlegen und aktiv ersetzen |
 | `GET /api/rules` | aktuell aktive Regeluebersicht |
 | `POST /api/documents/analyze` | PDF hochladen und Rechnungsentwurf erzeugen |
+| `POST /api/documents/analyze/jobs` | PDF-Analyse als Hintergrundjob starten |
+| `GET /api/documents/analyze/jobs/{job_id}` | Status eines Analysejobs abrufen |
 | `GET /api/analyses/{analysis_id}` | gespeicherten Analyseentwurf abrufen |
 | `GET /api/invoices` | gespeicherte Rechnungsentwürfe listen |
 | `GET /api/invoices/{analysis_id}` | gespeicherten Rechnungsentwurf mit Positionen laden |
