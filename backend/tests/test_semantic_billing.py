@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 from app.catalog import CatalogRepository, normalize_gop
 from app.config import Settings
@@ -13,6 +14,7 @@ class FakeCatalog(CatalogRepository):
     def lookup(self, gop: str, quarter: str, region: str = "Hessen"):
         values = {
             "01210": ("Notfallpauschale I", 120, 14.87),
+            "01212": ("Notfallpauschale II", 195, 24.16),
             "32066": ("Kreatinin", None, 0.25),
         }
         base, _ = normalize_gop(gop)
@@ -39,6 +41,15 @@ class FakeCatalog(CatalogRepository):
 
     def search(self, query: str, quarter: str, limit: int = 25):
         return []
+
+
+class RuleTextCatalog(FakeCatalog):
+    def lookup(self, gop: str, quarter: str, region: str = "Hessen"):
+        entry = super().lookup(gop, quarter, region)
+        if entry and entry.gop_base == "32066":
+            entry.description = "Die Uhrzeit der Inanspruchnahme ist anzugeben."
+            entry.rule_texts = ["Die Uhrzeit der Inanspruchnahme ist anzugeben."]
+        return entry
 
 
 class SearchCatalog(FakeCatalog):
@@ -136,14 +147,14 @@ def settings() -> Settings:
     )
 
 
-def ev(kind: str, page: int = 1) -> Evidence:
+def ev(kind: str, page: int = 1, service_date: Optional[str] = "2025-10-04", service_time: Optional[str] = "00:01") -> Evidence:
     return Evidence(
         evidence_id=f"ev-{kind}",
         kind=kind,
         label=kind,
         page=page,
-        service_date="2025-10-04",
-        service_time="00:01",
+        service_date=service_date,
+        service_time=service_time,
         text=kind,
     )
 
@@ -223,10 +234,43 @@ def test_semantic_billing_uses_llm_json_and_catalog_validation():
         llm_client=fake_llm,
     )
 
-    assert [item.gop_original for item in result.items] == ["01210", "32066"]
+    assert [item.gop_original for item in result.items] == ["01212", "32066"]
     assert result.items[0].derivation_source == "semantic_llm"
     assert result.items[0].semantic_reason == "ZNA-Kontakt im KV-Notfalldienst dokumentiert."
-    assert result.summary.amount_total_eur == 15.12
+    assert "korrigiert" in result.items[0].validation_notes[0]
+    assert result.summary.amount_total_eur == 24.41
+
+
+def test_semantic_billing_keeps_01210_for_weekday_daytime():
+    evidence = [ev("context.kv_notfall_zna", service_date="2026-04-24", service_time="12:20")]
+
+    def fake_llm(_messages, _settings):
+        return {
+            "items": [
+                {
+                    "gop": "01210",
+                    "quantity": 1,
+                    "evidence_ids": ["ev-context.kv_notfall_zna"],
+                    "service_date": "2026-04-24",
+                    "service_time": "12:20",
+                    "confidence": "high",
+                    "reason": "ZNA-Kontakt tagsüber an einem Werktag.",
+                }
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence,
+        FakeCatalog(),
+        default_quarter="2026/Q2",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    assert [item.gop_original for item in result.items] == ["01210"]
+    assert result.items[0].validation_status == "valid"
 
 
 def test_semantic_billing_does_not_accept_gop_outside_candidate_pool():
@@ -258,6 +302,40 @@ def test_semantic_billing_does_not_accept_gop_outside_candidate_pool():
     assert result.items == []
     assert result.review_candidates[0].possible_gops == ["99999"]
     assert "Katalog-Kandidatenpool" in result.review_candidates[0].reason
+
+
+def test_semantic_billing_marks_general_catalog_rule_review_when_time_is_missing():
+    evidence = [ev("lab.creatinine", service_date="2026-04-24", service_time=None)]
+
+    def fake_llm(messages, _settings):
+        assert "Die Uhrzeit der Inanspruchnahme ist anzugeben." in messages[1]["content"]
+        return {
+            "items": [
+                {
+                    "gop": "32066",
+                    "quantity": 1,
+                    "evidence_ids": ["ev-lab.creatinine"],
+                    "service_date": "2026-04-24",
+                    "service_time": None,
+                    "confidence": "high",
+                    "reason": "Kreatininwert als Laborleistung dokumentiert.",
+                }
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence,
+        RuleTextCatalog(),
+        default_quarter="2026/Q2",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    assert [item.gop_original for item in result.items] == ["32066"]
+    assert result.items[0].validation_status == "review"
+    assert any("Uhrzeit" in note for note in result.items[0].validation_notes)
 
 
 def test_semantic_billing_uses_evidence_metadata_search_terms_for_candidates():

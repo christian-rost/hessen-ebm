@@ -8,6 +8,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Union
 
+from .billing_rules import (
+    BillingRuleContext,
+    apply_temporal_gop_rule,
+    billing_rule_guidance,
+    candidate_gops_for_evidence_kind,
+    evaluate_catalog_context_rules,
+)
 from .catalog import CatalogRepository, normalize_gop
 from .config import Settings
 from .evidence_extraction import quarter_from_date
@@ -115,6 +122,8 @@ def _collect_catalog_candidates(
                 "euro": entry.euro,
                 "region": entry.region,
                 "page": entry.page,
+                "description": entry.description,
+                "rule_texts": entry.rule_texts,
                 "evidence_ids": [],
                 "reason": reason,
             }
@@ -127,6 +136,9 @@ def _collect_catalog_candidates(
     for item in evidence:
         for gop in rules_by_kind.get(item.kind, []):
             add(catalog.lookup(gop, quarter, region), [item.evidence_id], f"validated prior rule for {item.kind}", gop)
+
+        for gop in candidate_gops_for_evidence_kind(item.kind):
+            add(catalog.lookup(gop, quarter, region), [item.evidence_id], f"time-dependent billing rule for {item.kind}", gop)
 
         for gop in _candidate_gops(item):
             add(catalog.lookup(gop, quarter, region), [item.evidence_id], f"explicit candidate GOP for {item.kind}", gop)
@@ -193,6 +205,8 @@ def _build_messages(
             "data_stand": item.get("data_stand"),
             "points": item["points"],
             "euro": item["euro"],
+            "description": item.get("description"),
+            "rule_texts": item.get("rule_texts") or [],
             "evidence_ids": item["evidence_ids"],
             "reason": item["reason"],
         }
@@ -211,6 +225,7 @@ def _build_messages(
         "task": "Erzeuge einen semantisch begründeten Rechnungsentwurf.",
         "quarter": quarter,
         "region": region,
+        "billing_rules": billing_rule_guidance(),
         "json_schema": {
             "items": [
                 {
@@ -339,11 +354,39 @@ def _billing_items_from_payload(
         gop = str(proposal.get("gop") or "").strip().upper()
         if not gop:
             continue
-        gop_base, gop_suffix = normalize_gop(gop)
-        candidate = candidate_by_gop.get(gop) or candidate_by_gop.get(gop_base)
+        proposed_base, _proposed_suffix = normalize_gop(gop)
+        candidate = candidate_by_gop.get(gop) or candidate_by_gop.get(proposed_base)
         evidence_ids = _valid_evidence_ids(proposal.get("evidence_ids"), evidence_by_id)
         if not evidence_ids and candidate:
             evidence_ids = [item for item in candidate.get("evidence_ids", []) if item in evidence_by_id]
+        selected = _select_evidence_for_item(evidence_ids, evidence_by_id)
+        service_date = _clean_optional_str(proposal.get("service_date")) or (selected.service_date if selected else None)
+        service_time = _clean_optional_str(proposal.get("service_time")) or (selected.service_time if selected else None)
+
+        temporal_decision = apply_temporal_gop_rule(gop, service_date, service_time, region)
+        validation_notes = list(temporal_decision.notes)
+        if temporal_decision.gop and temporal_decision.gop != gop:
+            corrected_base, _corrected_suffix = normalize_gop(temporal_decision.gop)
+            corrected_candidate = candidate_by_gop.get(temporal_decision.gop) or candidate_by_gop.get(corrected_base)
+            if not corrected_candidate:
+                review.append(
+                    ReviewCandidate(
+                        evidence=f"Zeitabhängiger LLM-Vorschlag GOP {gop}",
+                        evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                        possible_gops=[gop, temporal_decision.gop],
+                        reason=(
+                            f"Nach Datum/Uhrzeit wäre {temporal_decision.gop} plausibel, "
+                            "diese GOP war aber nicht im Katalog-Kandidatenpool."
+                        ),
+                    )
+                )
+                continue
+            candidate = corrected_candidate
+            gop = temporal_decision.gop
+
+        gop_base, gop_suffix = normalize_gop(gop)
+        if not candidate:
+            candidate = candidate_by_gop.get(gop) or candidate_by_gop.get(gop_base) or candidate_by_gop.get(proposed_base)
 
         if not candidate:
             review.append(
@@ -368,7 +411,6 @@ def _billing_items_from_payload(
         used_bases.add(gop_base)
 
         entry = _lookup_candidate_entry(catalog, gop, quarter, region, candidate)
-        validation_notes: list[str] = []
         if not entry:
             validation_status = "catalog_missing"
             validation_notes.append(f"GOP {gop_base} wurde im Katalog {quarter} nicht gefunden.")
@@ -382,6 +424,8 @@ def _billing_items_from_payload(
         else:
             confidence = str(proposal.get("confidence") or "medium").lower()
             validation_status = "review" if confidence == "low" else "valid"
+            if temporal_decision.review_required:
+                validation_status = "review"
             title = entry.title
             points = entry.points
             amount = entry.euro
@@ -390,13 +434,30 @@ def _billing_items_from_payload(
             catalog_id = entry.catalog_id
             catalog_data_stand = entry.data_stand
 
-        selected = _select_evidence_for_item(evidence_ids, evidence_by_id)
-        service_date = _clean_optional_str(proposal.get("service_date")) or (selected.service_date if selected else None)
-        service_time = _clean_optional_str(proposal.get("service_time")) or (selected.service_time if selected else None)
+        catalog_decision = evaluate_catalog_context_rules(
+            BillingRuleContext(
+                gop=gop,
+                service_date=service_date,
+                service_time=service_time,
+                region=region,
+                evidence_kind=selected.kind if selected else None,
+                evidence_text=selected.text if selected else "",
+                evidence_metadata=selected.metadata if selected else {},
+                catalog_rule_texts=_candidate_rule_texts(candidate, entry),
+            )
+        )
+        validation_notes.extend(catalog_decision.notes)
+        if catalog_decision.review_required and validation_status != "catalog_missing":
+            validation_status = "review"
+
         quantity = _safe_quantity(proposal.get("quantity"))
         confidence = str(proposal.get("confidence") or "medium").lower()
         if confidence not in {"high", "medium", "low"}:
             confidence = "medium"
+        temporal_rule_suffix = f"+{temporal_decision.rule_id}" if temporal_decision.rule_id.startswith("time.") else ""
+        catalog_rule_suffix = (
+            f"+{catalog_decision.rule_id}" if catalog_decision.rule_id != "catalog.context.noop.v1" else ""
+        )
 
         items.append(
             BillingItem(
@@ -415,7 +476,7 @@ def _billing_items_from_payload(
                 quantity=quantity,
                 points=points,
                 amount_eur=amount,
-                rule_id=f"semantic_llm.{gop_base}.v1",
+                rule_id=f"semantic_llm.{gop_base}.v1{temporal_rule_suffix}{catalog_rule_suffix}",
                 confidence=confidence,
                 evidence_ids=evidence_ids,
                 evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
@@ -443,6 +504,21 @@ def _lookup_candidate_entry(
     if source == "EBM_KBV":
         return catalog.lookup_ebm(gop, quarter)
     return catalog.lookup(gop, quarter, region=region)
+
+
+def _candidate_rule_texts(candidate: dict[str, Any], entry: CatalogEntry | None) -> tuple[str, ...]:
+    texts: list[str] = []
+    if entry:
+        if entry.description:
+            texts.append(entry.description)
+        texts.extend(entry.rule_texts)
+    description = candidate.get("description")
+    if description:
+        texts.append(str(description))
+    for text in _as_list(candidate.get("rule_texts")):
+        if str(text).strip():
+            texts.append(str(text))
+    return tuple(dict.fromkeys(texts))
 
 
 def _review_from_payload(payload: dict[str, Any], evidence: list[Evidence]) -> list[ReviewCandidate]:

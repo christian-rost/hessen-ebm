@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .billing_rules import BillingRuleContext, evaluate_catalog_context_rules, resolve_evidence_rule_gop
 from .catalog import CatalogRepository, normalize_gop
 from .evidence_extraction import quarter_from_date
 from .models import BillingItem, Evidence, InvoiceSummary
@@ -73,15 +74,24 @@ def generate_billing_items(
             continue
 
         selected = _select_best_evidence(matches)
-        gop_base, gop_suffix = normalize_gop(rule.gop_original)
+        rule_decision = resolve_evidence_rule_gop(
+            rule.evidence_kind,
+            rule.gop_original,
+            selected.service_date,
+            selected.service_time,
+            region,
+        )
+        gop_original = rule_decision.gop or rule.gop_original
+        gop_base, gop_suffix = normalize_gop(gop_original)
         if gop_base in used_bases:
             continue
         used_bases.add(gop_base)
 
         quarter = default_quarter or quarter_from_date(selected.service_date) or "2025/Q4"
-        entry = catalog.lookup(rule.gop_original, quarter, region=region)
-        validation_notes: list[str] = []
-        validation_status = "valid"
+        entry = catalog.lookup(gop_original, quarter, region=region)
+        validation_notes = list(rule_decision.notes)
+        validation_status = "review" if rule_decision.review_required else "valid"
+        rule_id = f"{rule.rule_id}+{rule_decision.rule_id}"
 
         if not entry:
             validation_status = "catalog_missing"
@@ -94,6 +104,23 @@ def generate_billing_items(
             catalog_id = None
             catalog_data_stand = None
         else:
+            catalog_decision = evaluate_catalog_context_rules(
+                BillingRuleContext(
+                    gop=gop_original,
+                    service_date=selected.service_date,
+                    service_time=selected.service_time,
+                    region=region,
+                    evidence_kind=rule.evidence_kind,
+                    evidence_text=selected.text,
+                    evidence_metadata=selected.metadata,
+                    catalog_rule_texts=entry.rule_texts,
+                )
+            )
+            validation_notes.extend(catalog_decision.notes)
+            if catalog_decision.review_required:
+                validation_status = "review"
+            if catalog_decision.rule_id != "catalog.context.noop.v1":
+                rule_id = f"{rule_id}+{catalog_decision.rule_id}"
             title = entry.title
             points = entry.points
             amount = entry.euro
@@ -105,7 +132,7 @@ def generate_billing_items(
         items.append(
             BillingItem(
                 line=len(items) + 1,
-                gop_original=rule.gop_original,
+                gop_original=gop_original,
                 gop_base=gop_base,
                 gop_suffix=gop_suffix,
                 title=title,
@@ -119,8 +146,8 @@ def generate_billing_items(
                 quantity=1,
                 points=points,
                 amount_eur=amount,
-                rule_id=rule.rule_id,
-                confidence=rule.confidence,
+                rule_id=rule_id,
+                confidence="medium" if rule_decision.review_required else rule.confidence,
                 evidence_ids=[ev.evidence_id for ev in matches],
                 evidence_pages=sorted({ev.page for ev in matches}),
                 validation_status=validation_status,  # type: ignore[arg-type]

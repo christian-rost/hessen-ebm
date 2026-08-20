@@ -23,6 +23,16 @@ def build_catalog(path: Path):
         conn.execute("insert into details values ('2025/Q4', 'n1', '01210', 'Notfallpauschale I', '120', '14.87')")
 
 
+def add_ebm_rule_text(path: Path):
+    conn = sqlite3.connect(path)
+    with conn:
+        conn.execute("alter table details add column text text")
+        conn.execute(
+            "update details set text = 'Die Uhrzeit der Inanspruchnahme ist anzugeben.' "
+            "where quarter = '2025/Q4' and gop = '01210'"
+        )
+
+
 def add_regional_catalog(path: Path):
     conn = sqlite3.connect(path)
     with conn:
@@ -38,6 +48,11 @@ def add_regional_catalog(path: Path):
             "gop_code text not null, gop_base text not null, title text, description text, euro real, points text, page integer)"
         )
         conn.execute(
+            "create table regional_gop_rules (id integer primary key autoincrement, catalog_id text not null, "
+            "gop_id integer, quarter text not null, region text not null, gop_code text, rule_type text not null, "
+            "rule_text text not null, source_text text)"
+        )
+        conn.execute(
             "insert into regional_catalogs values ("
             "'kv_hessen_gop_2026_q2', 'KV_HESSEN_GOP', 'Hessen', '2026/Q2', "
             "'Hessen-GOP Q2', null, null, '01.04.2026', '2026-06-16T00:00:00+00:00', 10, 'abc')"
@@ -47,6 +62,11 @@ def add_regional_catalog(path: Path):
             "title, description, euro, points, page) values ("
             "'kv_hessen_gop_2026_q2', 'KV_HESSEN_GOP', 'Hessen', '2026/Q2', '01210H', "
             "'01210H', '01210', 'Hessen-Zuschlag Notfall', 'Regionaler Zuschlag', 3.21, '26', 7)"
+        )
+        conn.execute(
+            "insert into regional_gop_rules(catalog_id, quarter, region, gop_code, rule_type, rule_text, source_text) "
+            "values ('kv_hessen_gop_2026_q2', '2026/Q2', 'Hessen', '01210H', 'payer', "
+            "'Nur im regionalen Hessen-Kontext abrechnungsfähig.', 'Nur im regionalen Hessen-Kontext abrechnungsfähig.')"
         )
 
 
@@ -91,6 +111,18 @@ def test_catalog_lookup_works_without_regional_tables(tmp_path):
     assert repo.lookup_hessen("01210", "2025/Q4") is None
 
 
+def test_catalog_lookup_exposes_ebm_rule_text(tmp_path):
+    source = tmp_path / "ebm_with_rule_text.sqlite"
+    build_catalog(source)
+    add_ebm_rule_text(source)
+
+    repo = CatalogRepository(source)
+    entry = repo.lookup("01210", "2025/Q4")
+
+    assert entry.rule_texts == ["Die Uhrzeit der Inanspruchnahme ist anzugeben."]
+    assert entry.description == "Die Uhrzeit der Inanspruchnahme ist anzugeben."
+
+
 def test_regional_lookup_uses_catalog_metadata(tmp_path):
     source = tmp_path / "catalog_with_regional.sqlite"
     build_catalog(source)
@@ -104,6 +136,8 @@ def test_regional_lookup_uses_catalog_metadata(tmp_path):
     assert entry.catalog_id == "kv_hessen_gop_2026_q2"
     assert entry.catalog_label == "KV_HESSEN_GOP Hessen 2026/Q2"
     assert entry.data_stand == "01.04.2026"
+    assert "Regionaler Zuschlag" in entry.rule_texts
+    assert "Nur im regionalen Hessen-Kontext abrechnungsfähig." in entry.rule_texts
 
 
 def test_regional_catalog_check_reports_matches(tmp_path):

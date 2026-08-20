@@ -12,6 +12,7 @@ class FakeCatalog(CatalogRepository):
     def lookup(self, gop: str, quarter: str, region: str = "Hessen"):
         values = {
             "01210": ("Notfallpauschale I", 120, 14.87),
+            "01212": ("Notfallpauschale II", 195, 24.16),
             "34310": ("CT-Untersuchung des Neurocraniums", 534, 66.18),
             "34231": ("Aufnahmen der Schulter", 137, 16.98),
             "34221": ("Aufnahmen von Teilen der Wirbelsäule", 140, 17.35),
@@ -46,8 +47,16 @@ class FakeCatalog(CatalogRepository):
         )
 
 
-def ev(kind: str, page: int = 1) -> Evidence:
-    return Evidence(evidence_id=f"ev-{kind}", kind=kind, label=kind, page=page, service_date="2025-10-04", service_time="00:01", text=kind)
+def ev(kind: str, page: int = 1, service_date: str = "2025-10-04", service_time: str = "00:01") -> Evidence:
+    return Evidence(
+        evidence_id=f"ev-{kind}",
+        kind=kind,
+        label=kind,
+        page=page,
+        service_date=service_date,
+        service_time=service_time,
+        text=kind,
+    )
 
 
 def test_case_FALL-B_rule_total():
@@ -72,10 +81,21 @@ def test_case_FALL-B_rule_total():
     items, summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2025/Q4")
 
     assert len(items) == 15
-    assert summary.points_total == 931
-    assert summary.amount_total_eur == 119.81
-    assert [item.gop_original for item in items[:4]] == ["01210", "34310", "34231", "34221"]
+    assert summary.points_total == 1006
+    assert summary.amount_total_eur == 129.1
+    assert [item.gop_original for item in items[:4]] == ["01212", "34310", "34231", "34221"]
     assert items[0].catalog_source_label == "KBV EBM 2025/Q4"
+    assert items[0].rule_id.endswith("time.notfall.initial.01212.v1")
+
+
+def test_kv_notfall_zna_daytime_uses_01210():
+    evidence = [ev("context.kv_notfall_zna", service_date="2026-04-24", service_time="12:20")]
+
+    items, summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q2")
+
+    assert [item.gop_original for item in items] == ["01210"]
+    assert summary.points_total == 120
+    assert summary.amount_total_eur == 14.87
 
 
 def test_radiology_extremity_hand_and_wrist_ct_rules():

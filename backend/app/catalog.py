@@ -37,6 +37,17 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def _clean_rule_texts(*values: Any) -> list[str]:
+    texts: list[str] = []
+    for value in values:
+        if value is None:
+            continue
+        text = re.sub(r"\s+", " ", str(value)).strip()
+        if text:
+            texts.append(text)
+    return list(dict.fromkeys(texts))
+
+
 def _ebm_catalog_id(quarter: str) -> str:
     return f"ebm_kbv_{quarter.lower().replace('/', '_')}"
 
@@ -70,6 +81,9 @@ class CatalogRepository:
                 "select name from sqlite_master where type = 'table'"
             )
         }
+
+    def _columns(self, conn: sqlite3.Connection, table: str) -> set[str]:
+        return {row["name"] for row in conn.execute(f"pragma table_info({table})")}
 
     def status(self) -> dict[str, Any]:
         if not self.available:
@@ -113,21 +127,24 @@ class CatalogRepository:
             tables = self._tables(conn)
             if "details" not in tables:
                 return None
+            detail_columns = self._columns(conn, "details")
+            rule_text_expr = "d.text" if "text" in detail_columns else "null"
             if "snapshots" in tables:
                 row = conn.execute(
-                    "select d.gop, d.title, d.points, d.euro, s.data_stand "
+                    f"select d.gop, d.title, d.points, d.euro, s.data_stand, {rule_text_expr} as rule_text "
                     "from details d left join snapshots s on s.quarter = d.quarter "
                     "where d.quarter = ? and d.gop = ?",
                     (quarter, gop_base),
                 ).fetchone()
             else:
                 row = conn.execute(
-                    "select gop, title, points, euro, null as data_stand "
-                    "from details where quarter = ? and gop = ?",
+                    f"select d.gop, d.title, d.points, d.euro, null as data_stand, {rule_text_expr} as rule_text "
+                    "from details d where d.quarter = ? and d.gop = ?",
                     (quarter, gop_base),
                 ).fetchone()
         if not row:
             return None
+        rule_texts = _clean_rule_texts(row["rule_text"])
         return CatalogEntry(
             source="EBM_KBV",
             quarter=quarter,
@@ -139,20 +156,25 @@ class CatalogRepository:
             title=row["title"] or gop_base,
             points=_to_int(row["points"]),
             euro=_to_float(row["euro"]),
+            description=rule_texts[0] if rule_texts else None,
+            rule_texts=rule_texts,
         )
 
     def lookup_hessen(self, gop: str, quarter: str, region: str = "Hessen") -> CatalogEntry | None:
         if not self.available:
             return None
         gop_base, _ = normalize_gop(gop)
+        rules: list[str] = []
         with self._connect() as conn:
             tables = self._tables(conn)
             if "regional_gops" not in tables:
                 return None
+            regional_columns = self._columns(conn, "regional_gops")
+            description_expr = "g.description" if "description" in regional_columns else "null"
             if "regional_catalogs" in tables:
                 row = conn.execute(
                     "select g.catalog_id, g.gop_code, g.gop_base, g.title, g.points, g.euro, g.page, "
-                    "c.source_system, c.region, c.quarter, c.data_stand "
+                    f"{description_expr} as description, c.source_system, c.region, c.quarter, c.data_stand "
                     "from regional_gops g "
                     "join regional_catalogs c on c.catalog_id = g.catalog_id "
                     "where g.quarter = ? and g.region = ? and g.gop_base = ? "
@@ -162,13 +184,25 @@ class CatalogRepository:
             else:
                 row = conn.execute(
                     "select null as catalog_id, gop_code, gop_base, title, points, euro, page, "
-                    "source_system, region, quarter, null as data_stand "
-                    "from regional_gops where quarter = ? and region = ? and gop_base = ? "
+                    f"{description_expr} as description, source_system, region, quarter, null as data_stand "
+                    "from regional_gops g where quarter = ? and region = ? and gop_base = ? "
                     "order by gop_code limit 1",
                     (quarter, region, gop_base),
                 ).fetchone()
+            if row and "regional_gop_rules" in tables:
+                rules = [
+                    rule_row["rule_text"]
+                    for rule_row in conn.execute(
+                        "select rule_text from regional_gop_rules "
+                        "where quarter = ? and region = ? and (gop_code = ? or gop_code = ? or gop_code is null) "
+                        "order by id limit 20",
+                        (quarter, region, row["gop_code"], row["gop_base"]),
+                    )
+                    if rule_row["rule_text"]
+                ]
         if not row:
             return None
+        rule_texts = _clean_rule_texts(row["description"], *rules)
         return CatalogEntry(
             source="KV_HESSEN_GOP",
             quarter=quarter,
@@ -182,6 +216,8 @@ class CatalogRepository:
             points=_to_int(row["points"]),
             euro=_to_float(row["euro"]),
             page=_to_int(row["page"]),
+            description=row["description"],
+            rule_texts=rule_texts,
         )
 
     def lookup(self, gop: str, quarter: str, region: str = "Hessen") -> CatalogEntry | None:
@@ -334,46 +370,72 @@ class CatalogRepository:
         term = f"%{query.strip()}%"
         with self._connect() as conn:
             tables = self._tables(conn)
+            detail_columns = self._columns(conn, "details") if "details" in tables else set()
+            detail_text_expr = "d.text" if "text" in detail_columns else "null"
+            detail_text_filter = " or d.text like ?" if "text" in detail_columns else ""
             if "snapshots" in tables:
+                params: tuple[Any, ...]
+                if "text" in detail_columns:
+                    params = (quarter, term, term, term, query.strip(), f"{query.strip()}%", limit)
+                else:
+                    params = (quarter, term, term, query.strip(), f"{query.strip()}%", limit)
                 ebm_rows = conn.execute(
-                    "select d.gop, d.title, d.points, d.euro, s.data_stand "
+                    f"select d.gop, d.title, d.points, d.euro, s.data_stand, {detail_text_expr} as rule_text "
                     "from details d left join snapshots s on s.quarter = d.quarter "
-                    "where d.quarter = ? and (d.gop like ? or d.title like ? or d.text like ?) "
+                    f"where d.quarter = ? and (d.gop like ? or d.title like ?{detail_text_filter}) "
                     "order by case when d.gop = ? then 0 when d.gop like ? then 1 else 2 end, d.gop "
                     "limit ?",
-                    (quarter, term, term, term, query.strip(), f"{query.strip()}%", limit),
+                    params,
                 ).fetchall()
             else:
+                if "text" in detail_columns:
+                    params = (quarter, term, term, term, query.strip(), f"{query.strip()}%", limit)
+                else:
+                    params = (quarter, term, term, query.strip(), f"{query.strip()}%", limit)
                 ebm_rows = conn.execute(
-                    "select gop, title, points, euro, null as data_stand from details "
-                    "where quarter = ? and (gop like ? or title like ? or text like ?) "
-                    "order by case when gop = ? then 0 when gop like ? then 1 else 2 end, gop "
+                    f"select d.gop, d.title, d.points, d.euro, null as data_stand, {detail_text_expr} as rule_text "
+                    "from details d "
+                    f"where d.quarter = ? and (d.gop like ? or d.title like ?{detail_text_filter}) "
+                    "order by case when d.gop = ? then 0 when d.gop like ? then 1 else 2 end, d.gop "
                     "limit ?",
-                    (quarter, term, term, term, query.strip(), f"{query.strip()}%", limit),
+                    params,
                 ).fetchall()
             regional_rows = []
             if "regional_gops" in tables:
+                regional_columns = self._columns(conn, "regional_gops")
+                regional_description_expr = "g.description" if "description" in regional_columns else "null"
+                regional_description_filter = " or g.description like ?" if "description" in regional_columns else ""
                 if "regional_catalogs" in tables:
+                    if "description" in regional_columns:
+                        params = (quarter, term, term, term, limit)
+                    else:
+                        params = (quarter, term, term, limit)
                     regional_rows = conn.execute(
                         "select g.catalog_id, g.gop_code, g.gop_base, g.title, g.points, g.euro, "
-                        "g.region, g.page, c.source_system, c.data_stand "
+                        f"g.region, g.page, {regional_description_expr} as description, c.source_system, c.data_stand "
                         "from regional_gops g "
                         "join regional_catalogs c on c.catalog_id = g.catalog_id "
-                        "where g.quarter = ? and (g.gop_code like ? or g.title like ? or g.description like ?) "
+                        f"where g.quarter = ? and (g.gop_code like ? or g.title like ?{regional_description_filter}) "
                         "order by g.gop_code limit ?",
-                        (quarter, term, term, term, limit),
+                        params,
                     ).fetchall()
                 else:
+                    if "description" in regional_columns:
+                        params = (quarter, term, term, term, limit)
+                    else:
+                        params = (quarter, term, term, limit)
                     regional_rows = conn.execute(
                         "select null as catalog_id, gop_code, gop_base, title, points, euro, "
-                        "region, page, source_system, null as data_stand from regional_gops "
-                        "where quarter = ? and (gop_code like ? or title like ? or description like ?) "
+                        f"region, page, {regional_description_expr} as description, source_system, null as data_stand "
+                        "from regional_gops g "
+                        f"where quarter = ? and (gop_code like ? or title like ?{regional_description_filter}) "
                         "order by gop_code limit ?",
-                        (quarter, term, term, term, limit),
+                        params,
                     ).fetchall()
 
         entries: list[CatalogEntry] = []
         for row in ebm_rows:
+            rule_texts = _clean_rule_texts(row["rule_text"])
             entries.append(
                 CatalogEntry(
                     source="EBM_KBV",
@@ -386,9 +448,12 @@ class CatalogRepository:
                     title=row["title"] or row["gop"],
                     points=_to_int(row["points"]),
                     euro=_to_float(row["euro"]),
+                    description=rule_texts[0] if rule_texts else None,
+                    rule_texts=rule_texts,
                 )
             )
         for row in regional_rows:
+            rule_texts = _clean_rule_texts(row["description"])
             entries.append(
                 CatalogEntry(
                     source="KV_HESSEN_GOP",
@@ -403,6 +468,8 @@ class CatalogRepository:
                     euro=_to_float(row["euro"]),
                     region=row["region"],
                     page=_to_int(row["page"]),
+                    description=row["description"],
+                    rule_texts=rule_texts,
                 )
             )
         return entries[:limit]

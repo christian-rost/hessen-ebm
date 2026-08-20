@@ -49,6 +49,8 @@ class CatalogEntry(BaseModel):
     euro: float | None = None
     region: str | None = None
     page: int | None = None
+    description: str | None = None
+    rule_texts: list[str] = Field(default_factory=list)
 
 
 class BillingItem(BaseModel):
