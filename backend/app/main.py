@@ -16,7 +16,7 @@ from .database import supabase_status
 from .document_segmentation import segment_pages
 from .evidence_extraction import extract_evidence
 from .invoice_export import load_analysis, save_upload, sha256_file, store_analysis
-from .invoice_store import list_invoices, load_invoice, save_invoice
+from .invoice_store import delete_invoice, list_invoices, load_invoice, save_invoice
 from .models import AnalysisResult
 from .pdf_text import extract_pages
 from .rule_engine import active_rules_payload, generate_billing_items
@@ -376,3 +376,15 @@ def invoices(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0))
 @app.get("/api/invoices/{analysis_id}", response_model=AnalysisResult, dependencies=[Depends(require_admin)])
 def invoice(analysis_id: str) -> AnalysisResult:
     return get_analysis(analysis_id)
+
+
+@app.delete("/api/invoices/{analysis_id}", dependencies=[Depends(require_admin)])
+def remove_invoice(analysis_id: str) -> dict[str, object]:
+    settings = get_settings()
+    try:
+        result = delete_invoice(analysis_id, settings.storage_dir / "analyses")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Rechnungsentwurf konnte nicht gelöscht werden: {exc}") from exc
+    if not result["deleted"]:
+        raise HTTPException(status_code=404, detail="Rechnungsentwurf nicht gefunden.")
+    return result

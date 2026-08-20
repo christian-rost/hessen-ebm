@@ -1,5 +1,5 @@
 from app.invoice_export import store_analysis
-from app.invoice_store import build_invoice_item_rows, build_invoice_row, list_local_invoices
+from app.invoice_store import build_invoice_item_rows, build_invoice_row, delete_local_invoice, list_local_invoices
 from app.models import AnalysisResult, BillingItem, InvoiceSummary
 
 
@@ -110,3 +110,11 @@ def test_list_local_invoices_keeps_json_fallback_available(tmp_path):
     assert listing["total"] == 1
     assert listing["items"][0]["analysis_id"] == "analysis-1"
     assert listing["items"][0]["line_count"] == 1
+
+
+def test_delete_local_invoice_removes_json_fallback(tmp_path):
+    store_analysis(analysis_result(), tmp_path)
+
+    assert delete_local_invoice("analysis-1", tmp_path) is True
+    assert list_local_invoices(tmp_path)["total"] == 0
+    assert delete_local_invoice("analysis-1", tmp_path) is False

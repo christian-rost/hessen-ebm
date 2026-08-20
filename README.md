@@ -172,6 +172,7 @@ Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, faellt die A
 | `GET /api/analyses/{analysis_id}` | gespeicherten Analyseentwurf abrufen |
 | `GET /api/invoices` | gespeicherte Rechnungsentwürfe listen |
 | `GET /api/invoices/{analysis_id}` | gespeicherten Rechnungsentwurf mit Positionen laden |
+| `DELETE /api/invoices/{analysis_id}` | gespeicherten Rechnungsentwurf löschen |
 
 ## Naechste fachliche Schritte
 

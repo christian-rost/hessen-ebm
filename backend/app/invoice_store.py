@@ -129,6 +129,39 @@ def load_invoice(analysis_id: str) -> AnalysisResult | None:
     return AnalysisResult.model_validate(payload)
 
 
+def delete_invoice(analysis_id: str, analysis_dir: Path) -> dict[str, object]:
+    client = get_supabase()
+    deleted_supabase = False
+    if client:
+        response = (
+            client.table(INVOICES_TABLE)
+            .select("analysis_id")
+            .eq("analysis_id", analysis_id)
+            .limit(1)
+            .execute()
+        )
+        deleted_supabase = bool(response.data or [])
+        client.table(INVOICE_ITEMS_TABLE).delete().eq("analysis_id", analysis_id).execute()
+        client.table(INVOICES_TABLE).delete().eq("analysis_id", analysis_id).execute()
+
+    deleted_local = delete_local_invoice(analysis_id, analysis_dir)
+    return {
+        "deleted": deleted_supabase or deleted_local,
+        "analysis_id": analysis_id,
+        "deleted_supabase": deleted_supabase,
+        "deleted_local_json": deleted_local,
+        "storage_backend": "supabase" if client else "local_json",
+    }
+
+
+def delete_local_invoice(analysis_id: str, analysis_dir: Path) -> bool:
+    path = analysis_dir / f"{analysis_id}.json"
+    if not path.exists():
+        return False
+    path.unlink()
+    return True
+
+
 def list_invoices(limit: int, offset: int, analysis_dir: Path) -> dict[str, object]:
     client = get_supabase()
     if not client:

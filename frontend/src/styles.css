@@ -316,17 +316,16 @@ input {
 }
 
 .invoice-item {
+  align-items: stretch;
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   color: var(--text);
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 0.18rem;
-  padding: 0.65rem 0.75rem;
-  text-align: left;
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0.45rem 0.5rem 0.45rem 0.75rem;
   transition: border-color 0.15s, box-shadow 0.15s;
   width: 100%;
 }
@@ -335,6 +334,29 @@ input {
 .invoice-item.active {
   border-color: var(--brand-green);
   box-shadow: 0 3px 12px rgba(72, 155, 218, 0.18);
+}
+
+.invoice-open {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  min-width: 0;
+  padding: 0.2rem 0;
+  text-align: left;
+}
+
+.invoice-delete {
+  align-self: center;
+  color: var(--danger);
+}
+
+.invoice-delete:hover:not(:disabled) {
+  background: var(--danger-light);
+  color: var(--danger);
 }
 
 .invoice-item-title {

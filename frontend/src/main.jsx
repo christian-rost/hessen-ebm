@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { AlertCircle, CheckCircle2, Database, FileJson, FileText, Globe2, RefreshCw, ShieldCheck, UploadCloud } from "lucide-react";
+import { AlertCircle, CheckCircle2, Database, FileJson, FileText, Globe2, RefreshCw, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
 import lenusLogo from "./assets/logo_lenus.svg";
 import "./styles.css";
 
@@ -122,6 +122,30 @@ function App() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function deleteInvoice(invoice) {
+    const label = invoice.source_filename || invoice.analysis_id;
+    const confirmed = window.confirm(`Rechnungsentwurf "${label}" wirklich löschen?`);
+    if (!confirmed) return;
+
+    setInvoiceError(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/invoices/${encodeURIComponent(invoice.analysis_id)}`, {
+        method: "DELETE",
+        headers: authHeaders()
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || `Rechnung konnte nicht gelöscht werden (${response.status})`);
+      }
+      if (result?.analysis_id === invoice.analysis_id) {
+        setResult(null);
+      }
+      await refreshInvoices();
+    } catch (err) {
+      setInvoiceError(err.message);
     }
   }
 
@@ -278,6 +302,7 @@ function App() {
               currentId={result?.analysis_id}
               onRefresh={refreshInvoices}
               onOpen={loadInvoice}
+              onDelete={deleteInvoice}
             />
           </aside>
           <section className="doc-detail">
@@ -323,7 +348,7 @@ function CatalogStatus({ catalog }) {
   );
 }
 
-function InvoiceHistory({ invoices, loading, error, currentId, onRefresh, onOpen }) {
+function InvoiceHistory({ invoices, loading, error, currentId, onRefresh, onOpen, onDelete }) {
   const items = invoices?.items || [];
   const storageLabel = invoices?.storage_backend === "supabase"
     ? "Supabase"
@@ -357,20 +382,29 @@ function InvoiceHistory({ invoices, loading, error, currentId, onRefresh, onOpen
       {!error && items.length > 0 && (
         <div className="invoice-list">
           {items.map((item) => (
-            <button
+            <div
               className={`invoice-item ${currentId === item.analysis_id ? "active" : ""}`}
               key={item.analysis_id}
-              type="button"
-              onClick={() => onOpen(item.analysis_id)}
             >
-              <span className="invoice-item-title">{item.source_filename || "Rechnungsentwurf"}</span>
-              <span className="invoice-item-meta">
-                {formatDateTime(item.created_at)} · {item.quarter || "ohne Quartal"}
-              </span>
-              <span className="invoice-item-foot">
-                {item.line_count} Positionen · {formatEuro(item.amount_total_eur)}
-              </span>
-            </button>
+              <button className="invoice-open" type="button" onClick={() => onOpen(item.analysis_id)}>
+                <span className="invoice-item-title">{item.source_filename || "Rechnungsentwurf"}</span>
+                <span className="invoice-item-meta">
+                  {formatDateTime(item.created_at)} · {item.quarter || "ohne Quartal"}
+                </span>
+                <span className="invoice-item-foot">
+                  {item.line_count} Positionen · {formatEuro(item.amount_total_eur)}
+                </span>
+              </button>
+              <button
+                className="icon-btn invoice-delete"
+                type="button"
+                onClick={() => onDelete(item)}
+                title="Rechnungsentwurf löschen"
+                aria-label="Rechnungsentwurf löschen"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
           ))}
         </div>
       )}
