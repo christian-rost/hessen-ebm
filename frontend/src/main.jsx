@@ -11,6 +11,16 @@ function formatEuro(value) {
   return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(value);
 }
 
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("de-DE", {
+    dateStyle: "short",
+    timeStyle: "short"
+  }).format(date);
+}
+
 function jobStatusLabel(status) {
   if (status === "queued") return "wartet";
   if (status === "running") return "läuft";
@@ -22,12 +32,29 @@ function jobStatusLabel(status) {
 function App() {
   const [catalog, setCatalog] = React.useState(null);
   const [view, setView] = React.useState("analysis");
+  const [accessToken, setAccessToken] = React.useState(localStorage.getItem("hessen-ebm-admin-token") || "");
   const [file, setFile] = React.useState(null);
   const [result, setResult] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
+  const [invoices, setInvoices] = React.useState({ items: [], storage_backend: "local_json" });
+  const [invoicesLoading, setInvoicesLoading] = React.useState(false);
+  const [invoiceError, setInvoiceError] = React.useState(null);
 
-  async function refreshCatalog(adminToken = "") {
+  function authHeaders() {
+    return accessToken ? { "X-Admin-Token": accessToken } : {};
+  }
+
+  function rememberAccessToken(value) {
+    setAccessToken(value);
+    if (value) {
+      localStorage.setItem("hessen-ebm-admin-token", value);
+    } else {
+      localStorage.removeItem("hessen-ebm-admin-token");
+    }
+  }
+
+  async function refreshCatalog(adminToken = accessToken) {
     const headers = adminToken ? { "X-Admin-Token": adminToken } : {};
     try {
       const adminResponse = await fetch(`${API_BASE}/api/admin/catalog/status`, { headers });
@@ -56,6 +83,46 @@ function App() {
     refreshCatalog();
   }, []);
 
+  React.useEffect(() => {
+    refreshInvoices();
+  }, [accessToken]);
+
+  async function refreshInvoices() {
+    setInvoicesLoading(true);
+    setInvoiceError(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/invoices`, { headers: authHeaders() });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || `Rechnungen konnten nicht geladen werden (${response.status})`);
+      }
+      setInvoices(payload);
+    } catch (err) {
+      setInvoiceError(err.message);
+    } finally {
+      setInvoicesLoading(false);
+    }
+  }
+
+  async function loadInvoice(analysisId) {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/invoices/${encodeURIComponent(analysisId)}`, {
+        headers: authHeaders()
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || `Rechnung konnte nicht geladen werden (${response.status})`);
+      }
+      setResult(payload);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function analyze(event) {
     event.preventDefault();
     if (!file) return;
@@ -67,6 +134,7 @@ function App() {
     try {
       const response = await fetch(`${API_BASE}/api/documents/analyze`, {
         method: "POST",
+        headers: authHeaders(),
         body: formData
       });
       if (!response.ok) {
@@ -74,6 +142,7 @@ function App() {
         throw new Error(payload.detail || `Analyse fehlgeschlagen (${response.status})`);
       }
       setResult(await response.json());
+      refreshInvoices();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -114,6 +183,17 @@ function App() {
               <h2>Dokument</h2>
             </div>
             <form className="upload-panel" onSubmit={analyze}>
+              <section className="access-panel">
+                <label className="field-label" htmlFor="access-token">Zugriffstoken</label>
+                <input
+                  id="access-token"
+                  className="text-input"
+                  type="password"
+                  value={accessToken}
+                  placeholder="ADMIN_TOKEN für geschützte Rechnungen"
+                  onChange={(event) => rememberAccessToken(event.target.value)}
+                />
+              </section>
               <div className="drop-zone">
                 <UploadCloud size={26} />
                 <label htmlFor="pdf-upload">Klinisches PDF hochladen</label>
@@ -135,6 +215,14 @@ function App() {
                 </div>
               )}
             </form>
+            <InvoiceHistory
+              invoices={invoices}
+              loading={invoicesLoading}
+              error={invoiceError}
+              currentId={result?.analysis_id}
+              onRefresh={refreshInvoices}
+              onOpen={loadInvoice}
+            />
           </aside>
           <section className="doc-detail">
             <div className="doc-detail-header">
@@ -153,7 +241,13 @@ function App() {
           </section>
         </section>
       ) : (
-        <AdminPanel catalog={catalog} onCatalogUpdated={setCatalog} onRefresh={refreshCatalog} />
+        <AdminPanel
+          catalog={catalog}
+          adminToken={accessToken}
+          onAdminTokenChange={rememberAccessToken}
+          onCatalogUpdated={setCatalog}
+          onRefresh={refreshCatalog}
+        />
       )}
     </main>
   );
@@ -173,8 +267,66 @@ function CatalogStatus({ catalog }) {
   );
 }
 
-function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
-  const [adminToken, setAdminToken] = React.useState(localStorage.getItem("hessen-ebm-admin-token") || "");
+function InvoiceHistory({ invoices, loading, error, currentId, onRefresh, onOpen }) {
+  const items = invoices?.items || [];
+  const storageLabel = invoices?.storage_backend === "supabase"
+    ? "Supabase"
+    : "lokale Entwürfe";
+
+  return (
+    <section className="invoice-history">
+      <div className="invoice-history-head">
+        <div>
+          <h3>Gespeicherte Rechnungen</h3>
+          <span>{storageLabel}</span>
+        </div>
+        <button className="icon-btn" type="button" disabled={loading} onClick={onRefresh} title="Rechnungen aktualisieren">
+          <RefreshCw size={17} />
+        </button>
+      </div>
+
+      {error && (
+        <div className="message error compact-message">
+          <AlertCircle size={16} />
+          {error}
+        </div>
+      )}
+
+      {!error && loading && <p className="muted-text">Rechnungen werden geladen.</p>}
+
+      {!error && !loading && items.length === 0 && (
+        <p className="muted-text">Noch keine gespeicherten Rechnungen.</p>
+      )}
+
+      {!error && items.length > 0 && (
+        <div className="invoice-list">
+          {items.map((item) => (
+            <button
+              className={`invoice-item ${currentId === item.analysis_id ? "active" : ""}`}
+              key={item.analysis_id}
+              type="button"
+              onClick={() => onOpen(item.analysis_id)}
+            >
+              <span className="invoice-item-title">{item.source_filename || "Rechnungsentwurf"}</span>
+              <span className="invoice-item-meta">
+                {formatDateTime(item.created_at)} · {item.quarter || "ohne Quartal"}
+              </span>
+              <span className="invoice-item-foot">
+                {item.line_count} Positionen · {formatEuro(item.amount_total_eur)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {invoices?.supabase && !invoices.supabase.configured && (
+        <p className="history-note">Supabase ist nicht konfiguriert; angezeigt werden lokale Entwürfe aus dem Storage.</p>
+      )}
+    </section>
+  );
+}
+
+function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated, onRefresh }) {
   const [catalogFile, setCatalogFile] = React.useState(null);
   const [regionalFile, setRegionalFile] = React.useState(null);
   const [regionalQuarter, setRegionalQuarter] = React.useState("2026/Q3");
@@ -194,12 +346,7 @@ function AdminPanel({ catalog, onCatalogUpdated, onRefresh }) {
   }
 
   function rememberToken(value) {
-    setAdminToken(value);
-    if (value) {
-      localStorage.setItem("hessen-ebm-admin-token", value);
-    } else {
-      localStorage.removeItem("hessen-ebm-admin-token");
-    }
+    onAdminTokenChange(value);
   }
 
   async function refresh() {

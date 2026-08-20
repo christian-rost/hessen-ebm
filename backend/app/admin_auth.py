@@ -10,5 +10,4 @@ def require_admin(x_admin_token: str | None = Header(default=None)) -> None:
     if not token:
         return
     if x_admin_token != token:
-        raise HTTPException(status_code=401, detail="Admin token is missing or invalid.")
-
+        raise HTTPException(status_code=401, detail="Zugriffstoken fehlt oder ist ungültig.")

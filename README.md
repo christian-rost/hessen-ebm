@@ -25,6 +25,7 @@ Die Anwendung nimmt ein klinisches PDF entgegen, extrahiert Text/OCR, trennt Dok
 - deterministische Regel-Engine als Fallback fuer die validierten GOP-Regeln aus den Faellen `FALL-A` und `FALL-B`
 - Katalogvalidierung gegen SQLite-EBM/Hessen-GOP
 - JSON-Exportprofil `EBM_KVDT_ADT_LIKE_V1_DRAFT`
+- persistierte Rechnungsentwürfe mit Positionsliste in Supabase/Postgres, mit lokalem JSON-Rückfall für Entwicklung
 - Admin-Bereich zum Validieren und Einspielen neuer Katalogdatenbanken
 - Docker-Compose fuer Coolify
 
@@ -51,6 +52,21 @@ Beim Einspielen wird:
 
 Fuer produktive Deployments sollte `ADMIN_TOKEN` gesetzt werden. Die Admin-Endpunkte erwarten dann den Header `X-Admin-Token`.
 
+## Persistierte Rechnungsentwürfe
+
+Rechnungsentwürfe werden weiterhin als JSON unter `STORAGE_DIR/analyses` abgelegt. Wenn `SUPABASE_URL` und `SUPABASE_KEY` bzw. `SUPABASE_SERVICE_ROLE_KEY` gesetzt sind, speichert das Backend den Entwurf zusätzlich in Supabase:
+
+- `hessen_ebm_invoices`: Kopfdaten, Summen, Quartal, Diagnose und vollständiger JSON-Payload
+- `hessen_ebm_invoice_items`: einzelne GOP-Positionen mit Katalogquelle, Punkten, Betrag und Herleitung
+
+Die Migration liegt unter:
+
+```text
+scripts/supabase/001_hessen_ebm_invoices.sql
+```
+
+Die Analyse, die Rechnungsübersicht und der Wiederaufruf gespeicherter Rechnungen sind über `ADMIN_TOKEN` geschützt. In der Oberfläche wird derselbe Zugriffstoken im Analyse- und Admin-Bereich verwendet.
+
 ## Lokale Entwicklung
 
 Backend:
@@ -62,6 +78,8 @@ python3 -m venv .venv
 pip install -r requirements.txt
 export CATALOG_DB_PATH="/Users/cro/Documents/varisano - ebm Abrechnungsservice/ebm_kbv.sqlite"
 export ADMIN_TOKEN="lokales-admin-passwort"
+export SUPABASE_URL="https://supabase.example.de"
+export SUPABASE_KEY="server-side-key"
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -90,6 +108,8 @@ Danach ist das Frontend lokal unter `http://localhost:8080` erreichbar.
    - `CATALOG_DB_PATH=/app/catalog/ebm_kbv.sqlite`
    - `STORAGE_DIR=/app/storage`
    - `ADMIN_TOKEN=...`
+   - optional `SUPABASE_URL=...`
+   - optional `SUPABASE_KEY=...` oder `SUPABASE_SERVICE_ROLE_KEY=...`
    - optional `ENABLE_MISTRAL_OCR=true`
    - `ENABLE_SEMANTIC_BILLING=true`
    - optional `MISTRAL_API_KEY=...`
@@ -148,6 +168,8 @@ Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, faellt die A
 | `GET /api/rules` | aktuell aktive Regeluebersicht |
 | `POST /api/documents/analyze` | PDF hochladen und Rechnungsentwurf erzeugen |
 | `GET /api/analyses/{analysis_id}` | gespeicherten Analyseentwurf abrufen |
+| `GET /api/invoices` | gespeicherte Rechnungsentwürfe listen |
+| `GET /api/invoices/{analysis_id}` | gespeicherten Rechnungsentwurf mit Positionen laden |
 
 ## Naechste fachliche Schritte
 

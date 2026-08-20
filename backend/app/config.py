@@ -24,6 +24,9 @@ class Settings:
     mistral_api_key: str | None
     mistral_ocr_model: str
     mistral_llm_model: str
+    supabase_url: str | None = None
+    supabase_key: str | None = None
+    supabase_schema: str = "public"
 
 
 @lru_cache
@@ -33,6 +36,9 @@ def get_settings() -> Settings:
         log_level=os.getenv("LOG_LEVEL", "info"),
         catalog_db_path=Path(os.getenv("CATALOG_DB_PATH", "/app/catalog/ebm_kbv.sqlite")),
         storage_dir=Path(os.getenv("STORAGE_DIR", "./storage")),
+        supabase_url=os.getenv("SUPABASE_URL") or None,
+        supabase_key=os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY") or None,
+        supabase_schema=os.getenv("SUPABASE_SCHEMA", "public"),
         admin_token=os.getenv("ADMIN_TOKEN") or None,
         enable_mistral_ocr=_as_bool(os.getenv("ENABLE_MISTRAL_OCR"), False),
         enable_semantic_billing=_as_bool(os.getenv("ENABLE_SEMANTIC_BILLING"), True),

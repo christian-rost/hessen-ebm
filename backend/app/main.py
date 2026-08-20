@@ -11,9 +11,11 @@ from .admin_catalog_imports import CatalogImportError, import_regional_catalog_p
 from .admin_jobs import JobAlreadyRunningError, JobNotFoundError, get_job, running_catalog_job, start_catalog_job
 from .catalog import CatalogRepository
 from .config import get_settings
+from .database import supabase_status
 from .document_segmentation import segment_pages
 from .evidence_extraction import extract_evidence
 from .invoice_export import load_analysis, save_upload, sha256_file, store_analysis
+from .invoice_store import list_invoices, load_invoice, save_invoice
 from .models import AnalysisResult
 from .pdf_text import extract_pages
 from .rule_engine import active_rules_payload, generate_billing_items
@@ -42,6 +44,7 @@ def health() -> dict[str, object]:
         "app": "hessen-ebm",
         "catalog_available": settings.catalog_db_path.exists(),
         "catalog_db_path": str(settings.catalog_db_path),
+        "supabase": supabase_status(),
     }
 
 
@@ -213,7 +216,7 @@ def rules() -> dict[str, object]:
     return {"rules": active_rules_payload()}
 
 
-@app.post("/api/documents/analyze", response_model=AnalysisResult)
+@app.post("/api/documents/analyze", response_model=AnalysisResult, dependencies=[Depends(require_admin)])
 async def analyze_document(file: UploadFile = File(...)) -> AnalysisResult:
     if file.content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=400, detail="Only PDF uploads are supported.")
@@ -295,12 +298,31 @@ async def analyze_document(file: UploadFile = File(...)) -> AnalysisResult:
         summary=summary,
     )
     store_analysis(result, analysis_dir)
+    try:
+        save_invoice(result)
+    except Exception as exc:
+        if settings.supabase_url and settings.supabase_key:
+            raise HTTPException(status_code=500, detail=f"Rechnungsentwurf konnte nicht in Supabase gespeichert werden: {exc}") from exc
     return result
 
 
-@app.get("/api/analyses/{analysis_id}", response_model=AnalysisResult)
+@app.get("/api/analyses/{analysis_id}", response_model=AnalysisResult, dependencies=[Depends(require_admin)])
 def get_analysis(analysis_id: str) -> AnalysisResult:
-    result = load_analysis(analysis_id, get_settings().storage_dir / "analyses")
+    settings = get_settings()
+    result = load_invoice(analysis_id)
     if not result:
-        raise HTTPException(status_code=404, detail="Analysis not found.")
+        result = load_analysis(analysis_id, settings.storage_dir / "analyses")
+    if not result:
+        raise HTTPException(status_code=404, detail="Rechnungsentwurf nicht gefunden.")
     return result
+
+
+@app.get("/api/invoices", dependencies=[Depends(require_admin)])
+def invoices(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)) -> dict[str, object]:
+    settings = get_settings()
+    return list_invoices(limit=limit, offset=offset, analysis_dir=settings.storage_dir / "analyses")
+
+
+@app.get("/api/invoices/{analysis_id}", response_model=AnalysisResult, dependencies=[Depends(require_admin)])
+def invoice(analysis_id: str) -> AnalysisResult:
+    return get_analysis(analysis_id)
