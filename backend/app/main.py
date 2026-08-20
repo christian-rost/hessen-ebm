@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
@@ -9,8 +10,10 @@ from .admin_auth import require_admin
 from .admin_catalog import CatalogValidationError, install_catalog_database, list_catalog_backups, validate_catalog_database
 from .admin_catalog_imports import CatalogImportError, import_regional_catalog_pdf, scrape_ebm_quarter_into_catalog
 from .admin_jobs import JobAlreadyRunningError, JobNotFoundError, get_job, running_catalog_job, start_catalog_job
+from .admin_rule_compilation import compile_and_migrate_catalog_rules
 from .analysis_jobs import AnalysisJobNotFoundError, get_analysis_job, start_analysis_job
 from .catalog import CatalogRepository
+from .billing_rule_store import get_runtime_billing_rule_set, rule_store_status
 from .config import Settings, get_settings
 from .database import supabase_status
 from .document_segmentation import segment_pages
@@ -46,6 +49,7 @@ def health() -> dict[str, object]:
         "catalog_available": settings.catalog_db_path.exists(),
         "catalog_db_path": str(settings.catalog_db_path),
         "supabase": supabase_status(),
+        "billing_rules": rule_store_status(),
     }
 
 
@@ -61,6 +65,8 @@ def admin_catalog_status() -> dict[str, object]:
     status["backups"] = list_catalog_backups(settings.storage_dir / "catalog-backups")
     status["admin_token_required"] = bool(settings.admin_token)
     status["active_job"] = running_catalog_job()
+    get_runtime_billing_rule_set()
+    status["billing_rules"] = rule_store_status()
     return status
 
 
@@ -111,7 +117,7 @@ async def import_regional_catalog(
         raise HTTPException(status_code=409, detail=f"Catalog job {active_job['id']} is still running.")
 
     if file.content_type not in {"application/pdf", "application/octet-stream"} and not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only regional catalog PDFs are supported.")
+        raise HTTPException(status_code=400, detail="Für regionale Kataloge werden nur PDF-Dateien unterstützt.")
 
     settings = get_settings()
     uploaded_path = await save_upload(file, settings.storage_dir / "admin-regional-uploads")
@@ -192,11 +198,44 @@ def admin_catalog_job(job_id: str) -> dict[str, object]:
     try:
         job = get_job(job_id)
     except JobNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Catalog job not found.") from exc
+        raise HTTPException(status_code=404, detail="Katalogjob nicht gefunden.") from exc
     return {
         "job": job,
         "status": admin_catalog_status(),
     }
+
+
+@app.post("/api/admin/rules/compile", status_code=202, dependencies=[Depends(require_admin)])
+def compile_billing_rules(
+    quarter: str = Form(...),
+    region: str = Form("Hessen"),
+) -> dict[str, object]:
+    settings = get_settings()
+    requested_quarter = quarter.strip().upper()
+    requested_region = region.strip() or "Hessen"
+    if not re.fullmatch(r"\d{4}/Q[1-4]", requested_quarter):
+        raise HTTPException(status_code=400, detail="Das Quartal muss im Format JJJJ/Q1 bis JJJJ/Q4 angegeben werden.")
+    params = {"quarter": requested_quarter, "region": requested_region}
+
+    def run_compilation() -> dict[str, object]:
+        return compile_and_migrate_catalog_rules(
+            catalog_db_path=settings.catalog_db_path,
+            quarter=requested_quarter,
+            region=requested_region,
+        )
+
+    try:
+        job = start_catalog_job(
+            kind="rule_compile",
+            params=params,
+            message=f"EBM-Regelwerk {requested_quarter} wird kompiliert und nach Supabase migriert.",
+            target=run_compilation,
+        )
+    except JobAlreadyRunningError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"job": job, "status": admin_catalog_status()}
 
 
 @app.get("/api/catalog/search")
@@ -255,11 +294,11 @@ def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Setting
             items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter, region=region)
             billing_derivation = {
                 "mode": "deterministic_rules",
-                "fallback_reason": f"unexpected semantic billing error: {exc}",
+                "fallback_reason": f"Unerwarteter Fehler der semantischen Abrechnung: {exc}",
             }
     else:
         items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter, region=region)
-        billing_derivation = {"mode": "deterministic_rules", "fallback_reason": "semantic billing disabled"}
+        billing_derivation = {"mode": "deterministic_rules", "fallback_reason": "Semantische Abrechnung ist deaktiviert."}
 
     item_quarters = sorted({item.quarter for item in items}) or [str(default_quarter)]
     regional_catalog_checks = [

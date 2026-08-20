@@ -1,6 +1,6 @@
 # hessen-ebm
 
-MVP fuer eine EBM-/Hessen-GOP-Abrechnungssoftware.
+MVP für eine EBM-/Hessen-GOP-Abrechnungssoftware.
 
 Die Anwendung nimmt ein klinisches PDF entgegen, extrahiert Text/OCR, trennt Dokumentsegmente, nutzt nur abrechnungsrelevante Evidenz, leitet GOP-Kandidaten ab, validiert sie gegen den quartalsversionierten EBM und optional gegen Hessen-GOP und erzeugt einen maschinenlesbaren Rechnungsentwurf.
 
@@ -23,15 +23,17 @@ Die Anwendung nimmt ein klinisches PDF entgegen, extrahiert Text/OCR, trennt Dok
 - Evidenzextraktion aus relevanten Segmenten
 - semantische LLM-Herleitung von GOPs aus Evidenz und Katalogkandidaten
 - datengetriebene, versionierte Regel-Engine als deterministischer Fallback und fachliche Prüfschicht
+- generischer Compiler für sämtliche KBV-Detailtexte, Präambeln, Kapitelregeln, GOP-Bereiche und regionale Regeln
+- versionierte Fachregeln und einzelne Regelklauseln in Supabase
 - Katalogvalidierung gegen SQLite-EBM/Hessen-GOP
 - JSON-Exportprofil `EBM_KVDT_ADT_LIKE_V1_DRAFT`
 - persistierte Rechnungsentwürfe mit Positionsliste in Supabase/Postgres, mit lokalem JSON-Rückfall für Entwicklung
 - Admin-Bereich zum Validieren und Einspielen neuer Katalogdatenbanken
-- Docker-Compose fuer Coolify
+- Docker-Compose für Coolify
 
 ## Wichtige Architekturentscheidung
 
-Die EBM-/Hessen-GOP-Katalogdatenbank wird nicht ins Git-Repo gelegt. Die aktuell erzeugte Datei `ebm_kbv.sqlite` ist ca. 225 MB gross und damit fuer ein normales GitHub-Repo ungeeignet.
+Die EBM-/Hessen-GOP-Katalogdatenbank wird nicht ins Git-Repo gelegt. Die aktuell erzeugte Datei `ebm_kbv.sqlite` ist ca. 225 MB groß und damit für ein normales GitHub-Repo ungeeignet.
 
 Stattdessen erwartet die Anwendung den aktiven Katalog unter:
 
@@ -39,18 +41,18 @@ Stattdessen erwartet die Anwendung den aktiven Katalog unter:
 CATALOG_DB_PATH=/app/catalog/ebm_kbv.sqlite
 ```
 
-In Coolify sollte dafuer ein Volume nach `/app/catalog` gemountet werden. Der Admin-Bereich kann eine vorbereitete `ebm_kbv.sqlite` hochladen, validieren und an genau diesen Pfad einspielen. Lokal kann `CATALOG_DB_PATH` auch direkt auf eine vorhandene SQLite-Datei zeigen.
+In Coolify sollte dafür ein Volume nach `/app/catalog` gemountet werden. Der Admin-Bereich kann eine vorbereitete `ebm_kbv.sqlite` hochladen, validieren und an genau diesen Pfad einspielen. Lokal kann `CATALOG_DB_PATH` auch direkt auf eine vorhandene SQLite-Datei zeigen.
 
 Beim Einspielen wird:
 
-1. die hochgeladene Datei als SQLite-Datenbank geoeffnet
-2. `pragma integrity_check` ausgefuehrt
-3. das Vorhandensein der Tabellen `snapshots`, `nodes` und `details` geprueft
-4. geprueft, ob mindestens ein Snapshot und Details vorhanden sind
+1. die hochgeladene Datei als SQLite-Datenbank geöffnet
+2. `pragma integrity_check` ausgeführt
+3. das Vorhandensein der Tabellen `snapshots`, `nodes` und `details` geprüft
+4. geprüft, ob mindestens ein Snapshot und Details vorhanden sind
 5. die bisherige aktive Datenbank in `STORAGE_DIR/catalog-backups` gesichert
 6. die neue Datenbank atomar nach `CATALOG_DB_PATH` ersetzt
 
-Fuer produktive Deployments sollte `ADMIN_TOKEN` gesetzt werden. Die Admin-Endpunkte erwarten dann den Header `X-Admin-Token`.
+Für produktive Deployments sollte `ADMIN_TOKEN` gesetzt werden. Die Admin-Endpunkte erwarten dann den Header `X-Admin-Token`.
 
 ## Persistierte Rechnungsentwürfe
 
@@ -59,11 +61,35 @@ Rechnungsentwürfe werden weiterhin als JSON unter `STORAGE_DIR/analyses` abgele
 - `hessen_ebm_invoices`: Kopfdaten, Summen, Quartal, Diagnose und vollständiger JSON-Payload
 - `hessen_ebm_invoice_items`: einzelne GOP-Positionen mit Katalogquelle, Punkten, Betrag und Herleitung
 
-Die Migration liegt unter:
+Die Migrationen liegen unter:
 
 ```text
 scripts/supabase/001_hessen_ebm_invoices.sql
+scripts/supabase/002_hessen_ebm_billing_rules.sql
 ```
+
+`SUPABASE_SERVICE_ROLE_KEY` ist nicht erforderlich. Das Backend verwendet `SUPABASE_KEY`; dieser Schlüssel muss für die genannten Tabellen Lese- und Schreibrechte besitzen und darf nicht an das Frontend ausgeliefert werden.
+
+## Fachregeln in Supabase
+
+Die große SQLite-Datei bleibt die unveränderte, quartalsversionierte Rohquelle. Der Regelcompiler liest daraus alle Detaildatensätze eines Quartals und schreibt eine für die Laufzeit optimierte Fassung nach Supabase:
+
+- `hessen_ebm_rule_sets`: aktivierbare Regelsätze je Quartal und Region
+- `hessen_ebm_rule_definitions`: GOP-Regeln, GOP-Varianten, Präambeln, Kapitelregeln und allgemeine Bestimmungen mit vollständigem Quelltext
+- `hessen_ebm_rule_clauses`: einzeln nachvollziehbare Bedingungen, Ausschlüsse und Prüfklauseln
+- `hessen_ebm_rule_compile_runs`: erfolgreiche und fehlgeschlagene Compilerläufe
+
+Der Compiler übernimmt jeden KBV-Detailtext und jeden regionalen Regeltext. Eindeutig interpretierbare Klauseln werden maschinell ausgeführt. Nicht hinreichend formalisierbare Texte bleiben vollständig erhalten und werden als `partial` oder `text_only` ausgewiesen; sie gelten nicht stillschweigend als automatisch geprüft.
+
+Produktiver Ablauf:
+
+1. `001_hessen_ebm_invoices.sql` und `002_hessen_ebm_billing_rules.sql` einmal im Supabase SQL Editor ausführen.
+2. `SUPABASE_URL`, `SUPABASE_KEY` und `BILLING_RULES_SOURCE=auto` in Coolify setzen.
+3. Den gewünschten EBM- und Regionalkatalog im Admin-Bereich importieren.
+4. Unter **Fachregeln nach Supabase** Quartal und Region auswählen und die Migration starten.
+5. Nach erfolgreichem Abschluss zeigt der Katalogstatus den aktiven Regelsatz, die Definitionszahl und die maschinelle Strukturierungsquote.
+
+Die Migration läuft als Hintergrundjob und ist deshalb nicht vom HTTP-Zeitlimit des Reverse-Proxys abhängig. Ein neuer Regelsatz wird erst nach vollständig erfolgreicher Übertragung aktiviert; der bisherige aktive Regelsatz bleibt bis dahin verfügbar.
 
 Die Analyse, die Rechnungsübersicht und der Wiederaufruf gespeicherter Rechnungen sind über `ADMIN_TOKEN` geschützt. In der Oberfläche wird derselbe Zugriffstoken im Analyse- und Admin-Bereich verwendet.
 
@@ -109,18 +135,19 @@ Danach ist das Frontend lokal unter `http://localhost:8080` erreichbar.
    - `STORAGE_DIR=/app/storage`
    - `ADMIN_TOKEN=...`
    - optional `SUPABASE_URL=...`
-   - optional `SUPABASE_KEY=...` oder `SUPABASE_SERVICE_ROLE_KEY=...`
+   - `SUPABASE_KEY=...`
+   - `BILLING_RULES_SOURCE=auto`
    - optional `ENABLE_MISTRAL_OCR=true`
    - `ENABLE_SEMANTIC_BILLING=true`
    - optional `MISTRAL_API_KEY=...`
    - optional `MISTRAL_LLM_MODEL=mistral-large-latest`
-4. Volume fuer `/app/catalog` anlegen.
-5. Volume fuer `/app/storage` anlegen.
-6. Initiale oder neue `ebm_kbv.sqlite` ueber den Admin-Bereich hochladen.
+4. Volume für `/app/catalog` anlegen.
+5. Volume für `/app/storage` anlegen.
+6. Initiale oder neue `ebm_kbv.sqlite` über den Admin-Bereich hochladen.
 
-Wichtig: Die aktuelle Katalogdatenbank ist groesser als 200 MB. Das mitgelieferte Nginx-Frontend erlaubt deshalb Uploads bis 600 MB. Falls Coolify oder ein vorgelagerter Proxy eigene Limits setzt, muessen diese ebenfalls passend erhoeht werden.
+Wichtig: Die aktuelle Katalogdatenbank ist größer als 200 MB. Das mitgelieferte Nginx-Frontend erlaubt deshalb Uploads bis 600 MB. Falls Coolify oder ein vorgelagerter Proxy eigene Limits setzt, müssen diese ebenfalls passend erhöht werden.
 
-Das Coolify-Compose bindet keinen festen Host-Port. Das ist Absicht: Coolify routet ueber die generierte Frontend-Domain zum internen Container-Port `80`. Ein fester Host-Port wie `8080` kann auf Shared-Servern mit anderen Anwendungen kollidieren.
+Das Coolify-Compose bindet keinen festen Host-Port. Das ist Absicht: Coolify routet über die generierte Frontend-Domain zum internen Container-Port `80`. Ein fester Host-Port wie `8080` kann auf Shared-Servern mit anderen Anwendungen kollidieren.
 
 ## Versionierte Fachregeln
 
@@ -128,9 +155,9 @@ Der normale Ableitungspfad ist semantisch:
 
 1. Aus dem PDF werden abrechnungsrelevante Evidenzen extrahiert.
 2. Der Server sucht passende EBM-/Hessen-GOP-Kandidaten im aktiven Quartalskatalog.
-3. Mistral Chat erhaelt nur diese Evidenzen und Kandidaten und muss ein JSON mit `items`, `review_candidates` und `excluded_evidence` liefern.
-4. Der Server uebernimmt nur GOPs, die im bereitgestellten Kandidatenpool enthalten sind und im aktiven Katalog validiert werden koennen.
-5. Jede Rechnungsposition enthaelt `derivation_source`, `semantic_reason` und die verwendeten Katalogkandidaten.
+3. Mistral Chat erhält nur diese Evidenzen und Kandidaten und muss ein JSON mit `items`, `review_candidates` und `excluded_evidence` liefern.
+4. Der Server übernimmt nur GOPs, die im bereitgestellten Kandidatenpool enthalten sind und im aktiven Katalog validiert werden können.
+5. Jede Rechnungsposition enthält `derivation_source`, `semantic_reason` und die verwendeten Katalogkandidaten.
 
 Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, fällt die Analyse auf die deterministische Regel-Engine zurück und schreibt den Grund in `catalog_context.analysis_warnings`.
 
@@ -179,6 +206,10 @@ Die Zeitvarianten der Notfall-GOPs und der Zuschlag `01226` stehen ebenfalls aus
 | `GET /api/admin/catalog/status` | Admin-Katalogstatus inklusive Backups |
 | `POST /api/admin/catalog/validate` | SQLite-Katalogdatei nur validieren |
 | `POST /api/admin/catalog/upload` | SQLite-Katalogdatei validieren, Backup anlegen und aktiv ersetzen |
+| `POST /api/admin/catalog/regional/import` | regionalen PDF-Katalog importieren |
+| `POST /api/admin/catalog/ebm/scrape` | KBV-EBM-Quartal als Hintergrundjob importieren |
+| `GET /api/admin/catalog/jobs/{job_id}` | Status eines Katalog- oder Regeljobs abrufen |
+| `POST /api/admin/rules/compile` | Katalogregeln kompilieren, nach Supabase migrieren und aktivieren |
 | `GET /api/rules` | aktive Regelwerk-Version sowie direkte, zeitabhängige und abgeleitete Regeln |
 | `POST /api/documents/analyze` | PDF hochladen und Rechnungsentwurf erzeugen |
 | `POST /api/documents/analyze/jobs` | PDF-Analyse als Hintergrundjob starten |
@@ -188,10 +219,10 @@ Die Zeitvarianten der Notfall-GOPs und der Zuschlag `01226` stehen ebenfalls aus
 | `GET /api/invoices/{analysis_id}` | gespeicherten Rechnungsentwurf mit Positionen laden |
 | `DELETE /api/invoices/{analysis_id}` | gespeicherten Rechnungsentwurf löschen |
 
-## Naechste fachliche Schritte
+## Nächste fachliche Schritte
 
-- echte Zieldefinition fuer den standardisierten Export festlegen
-- Goldstandard-Set aus mehreren Faellen aufbauen
-- Review-Regeln fuer EKG, Konsile, Drogenscreening, Schwangerschaftstest und erweiterte Laborwerte validieren
-- serverseitigen Direktimport aus KBV-/Hessen-GOP-Quellen ergaenzen
+- echte Zieldefinition für den standardisierten Export festlegen
+- Goldstandard-Set aus mehreren Fällen aufbauen
+- Review-Regeln für EKG, Konsile, Drogenscreening, Schwangerschaftstest und erweiterte Laborwerte validieren
+- serverseitigen Direktimport aus KBV-/Hessen-GOP-Quellen ergänzen
 - Sachbearbeiter-Workflow mit Kandidatenfreigabe persistieren

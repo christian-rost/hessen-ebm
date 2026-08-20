@@ -426,10 +426,12 @@ function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated,
   const [regionalReplace, setRegionalReplace] = React.useState(true);
   const [ebmQuarter, setEbmQuarter] = React.useState("2026/Q1");
   const [ebmReplace, setEbmReplace] = React.useState(true);
+  const [ruleQuarter, setRuleQuarter] = React.useState("2026/Q1");
+  const [ruleRegion, setRuleRegion] = React.useState("Hessen");
   const [busy, setBusy] = React.useState(null);
   const [message, setMessage] = React.useState(null);
   const [uploadResult, setUploadResult] = React.useState(null);
-  const [scrapeJob, setScrapeJob] = React.useState(null);
+  const [adminJob, setAdminJob] = React.useState(null);
 
   function tokenHeaders() {
     return adminToken ? { "X-Admin-Token": adminToken } : {};
@@ -444,9 +446,9 @@ function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated,
     setMessage(null);
     try {
       const payload = await onRefresh(adminToken);
-      if (payload?.active_job?.kind === "ebm_scrape") {
-        setScrapeJob(payload.active_job);
-        setBusy("ebm-scrape");
+      if (["ebm_scrape", "rule_compile"].includes(payload?.active_job?.kind)) {
+        setAdminJob(payload.active_job);
+        setBusy(payload.active_job.kind === "rule_compile" ? "rule-compile" : "ebm-scrape");
         setMessage(payload.active_job.message);
       }
     } finally {
@@ -455,15 +457,15 @@ function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated,
   }
 
   React.useEffect(() => {
-    if (catalog?.active_job?.kind === "ebm_scrape") {
-      setScrapeJob(catalog.active_job);
-      setBusy("ebm-scrape");
+    if (["ebm_scrape", "rule_compile"].includes(catalog?.active_job?.kind)) {
+      setAdminJob(catalog.active_job);
+      setBusy(catalog.active_job.kind === "rule_compile" ? "rule-compile" : "ebm-scrape");
       setMessage(catalog.active_job.message);
     }
   }, [catalog?.active_job?.id]);
 
   React.useEffect(() => {
-    if (!scrapeJob || ["succeeded", "failed"].includes(scrapeJob.status)) {
+    if (!adminJob || ["succeeded", "failed"].includes(adminJob.status)) {
       return undefined;
     }
 
@@ -472,7 +474,7 @@ function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated,
 
     async function pollJob() {
       try {
-        const response = await fetch(`${API_BASE}/api/admin/catalog/jobs/${scrapeJob.id}`, {
+        const response = await fetch(`${API_BASE}/api/admin/catalog/jobs/${adminJob.id}`, {
           headers: tokenHeaders()
         });
         const payload = await response.json().catch(() => ({}));
@@ -482,7 +484,7 @@ function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated,
         if (cancelled) return;
 
         const job = payload.job;
-        setScrapeJob(job);
+        setAdminJob(job);
         if (payload.status) {
           onCatalogUpdated(payload.status);
         }
@@ -490,17 +492,24 @@ function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated,
           if (intervalId) window.clearInterval(intervalId);
           setBusy(null);
           setUploadResult(job.result);
-          const details = job.result?.import?.snapshot?.detail_count ?? "?";
-          const quarter = job.params?.quarter || ebmQuarter.trim();
-          setMessage(`KBV-EBM ${quarter} wurde importiert (${details} Details).`);
+          if (job.kind === "rule_compile") {
+            const definitions = job.result?.summary?.definition_count ?? "?";
+            const clauses = job.result?.summary?.clause_count ?? "?";
+            const quarter = job.params?.quarter || ruleQuarter.trim();
+            setMessage(`EBM-Regelwerk ${quarter} wurde nach Supabase migriert (${definitions} Definitionen, ${clauses} Klauseln).`);
+          } else {
+            const details = job.result?.import?.snapshot?.detail_count ?? "?";
+            const quarter = job.params?.quarter || ebmQuarter.trim();
+            setMessage(`KBV-EBM ${quarter} wurde importiert (${details} Details).`);
+          }
         } else if (job.status === "failed") {
           if (intervalId) window.clearInterval(intervalId);
           setBusy(null);
           setUploadResult(null);
-          setMessage(job.error || job.message || "EBM-Scraping fehlgeschlagen.");
+          setMessage(job.error || job.message || "Admin-Job fehlgeschlagen.");
         } else {
-          setBusy("ebm-scrape");
-          setMessage(job.message || `KBV-EBM ${job.params?.quarter || ""} wird importiert.`);
+          setBusy(job.kind === "rule_compile" ? "rule-compile" : "ebm-scrape");
+          setMessage(job.message || `Katalogdaten für ${job.params?.quarter || ""} werden verarbeitet.`);
         }
       } catch (err) {
         if (cancelled) return;
@@ -514,7 +523,7 @@ function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated,
       cancelled = true;
       if (intervalId) window.clearInterval(intervalId);
     };
-  }, [scrapeJob?.id, adminToken]);
+  }, [adminJob?.id, adminToken]);
 
   async function sendCatalog(endpoint) {
     if (!catalogFile) return;
@@ -585,7 +594,7 @@ function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated,
     setBusy("ebm-scrape");
     setMessage(null);
     setUploadResult(null);
-    setScrapeJob(null);
+    setAdminJob(null);
     const formData = new FormData();
     formData.append("quarter", ebmQuarter.trim());
     formData.append("replace_quarter", String(ebmReplace));
@@ -605,7 +614,7 @@ function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated,
         onCatalogUpdated(payload.status);
       }
       if (payload.job) {
-        setScrapeJob(payload.job);
+        setAdminJob(payload.job);
         setMessage(`KBV-EBM ${ebmQuarter.trim()} wurde als Hintergrundjob gestartet.`);
       } else {
         setUploadResult(payload);
@@ -621,11 +630,43 @@ function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated,
     }
   }
 
+  async function compileBillingRules() {
+    if (!ruleQuarter.trim()) return;
+    setBusy("rule-compile");
+    setMessage(null);
+    setUploadResult(null);
+    setAdminJob(null);
+    const formData = new FormData();
+    formData.append("quarter", ruleQuarter.trim());
+    formData.append("region", ruleRegion.trim() || "Hessen");
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/rules/compile`, {
+        method: "POST",
+        headers: tokenHeaders(),
+        body: formData
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || `Regelmigration fehlgeschlagen (${response.status})`);
+      }
+      if (payload.status) {
+        onCatalogUpdated(payload.status);
+      }
+      setAdminJob(payload.job);
+      setMessage(`EBM-Regelwerk ${ruleQuarter.trim()} wird kompiliert und nach Supabase migriert.`);
+    } catch (err) {
+      setMessage(err.message);
+      setBusy(null);
+    }
+  }
+
   const backupPath = uploadResult?.import?.backup_path || uploadResult?.import?.install?.backup_path;
   const messageIsError = message && (
     message.includes("fehlgeschlagen") ||
     message.includes("failed") ||
     message.includes("invalid") ||
+    message.includes("ungültig") ||
+    message.includes("Fehler") ||
     message.includes("nicht")
   );
 
@@ -749,14 +790,38 @@ function AdminPanel({ catalog, adminToken, onAdminTokenChange, onCatalogUpdated,
             <button className="btn-primary btn-block" type="button" disabled={!ebmQuarter.trim() || busy} onClick={scrapeEbmCatalog}>
               {busy === "ebm-scrape" ? "Scrape läuft..." : "EBM-Quartal online importieren"}
             </button>
-            {scrapeJob && (
-              <div className={`job-status ${scrapeJob.status}`}>
-                <strong>EBM-Job: {jobStatusLabel(scrapeJob.status)}</strong>
-                <span>{scrapeJob.message}</span>
-                <span>Job-ID: <code>{scrapeJob.id}</code></span>
-              </div>
-            )}
           </section>
+
+          <section className="admin-section">
+            <div className="admin-section-title">
+              <ShieldCheck size={18} />
+              <strong>Fachregeln nach Supabase</strong>
+            </div>
+            <p className="admin-copy">
+              Kompiliert alle GOP-Regeltexte des ausgewählten Quartals, übernimmt regionale Regeln und aktiviert den versionierten Regelsatz in Supabase.
+            </p>
+            <div className="admin-grid">
+              <label>
+                <span className="field-label">Regelquartal</span>
+                <input className="text-input" value={ruleQuarter} onChange={(event) => setRuleQuarter(event.target.value)} placeholder="2026/Q1" />
+              </label>
+              <label>
+                <span className="field-label">Region</span>
+                <input className="text-input" value={ruleRegion} onChange={(event) => setRuleRegion(event.target.value)} placeholder="Hessen" />
+              </label>
+            </div>
+            <button className="btn-primary btn-block" type="button" disabled={!ruleQuarter.trim() || busy} onClick={compileBillingRules}>
+              {busy === "rule-compile" ? "Regelwerk wird migriert..." : "Regelwerk kompilieren und migrieren"}
+            </button>
+          </section>
+
+          {adminJob && (
+            <div className={`job-status ${adminJob.status}`}>
+              <strong>{adminJob.kind === "rule_compile" ? "Regel-Job" : "EBM-Job"}: {jobStatusLabel(adminJob.status)}</strong>
+              <span>{adminJob.message}</span>
+              <span>Job-ID: <code>{adminJob.id}</code></span>
+            </div>
+          )}
 
           {message && (
             <div className={`message ${messageIsError ? "error" : "success"}`}>
@@ -811,6 +876,26 @@ function CatalogDetails({ catalog }) {
       <div>
         <span>Backups</span>
         <strong>{catalog.backups?.length || 0}</strong>
+      </div>
+      <div>
+        <span>Fachregelquelle</span>
+        <strong>{catalog.billing_rules?.source === "supabase" ? "Supabase" : "Gebündeltes Regelwerk"}</strong>
+      </div>
+      <div>
+        <span>Aktiver Regelsatz</span>
+        <strong>{catalog.billing_rules?.active_rule_set?.quarter || "Noch nicht migriert"}</strong>
+      </div>
+      <div>
+        <span>Regeldefinitionen</span>
+        <strong>{catalog.billing_rules?.active_rule_set?.summary?.definition_count ?? "-"}</strong>
+      </div>
+      <div>
+        <span>Maschinell strukturiert</span>
+        <strong>
+          {catalog.billing_rules?.active_rule_set?.summary?.machine_definition_coverage != null
+            ? `${(catalog.billing_rules.active_rule_set.summary.machine_definition_coverage * 100).toFixed(2)} %`
+            : "-"}
+        </strong>
       </div>
       <DetailList title="Snapshots" items={(catalog.snapshots || []).map((snapshot) => ({
         key: snapshot.quarter,

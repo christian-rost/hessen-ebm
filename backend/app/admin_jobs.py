@@ -70,7 +70,7 @@ def start_catalog_job(
         if _active_catalog_job_id:
             active = _jobs.get(_active_catalog_job_id)
             if active and active.status not in TERMINAL_STATUSES:
-                raise JobAlreadyRunningError(f"Catalog job {active.id} is already running.")
+                raise JobAlreadyRunningError(f"Der Katalogjob {active.id} läuft bereits.")
 
         job = AdminJob(
             id=uuid4().hex,

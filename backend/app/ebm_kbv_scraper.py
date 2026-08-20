@@ -83,7 +83,7 @@ class EbmScraper:
         available_quarters = {value for value, _selected in self.quarters()}
         if quarter not in available_quarters:
             available = ", ".join(sorted(available_quarters, reverse=True))
-            raise ValueError(f"Quarter {quarter!r} is not available. Available: {available}")
+            raise ValueError(f"Das Quartal {quarter!r} ist nicht verfügbar. Verfügbar: {available}")
         if quarter == self.selected_quarter:
             return
 
@@ -101,7 +101,7 @@ class EbmScraper:
         quarter_chooser = partial_update(response, "headerForm:quartalChooserPG")
         main_form = partial_update(response, "mainForm")
         if not main_form:
-            raise RuntimeError(f"Could not load mainForm for quarter {quarter}")
+            raise RuntimeError(f"Das EBM-Hauptformular für {quarter} konnte nicht geladen werden.")
         if quarter_chooser:
             self.header_form_html = quarter_chooser
         self.main_form_html = main_form
@@ -198,7 +198,7 @@ class EbmScraper:
         elif form_name == "headerForm":
             data["headerForm"] = "headerForm"
         else:
-            raise ValueError(f"Unsupported JSF form: {form_name}")
+            raise ValueError(f"Nicht unterstütztes JSF-Formular: {form_name}")
         data.update(extra)
 
         last_error: Optional[BaseException] = None
@@ -218,20 +218,20 @@ class EbmScraper:
             except (requests.RequestException, etree.XMLSyntaxError) as exc:
                 last_error = exc
                 time.sleep(1.5 * (attempt + 1))
-        raise RuntimeError(f"AJAX request failed for {extra}") from last_error
+        raise RuntimeError(f"Die AJAX-Anfrage ist fehlgeschlagen: {extra}") from last_error
 
     @staticmethod
     def _extract_main_form(page: str) -> str:
         match = re.search(r'<form id="mainForm".*?</form>', page, re.S)
         if not match:
-            raise RuntimeError("Could not find mainForm in initial page")
+            raise RuntimeError("Das EBM-Hauptformular wurde auf der Startseite nicht gefunden.")
         return match.group(0)
 
     @staticmethod
     def _extract_header_form(page: str) -> str:
         match = re.search(r'<form id="headerForm".*?</form>', page, re.S)
         if not match:
-            raise RuntimeError("Could not find headerForm in initial page")
+            raise RuntimeError("Das EBM-Kopfformular wurde auf der Startseite nicht gefunden.")
         return match.group(0)
 
     @classmethod
@@ -242,7 +242,7 @@ class EbmScraper:
             form,
         )
         if not matches:
-            raise RuntimeError("Could not find javax.faces.ViewState in mainForm")
+            raise RuntimeError("Der JSF-ViewState wurde im EBM-Hauptformular nicht gefunden.")
         return matches[-1]
 
     @staticmethod

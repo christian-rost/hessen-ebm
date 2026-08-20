@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -128,6 +128,11 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
     )
     _validate_unique_rule_ids(rule_set)
     return rule_set
+
+
+def billing_rule_set_payload(rule_set: BillingRuleSet) -> dict[str, Any]:
+    # JSON-Rundlauf normalisiert Tupel und verschachtelte Dataclasses zu portablen Listen/Objekten.
+    return json.loads(json.dumps(asdict(rule_set), ensure_ascii=False))
 
 
 @lru_cache(maxsize=4)

@@ -18,20 +18,20 @@ class CatalogValidationError(ValueError):
 
 def validate_catalog_database(path: Path) -> dict[str, Any]:
     if not path.exists() or not path.is_file():
-        raise CatalogValidationError("Uploaded catalog database file does not exist.")
+        raise CatalogValidationError("Die hochgeladene Katalogdatenbank wurde nicht gefunden.")
     if path.stat().st_size == 0:
-        raise CatalogValidationError("Uploaded catalog database file is empty.")
+        raise CatalogValidationError("Die hochgeladene Katalogdatenbank ist leer.")
 
     try:
         conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
     except sqlite3.Error as exc:
-        raise CatalogValidationError(f"Uploaded file is not a readable SQLite database: {exc}") from exc
+        raise CatalogValidationError(f"Die hochgeladene Datei ist keine lesbare SQLite-Datenbank: {exc}") from exc
 
     try:
         integrity = conn.execute("pragma integrity_check").fetchone()[0]
         if integrity != "ok":
-            raise CatalogValidationError(f"SQLite integrity_check failed: {integrity}")
+            raise CatalogValidationError(f"Die SQLite-Integritätsprüfung ist fehlgeschlagen: {integrity}")
 
         tables = {
             row["name"]
@@ -41,13 +41,13 @@ def validate_catalog_database(path: Path) -> dict[str, Any]:
         }
         missing = sorted(REQUIRED_TABLES - tables)
         if missing:
-            raise CatalogValidationError(f"Catalog database is missing required tables: {', '.join(missing)}")
+            raise CatalogValidationError(f"Der Katalogdatenbank fehlen erforderliche Tabellen: {', '.join(missing)}")
 
         snapshot_count = _count(conn, "snapshots")
         node_count = _count(conn, "nodes")
         detail_count = _count(conn, "details")
         if snapshot_count == 0 or detail_count == 0:
-            raise CatalogValidationError("Catalog database contains no usable EBM snapshots/details.")
+            raise CatalogValidationError("Die Katalogdatenbank enthält keine verwendbaren EBM-Snapshots oder Detaildaten.")
 
         snapshots = [
             dict(row)

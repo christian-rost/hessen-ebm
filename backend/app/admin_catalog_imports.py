@@ -30,9 +30,9 @@ def import_regional_catalog_pdf(
     replace: bool,
 ) -> dict[str, Any]:
     if not pdf_path.exists() or pdf_path.stat().st_size == 0:
-        raise CatalogImportError("Regional catalog PDF is missing or empty.")
+        raise CatalogImportError("Das PDF des regionalen Katalogs fehlt oder ist leer.")
     if not target_path.exists():
-        raise CatalogImportError("An active EBM catalog database is required before importing regional catalogs.")
+        raise CatalogImportError("Vor dem Regionalimport wird eine aktive EBM-Katalogdatenbank benötigt.")
 
     quarter = _require_value(quarter, "quarter")
     region = _require_value(region, "region")
@@ -59,7 +59,7 @@ def import_regional_catalog_pdf(
                 region=region,
                 quarter=quarter,
             ):
-                raise CatalogImportError("Regional catalog already exists. Enable replace to refresh it.")
+                raise CatalogImportError("Der regionale Katalog ist bereits vorhanden. Aktivieren Sie Ersetzen, um ihn zu aktualisieren.")
             result = import_pdf(
                 conn,
                 pdf_path=pdf_path,
@@ -69,7 +69,7 @@ def import_regional_catalog_pdf(
                 quarter=quarter,
             )
             if int(result.get("regional_gops") or 0) == 0:
-                raise CatalogImportError("No regional GOP entries were detected in the uploaded PDF.")
+                raise CatalogImportError("Im hochgeladenen PDF wurden keine regionalen GOP-Einträge erkannt.")
             conn.commit()
 
         validation = validate_catalog_database(working_db)
@@ -126,7 +126,7 @@ def scrape_ebm_quarter_into_catalog(
         validation = validate_catalog_database(working_db)
         snapshot = _snapshot_for_quarter(working_db, quarter)
         if int(snapshot.get("detail_count") or 0) == 0:
-            raise CatalogImportError(f"Imported EBM snapshot {quarter} contains no details.")
+            raise CatalogImportError(f"Der importierte EBM-Snapshot {quarter} enthält keine Detaildaten.")
         install_result = install_catalog_database(
             uploaded_path=working_db,
             target_path=target_path,
@@ -167,7 +167,7 @@ def _snapshot_for_quarter(db_path: Path, quarter: str) -> dict[str, Any]:
             (quarter,),
         ).fetchone()
         if not row:
-            raise CatalogValidationError(f"Imported EBM snapshot {quarter} was not found after scraping.")
+            raise CatalogValidationError(f"Der importierte EBM-Snapshot {quarter} wurde nach dem Scraping nicht gefunden.")
         return dict(row)
 
 
@@ -179,7 +179,7 @@ def _default_regional_catalog_id(source_system: str, region: str, quarter: str) 
 def _require_value(value: str, field_name: str) -> str:
     cleaned = value.strip()
     if not cleaned:
-        raise CatalogImportError(f"{field_name} is required.")
+        raise CatalogImportError(f"Das Pflichtfeld {field_name} fehlt.")
     return cleaned
 
 

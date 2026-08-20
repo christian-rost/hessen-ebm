@@ -9,6 +9,7 @@ from .billing_rules import (
     resolve_evidence_rule_gop,
 )
 from .catalog import CatalogRepository, canonical_gop, normalize_gop
+from .catalog_rule_validation import apply_catalog_rule_validation
 from .evidence_extraction import quarter_from_date
 from .models import BillingItem, Evidence, InvoiceSummary
 
@@ -139,6 +140,7 @@ def generate_billing_items(
         )
 
     append_derived_billing_items(items, evidence, catalog, default_quarter, region)
+    _apply_catalog_rules_by_quarter(items, evidence, catalog, region)
 
     summary = InvoiceSummary(
         line_count=len(items),
@@ -266,3 +268,16 @@ def append_derived_billing_items(
 def _quarter_from_evidence(evidence: list[Evidence]) -> str | None:
     dates = sorted(item.service_date for item in evidence if item.service_date)
     return quarter_from_date(dates[0]) if dates else None
+
+
+def _apply_catalog_rules_by_quarter(
+    items: list[BillingItem],
+    evidence: list[Evidence],
+    catalog: CatalogRepository,
+    region: str,
+) -> list[dict[str, object]]:
+    results: list[dict[str, object]] = []
+    for quarter in sorted({item.quarter for item in items}):
+        quarter_items = [item for item in items if item.quarter == quarter]
+        results.append(apply_catalog_rule_validation(quarter_items, evidence, catalog, quarter, region))
+    return results

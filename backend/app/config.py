@@ -27,6 +27,7 @@ class Settings:
     supabase_url: str | None = None
     supabase_key: str | None = None
     supabase_schema: str = "public"
+    billing_rules_source: str = "auto"
 
 
 @lru_cache
@@ -39,6 +40,7 @@ def get_settings() -> Settings:
         supabase_url=os.getenv("SUPABASE_URL") or None,
         supabase_key=os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY") or None,
         supabase_schema=os.getenv("SUPABASE_SCHEMA", "public"),
+        billing_rules_source=os.getenv("BILLING_RULES_SOURCE", "auto"),
         admin_token=os.getenv("ADMIN_TOKEN") or None,
         enable_mistral_ocr=_as_bool(os.getenv("ENABLE_MISTRAL_OCR"), False),
         enable_semantic_billing=_as_bool(os.getenv("ENABLE_SEMANTIC_BILLING"), True),

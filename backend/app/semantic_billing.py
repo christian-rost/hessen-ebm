@@ -18,6 +18,7 @@ from .billing_rules import (
     evaluate_catalog_context_rules,
 )
 from .catalog import CatalogRepository, canonical_gop, normalize_gop
+from .catalog_rule_validation import apply_catalog_rule_validation
 from .config import Settings
 from .evidence_extraction import quarter_from_date
 from .models import BillingItem, CatalogEntry, Evidence, ExcludedEvidence, InvoiceSummary, ReviewCandidate
@@ -49,14 +50,14 @@ def generate_semantic_billing_items(
     llm_client: LlmClient | None = None,
 ) -> SemanticBillingResult:
     if not settings.enable_semantic_billing:
-        raise SemanticBillingError("Semantic billing is disabled")
+        raise SemanticBillingError("Die semantische Abrechnung ist deaktiviert.")
     if not settings.mistral_api_key and llm_client is None:
-        raise SemanticBillingError("MISTRAL_API_KEY is not configured")
+        raise SemanticBillingError("MISTRAL_API_KEY ist nicht konfiguriert.")
 
     quarter = default_quarter or _quarter_from_evidence(evidence) or "2025/Q4"
     candidates = _collect_catalog_candidates(evidence, catalog, quarter, region)
     if not candidates:
-        raise SemanticBillingError(f"No catalog candidates found for quarter {quarter}")
+        raise SemanticBillingError(f"Für das Quartal {quarter} wurden keine Katalogkandidaten gefunden.")
 
     messages = _build_messages(evidence, candidates, quarter, region)
     raw_payload = llm_client(messages, settings) if llm_client else _call_mistral_chat_json(messages, settings)
@@ -64,6 +65,7 @@ def generate_semantic_billing_items(
 
     items, item_review = _billing_items_from_payload(payload, evidence, candidates, catalog, quarter, region)
     append_derived_billing_items(items, evidence, catalog, quarter, region)
+    catalog_rule_validation = apply_catalog_rule_validation(items, evidence, catalog, quarter, region)
     review = item_review + _review_from_payload(payload, evidence)
     excluded = _excluded_from_payload(payload, evidence)
     summary = InvoiceSummary(
@@ -85,6 +87,7 @@ def generate_semantic_billing_items(
             "quarter": quarter,
             "region": region,
             "catalog_candidate_count": len(candidates),
+            "catalog_rule_validation": catalog_rule_validation,
         },
     )
 
@@ -302,7 +305,7 @@ def _build_messages(
 
 def _call_mistral_chat_json(messages: list[dict[str, str]], settings: Settings) -> dict[str, Any]:
     if not settings.mistral_api_key:
-        raise SemanticBillingError("MISTRAL_API_KEY is not configured")
+        raise SemanticBillingError("MISTRAL_API_KEY ist nicht konfiguriert.")
 
     payload = {
         "model": settings.mistral_llm_model,
@@ -326,19 +329,19 @@ def _call_mistral_chat_json(messages: list[dict[str, str]], settings: Settings) 
             response_payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]
-        raise SemanticBillingError(f"Mistral chat request failed with HTTP {exc.code}: {detail}") from exc
+        raise SemanticBillingError(f"Die Mistral-Chat-Anfrage ist mit HTTP {exc.code} fehlgeschlagen: {detail}") from exc
     except (urllib.error.URLError, TimeoutError) as exc:
-        raise SemanticBillingError(f"Mistral chat request failed: {exc}") from exc
+        raise SemanticBillingError(f"Die Mistral-Chat-Anfrage ist fehlgeschlagen: {exc}") from exc
 
     choices = response_payload.get("choices") or []
     if not choices:
-        raise SemanticBillingError("Mistral chat returned no choices")
+        raise SemanticBillingError("Mistral Chat hat keine Auswahl zurückgegeben.")
     message = choices[0].get("message") or {}
     content = message.get("content")
     if isinstance(content, list):
         content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
     if not isinstance(content, str) or not content.strip():
-        raise SemanticBillingError("Mistral chat returned no JSON content")
+        raise SemanticBillingError("Mistral Chat hat keinen JSON-Inhalt zurückgegeben.")
     return _json_from_text(content)
 
 
@@ -346,7 +349,7 @@ def _coerce_json_payload(raw_payload: dict[str, Any] | str) -> dict[str, Any]:
     if isinstance(raw_payload, str):
         return _json_from_text(raw_payload)
     if not isinstance(raw_payload, dict):
-        raise SemanticBillingError("LLM payload is not a JSON object")
+        raise SemanticBillingError("Die LLM-Antwort ist kein JSON-Objekt.")
     return raw_payload
 
 
@@ -358,13 +361,13 @@ def _json_from_text(text: str) -> dict[str, Any]:
     start = cleaned.find("{")
     end = cleaned.rfind("}")
     if start < 0 or end < start:
-        raise SemanticBillingError("No JSON object found in LLM response")
+        raise SemanticBillingError("In der LLM-Antwort wurde kein JSON-Objekt gefunden.")
     try:
         payload = json.loads(cleaned[start : end + 1])
     except json.JSONDecodeError as exc:
-        raise SemanticBillingError(f"Invalid JSON from LLM: {exc}") from exc
+        raise SemanticBillingError(f"Das LLM hat ungültiges JSON geliefert: {exc}") from exc
     if not isinstance(payload, dict):
-        raise SemanticBillingError("LLM JSON response must be an object")
+        raise SemanticBillingError("Die JSON-Antwort des LLM muss ein Objekt sein.")
     return payload
 
 

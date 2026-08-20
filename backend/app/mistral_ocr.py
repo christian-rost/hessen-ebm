@@ -20,7 +20,7 @@ def extract_pages_with_mistral(path: Path, settings: Settings) -> list[PageText]
         raise RuntimeError("mistralai package is not installed") from exc
 
     if not settings.mistral_api_key:
-        raise RuntimeError("MISTRAL_API_KEY is not configured")
+        raise RuntimeError("MISTRAL_API_KEY ist nicht konfiguriert.")
 
     client = Mistral(api_key=settings.mistral_api_key)
 
@@ -48,7 +48,6 @@ def extract_pages_with_mistral(path: Path, settings: Settings) -> list[PageText]
         pages.append(PageText(page=index, text=text, provider="mistral_ocr"))
 
     if not pages:
-        raise RuntimeError("Mistral OCR returned no pages")
+        raise RuntimeError("Mistral OCR hat keine Seiten zurückgegeben.")
 
     return pages
-

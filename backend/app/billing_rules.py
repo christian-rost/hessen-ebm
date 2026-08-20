@@ -13,8 +13,8 @@ from .billing_rule_definitions import (
     EvidenceRuleDefinition,
     TemporalRuleDefinition,
     definition_is_applicable,
-    load_billing_rule_set,
 )
+from .billing_rule_store import get_runtime_billing_rule_set
 
 
 @dataclass(frozen=True)
@@ -81,7 +81,7 @@ def evidence_billing_rules(
     region: str = "Hessen",
     rule_set: BillingRuleSet | None = None,
 ) -> list[EvidenceRuleDefinition]:
-    definitions = rule_set or load_billing_rule_set()
+    definitions = rule_set or get_runtime_billing_rule_set(quarter, region)
     return [
         rule
         for rule in definitions.evidence_rules
@@ -95,7 +95,7 @@ def candidate_gops_for_evidence_kind(
     region: str = "Hessen",
     rule_set: BillingRuleSet | None = None,
 ) -> list[str]:
-    definitions = rule_set or load_billing_rule_set()
+    definitions = rule_set or get_runtime_billing_rule_set(quarter, region)
     direct = [
         rule.gop
         for rule in evidence_billing_rules(quarter, region, definitions)
@@ -158,8 +158,8 @@ def apply_temporal_gop_rule(
     if match and match.group(2):
         return GopRuleDecision(normalized, f"static.{normalized}.v1")
     normalized = match.group(1) if match else normalized
-    definitions = rule_set or load_billing_rule_set()
     effective_quarter = quarter or _quarter_from_date(service_date)
+    definitions = rule_set or get_runtime_billing_rule_set(effective_quarter, region)
     temporal_rule = next(
         (
             rule
@@ -252,7 +252,7 @@ def evaluate_catalog_context_rules(context: BillingRuleContext) -> GopRuleDecisi
 
 
 def billing_rule_guidance(rule_set: BillingRuleSet | None = None) -> dict[str, Any]:
-    definitions = rule_set or load_billing_rule_set()
+    definitions = rule_set or get_runtime_billing_rule_set()
     return {
         "rule_set": {
             "id": definitions.rule_set_id,
@@ -295,7 +295,7 @@ def derive_additional_gops(
     region: str = "Hessen",
     rule_set: BillingRuleSet | None = None,
 ) -> list[DerivedGopDecision]:
-    definitions = rule_set or load_billing_rule_set()
+    definitions = rule_set or get_runtime_billing_rule_set(quarter, region)
     normalized_gops = {_normalize_rule_gop(gop) for gop in existing_gops}
     decisions: list[DerivedGopDecision] = []
 
