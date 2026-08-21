@@ -315,6 +315,61 @@ def test_semantic_billing_postprocesses_missing_01226_surcharge():
     assert result.summary.amount_total_eur == 35.31
 
 
+def test_semantic_derived_surcharge_uses_base_position_event_instead_of_child_context_time():
+    evidence = [
+        ev("context.kv_notfall_zna", page=6, service_date="2026-02-02", service_time="23:49"),
+        Evidence(
+            evidence_id="ev-child-context",
+            kind="clinical.domain.pediatrics",
+            label="Kleinkind im Notfall",
+            page=5,
+            service_date="2026-02-02",
+            service_time="21:23",
+            text="Patient im Kleinkindalter, 3 Jahre alt.",
+            metadata={"patient_age": 3},
+        ),
+    ]
+
+    def fake_llm(_messages, _settings):
+        return {
+            "items": [
+                {
+                    "gop": "01212",
+                    "quantity": 1,
+                    "evidence_ids": ["ev-context.kv_notfall_zna"],
+                    "service_date": "2026-02-02",
+                    "service_time": "23:49",
+                    "confidence": "high",
+                    "reason": "Erster persönlicher Arztkontakt im Notfall.",
+                },
+                {
+                    "gop": "01226",
+                    "quantity": 1,
+                    "evidence_ids": ["ev-child-context"],
+                    "service_date": "2026-02-02",
+                    "service_time": "21:23",
+                    "confidence": "high",
+                    "reason": "Altersbezogenes Zuschlagskriterium für ein Kleinkind erfüllt.",
+                },
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence,
+        FakeCatalog(),
+        default_quarter="2026/Q1",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    assert [item.gop_original for item in result.items] == ["01212", "01226"]
+    assert [item.service_time for item in result.items] == ["23:49", "23:49"]
+    assert result.items[0].service_event_id == result.items[1].service_event_id
+    assert result.summary.amount_total_eur == 35.31
+
+
 def test_semantic_billing_keeps_01210_for_weekday_daytime():
     evidence = [ev("context.kv_notfall_zna", service_date="2026-04-24", service_time="12:20")]
 

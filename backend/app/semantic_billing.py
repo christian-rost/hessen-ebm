@@ -33,7 +33,7 @@ from .catalog_rule_validation import apply_catalog_rule_validation
 from .config import Settings
 from .evidence_extraction import quarter_from_date
 from .models import BillingItem, CatalogEntry, Evidence, ExcludedEvidence, InvoiceSummary, ReviewCandidate
-from .rule_engine import append_derived_billing_items, generate_billing_items
+from .rule_engine import append_derived_billing_items, generate_billing_items, reconcile_derived_item_anchors
 
 
 class SemanticBillingError(RuntimeError):
@@ -81,6 +81,7 @@ def generate_semantic_billing_items(
     if rule_set.semantic_policy.get("ensure_direct_rule_items", True):
         deterministic_items, _ = generate_billing_items(billing_evidence, catalog, quarter, region)
         _append_missing_rule_backed_items(items, deterministic_items)
+    reconcile_derived_item_anchors(items, quarter, region)
     append_derived_billing_items(items, billing_evidence, catalog, quarter, region)
     catalog_rule_validation = [
         apply_catalog_rule_validation(

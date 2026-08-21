@@ -1,10 +1,11 @@
 from pathlib import Path
 
+from app.billing_rule_definitions import parse_billing_rule_set
 from app.catalog import CatalogRepository
 from app.document_segmentation import segment_pages
 from app.evidence_extraction import extract_evidence
-from app.models import CatalogEntry, Evidence, PageText
-from app.rule_engine import generate_billing_items
+from app.models import BillingItem, CatalogEntry, Evidence, PageText
+from app.rule_engine import generate_billing_items, reconcile_derived_item_anchors
 
 
 class FakeCatalog(CatalogRepository):
@@ -366,3 +367,80 @@ def test_temporal_invoice_sequence_preserves_repeated_services_on_different_days
     assert items[1].service_event_id != items[4].service_event_id
     assert summary.points_total == 752
     assert summary.amount_total_eur == 95.12
+
+
+def test_derived_positions_follow_configured_base_event_without_gop_specific_code():
+    rule_set = parse_billing_rule_set(
+        {
+            "schema_version": 1,
+            "rule_set_id": "generic-derived-anchor-test",
+            "version": "1",
+            "evidence_rules": [],
+            "temporal_rules": [],
+            "event_sequence_rules": [],
+            "derived_rules": [
+                {
+                    "rule_id": "derived.configured.surcharge.v1",
+                    "gop": "22222",
+                    "title_hint": "Konfigurierter Zuschlag",
+                    "evidence_kind": "configured.support",
+                    "insert_after": "11111",
+                    "requirements": [{"gop_present": "11111"}],
+                    "regions": ["*"],
+                }
+            ],
+        }
+    )
+    base = BillingItem(
+        line=1,
+        gop_original="11111",
+        gop_base="11111",
+        title="Konfigurierte Basisleistung",
+        catalog_source="TEST",
+        quarter="2026/Q1",
+        service_date="2026-02-02",
+        service_time="23:49",
+        service_event_id="event-base-contact",
+        service_session_id="session-contact",
+        treatment_episode_id="episode-1",
+        rule_id="configured.base.v1",
+        confidence="high",
+        evidence_ids=["ev-base"],
+        evidence_pages=[6],
+    )
+    wrongly_anchored = BillingItem(
+        line=2,
+        gop_original="22222",
+        gop_base="22222",
+        title="Konfigurierter Zuschlag",
+        catalog_source="TEST",
+        quarter="2026/Q1",
+        service_date="2026-02-02",
+        service_time="21:23",
+        service_event_id="event-supporting-evidence",
+        service_session_id="session-admission",
+        treatment_episode_id="episode-1",
+        rule_id="semantic_llm.22222.v1",
+        confidence="high",
+        evidence_ids=["ev-support"],
+        evidence_pages=[5],
+        derivation_source="semantic_llm",
+    )
+    correctly_anchored = wrongly_anchored.model_copy(
+        update={
+            "line": 3,
+            "service_time": "23:49",
+            "service_event_id": "event-base-contact",
+            "service_session_id": "session-contact",
+            "rule_id": "derived.configured.surcharge.v1",
+            "derivation_source": "deterministic_rules",
+        }
+    )
+    items = [wrongly_anchored, base, correctly_anchored]
+
+    reconcile_derived_item_anchors(items, "2026/Q1", "Hessen", rule_set)
+
+    assert [item.gop_original for item in items] == ["11111", "22222"]
+    assert items[1].service_time == "23:49"
+    assert items[1].service_event_id == "event-base-contact"
+    assert items[1].service_session_id == "session-contact"

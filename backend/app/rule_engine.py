@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
+
+from .billing_rule_definitions import BillingRuleSet, DerivedRuleDefinition, definition_is_applicable
+from .billing_rule_store import get_runtime_billing_rule_set
 from .billing_rules import (
     BillingRuleContext,
     DerivedGopDecision,
@@ -301,6 +305,122 @@ def append_derived_billing_items(
 
     for index, item in enumerate(items, start=1):
         item.line = index
+
+
+def reconcile_derived_item_anchors(
+    items: list[BillingItem],
+    quarter: str | None,
+    region: str,
+    rule_set: BillingRuleSet | None = None,
+) -> None:
+    definitions = rule_set or get_runtime_billing_rule_set(quarter, region)
+    rules_by_target: dict[str, list[DerivedRuleDefinition]] = {}
+    for rule in definitions.derived_rules:
+        if not rule.insert_after or not definition_is_applicable(
+            rule.valid_from,
+            rule.valid_to,
+            rule.regions,
+            quarter,
+            region,
+        ):
+            continue
+        target_base, _ = normalize_gop(rule.gop)
+        rules_by_target.setdefault(target_base, []).append(rule)
+
+    anchored: list[tuple[BillingItem, BillingItem, bool]] = []
+    for item in list(items):
+        applicable_rules = [
+            rule
+            for rule in rules_by_target.get(item.gop_base, [])
+            if definition_is_applicable(
+                rule.valid_from,
+                rule.valid_to,
+                rule.regions,
+                item.quarter or quarter,
+                region,
+            )
+        ]
+        rule = applicable_rules[0] if applicable_rules else None
+        if not rule or not rule.insert_after:
+            continue
+        anchor_base, _ = normalize_gop(rule.insert_after)
+        anchors = [candidate for candidate in items if candidate is not item and candidate.gop_base == anchor_base]
+        anchor = _select_derived_anchor(item, anchors)
+        if not anchor:
+            continue
+        already_anchored = bool(item.service_event_id and item.service_event_id == anchor.service_event_id)
+        _copy_temporal_anchor(item, anchor)
+        anchored.append((item, anchor, already_anchored))
+
+    quality = {
+        id(item): (
+            int(already_anchored),
+            int(item.derivation_source == "deterministic_rules"),
+            int(item.validation_status == "valid"),
+            int(item.confidence == "high"),
+        )
+        for item, _anchor, already_anchored in anchored
+    }
+    by_event_gop: dict[tuple[str, str], list[BillingItem]] = {}
+    for item, _anchor, _already_anchored in anchored:
+        event_key = item.service_event_id or f"date:{item.service_date or 'unknown'}"
+        by_event_gop.setdefault((item.gop_base, event_key), []).append(item)
+    for duplicates in by_event_gop.values():
+        if len(duplicates) < 2:
+            continue
+        keep = max(duplicates, key=lambda candidate: quality[id(candidate)])
+        duplicate_ids = {id(candidate) for candidate in duplicates}
+        items[:] = [candidate for candidate in items if candidate is keep or id(candidate) not in duplicate_ids]
+        anchored = [entry for entry in anchored if entry[0] is keep or id(entry[0]) not in duplicate_ids]
+
+    derived_ids = {id(item) for item, _anchor, _already_anchored in anchored}
+    for item, anchor, _already_anchored in anchored:
+        if not any(candidate is item for candidate in items) or not any(candidate is anchor for candidate in items):
+            continue
+        item_index = next(index for index, candidate in enumerate(items) if candidate is item)
+        items.pop(item_index)
+        insert_index = next(index for index, candidate in enumerate(items) if candidate is anchor) + 1
+        while insert_index < len(items) and id(items[insert_index]) in derived_ids:
+            insert_index += 1
+        items.insert(insert_index, item)
+    for index, item in enumerate(items, start=1):
+        item.line = index
+
+
+def _select_derived_anchor(item: BillingItem, anchors: list[BillingItem]) -> BillingItem | None:
+    if not anchors:
+        return None
+    return min(
+        anchors,
+        key=lambda anchor: (
+            0 if item.service_event_id and item.service_event_id == anchor.service_event_id else 1,
+            0 if item.treatment_episode_id and item.treatment_episode_id == anchor.treatment_episode_id else 1,
+            0 if item.service_date and item.service_date == anchor.service_date else 1,
+            _temporal_distance_minutes(item, anchor),
+            anchor.line,
+        ),
+    )
+
+
+def _temporal_distance_minutes(item: BillingItem, anchor: BillingItem) -> float:
+    if not item.service_date or not anchor.service_date:
+        return float("inf")
+    try:
+        item_value = datetime.fromisoformat(f"{item.service_date}T{item.service_time or '00:00'}")
+        anchor_value = datetime.fromisoformat(f"{anchor.service_date}T{anchor.service_time or '00:00'}")
+    except ValueError:
+        return float("inf")
+    return abs((item_value - anchor_value).total_seconds()) / 60
+
+
+def _copy_temporal_anchor(item: BillingItem, anchor: BillingItem) -> None:
+    item.service_date = anchor.service_date
+    item.service_time = anchor.service_time
+    item.service_event_id = anchor.service_event_id
+    item.service_session_id = anchor.service_session_id
+    item.treatment_episode_id = anchor.treatment_episode_id
+    item.temporal_role = anchor.temporal_role
+    item.temporal_reason = anchor.temporal_reason
 
 
 def _quarter_from_evidence(evidence: list[Evidence]) -> str | None:
