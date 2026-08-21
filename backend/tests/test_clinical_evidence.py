@@ -75,6 +75,62 @@ def test_ophthalmology_ambulance_pages_create_clinical_evidence():
     assert excluded == []
 
 
+def test_ophthalmology_emergency_fundus_and_performed_sonography_are_distinguished():
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Ambulanz Augen - Befund Termin dgf:24.04.202612:20Uhr "
+                "Die Patientin stellt sich bei uns als Notfall vor: Glaskörperblutung RA."
+            ),
+        ),
+        PageText(
+            page=2,
+            text=(
+                "Glaskörperblutung. Hinterer RA Netzhaut liegt an Augenabschnitt. "
+                "Fundus teilweise sichtbar, Papille und Makula beurteilbar."
+            ),
+        ),
+        PageText(
+            page=3,
+            text=(
+                "ACCUTOME Ophthalmic Ultrasound Scan Date: 4/24/2026 "
+                "Probe Freq: 12 MHz Max Depth: 60 mm Gain: 57 dB OD"
+            ),
+        ),
+        PageText(
+            page=4,
+            text=(
+                "Eingelesenes Dokument Status fertig Dokumententyp Diagnostik, Sonographie "
+                "Kategorie GK-Blutung"
+            ),
+        ),
+    ]
+
+    segments = segment_pages(pages)
+    evidence, _review, _excluded, context = extract_evidence(pages, segments)
+    selected = {
+        item.kind: item
+        for item in evidence
+        if item.kind
+        in {
+            "context.kv_notfall_zna",
+            "clinical.ophthalmology_fundus",
+            "clinical.diagnostics.ophthalmic_sonography",
+        }
+    }
+
+    assert [segment.segment_type for segment in segments] == ["treatment_report", "ophthalmic_sonography"]
+    assert set(selected) == {
+        "context.kv_notfall_zna",
+        "clinical.ophthalmology_fundus",
+        "clinical.diagnostics.ophthalmic_sonography",
+    }
+    assert selected["context.kv_notfall_zna"].service_time == "12:20"
+    assert selected["clinical.diagnostics.ophthalmic_sonography"].service_date == "2026-04-24"
+    assert context["quarter"] == "2026/Q2"
+
+
 def test_ophthalmology_data_capture_continuation_creates_all_internal_hints():
     pages = [
         PageText(

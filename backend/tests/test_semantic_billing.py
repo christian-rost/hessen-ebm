@@ -20,6 +20,11 @@ class FakeCatalog(CatalogRepository):
             "01218": ("Notfallkonsultationspauschale III", 170, 21.66),
             "01226": ("Zuschlag Notfallpauschale zur GOP 01212", 90, 11.15),
             "01786": ("Kardiotokografische Untersuchung", 137, 17.45),
+            "01436": ("Konsultationspauschale", 18, 2.29),
+            "06212": ("Grundpauschale ab 60. Lebensjahr", 136, 17.33),
+            "06310": ("Fortlaufende Tonometrie", 101, 12.87),
+            "06333": ("Binokulare Untersuchung des Augenhintergrundes", 53, 6.75),
+            "33000": ("Sonografie des Auges", 95, 12.10),
             "32066": ("Kreatinin", None, 0.25),
         }
         base, _ = normalize_gop(gop)
@@ -55,6 +60,15 @@ class RuleTextCatalog(FakeCatalog):
             entry.description = "Die Uhrzeit der Inanspruchnahme ist anzugeben."
             entry.rule_texts = ["Die Uhrzeit der Inanspruchnahme ist anzugeben."]
         return entry
+
+
+class NoisyOphthalmologyCatalog(FakeCatalog):
+    def search(self, query: str, quarter: str, limit: int = 25):
+        return [
+            entry
+            for gop in ("06212", "01436", "06310")
+            if (entry := self.lookup(gop, quarter)) is not None
+        ]
 
 
 class SearchCatalog(FakeCatalog):
@@ -359,9 +373,81 @@ def test_semantic_billing_does_not_accept_gop_outside_candidate_pool():
         llm_client=fake_llm,
     )
 
-    assert result.items == []
+    assert [item.gop_original for item in result.items] == ["01212"]
     assert result.review_candidates[0].possible_gops == ["99999"]
     assert "Katalog-Kandidatenpool" in result.review_candidates[0].reason
+
+
+def test_semantic_billing_keeps_only_rule_backed_items_for_ophthalmology_case():
+    evidence = [
+        ev("context.kv_notfall_zna", page=5, service_date="2026-04-24", service_time="12:20"),
+        ev("clinical.ophthalmology_fundus", page=6, service_date="2026-04-24", service_time="11:28"),
+        ev(
+            "clinical.diagnostics.ophthalmic_sonography",
+            page=20,
+            service_date="2026-04-24",
+            service_time=None,
+        ),
+    ]
+
+    def fake_llm(_messages, _settings):
+        return {
+            "items": [
+                {
+                    "gop": "01210",
+                    "evidence_ids": ["ev-context.kv_notfall_zna"],
+                    "confidence": "high",
+                    "reason": "Notfallkontakt an einem Werktag tagsüber.",
+                },
+                {
+                    "gop": "06333",
+                    "evidence_ids": ["ev-clinical.ophthalmology_fundus"],
+                    "confidence": "high",
+                    "reason": "Binokulare Fundusuntersuchung ist dokumentiert.",
+                },
+                {
+                    "gop": "33000",
+                    "evidence_ids": ["ev-clinical.diagnostics.ophthalmic_sonography"],
+                    "confidence": "high",
+                    "reason": "Durchgeführte Augensonografie ist dokumentiert.",
+                },
+                {
+                    "gop": "06212",
+                    "evidence_ids": ["ev-clinical.ophthalmology_fundus"],
+                    "confidence": "medium",
+                    "reason": "Allgemeiner Katalogtreffer.",
+                },
+                {
+                    "gop": "01436",
+                    "evidence_ids": ["ev-clinical.ophthalmology_fundus"],
+                    "confidence": "medium",
+                    "reason": "Konsultation könnte passen.",
+                },
+                {
+                    "gop": "06310",
+                    "evidence_ids": ["ev-clinical.ophthalmology_fundus"],
+                    "confidence": "medium",
+                    "reason": "Die Voraussetzung von vier Messungen ist nicht vollständig erfüllt.",
+                },
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence,
+        NoisyOphthalmologyCatalog(),
+        default_quarter="2026/Q2",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    assert [item.gop_original for item in result.items] == ["01210", "06333", "33000"]
+    assert {gop for item in result.review_candidates for gop in item.possible_gops} == {
+        "01436",
+        "06212",
+        "06310",
+    }
 
 
 def test_semantic_billing_marks_general_catalog_rule_review_when_time_is_missing():

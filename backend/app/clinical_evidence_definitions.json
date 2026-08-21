@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "definition_set_id": "hessen-ebm-clinical-evidence",
-  "version": "2026.3",
+  "version": "2026.4",
   "formats": {
     "fallback_segment_type": "other",
     "fallback_reason": "Kein spezifischer Dokumentmarker gefunden",
@@ -62,6 +62,7 @@
     "case_context": {"label": "Fallkontext / ZNA", "flags": ["billing_relevant", "clinical_context", "review_context"]},
     "treatment_report": {"label": "Behandlungsbericht", "flags": ["billing_relevant", "clinical_context", "review_context"]},
     "radiology_report": {"label": "Radiologiebefund", "flags": ["billing_relevant", "clinical_context", "review_context"]},
+    "ophthalmic_sonography": {"label": "Ophthalmologische Sonografie", "flags": ["billing_relevant", "review_context"]},
     "laboratory_result": {"label": "Laborbefund", "flags": ["billing_relevant", "clinical_context", "review_context"]},
     "consult": {"label": "Konsil", "flags": ["review_context"]},
     "ecg": {"label": "EKG", "flags": ["billing_relevant", "clinical_context", "review_context"]},
@@ -197,6 +198,30 @@
       "confidence": 0.95,
       "reason": "Radiologiebefund-Marker gefunden",
       "when": {"any": [{"text_any": ["radiologiebefund"]}, {"all": [{"text_any": ["befund"]}, {"text_any": ["ctkopf", "ctctschadel", "ctgehirnschadel"]}]}]}
+    },
+    {
+      "rule_id": "segment.ophthalmic_sonography.v1",
+      "segment_type": "ophthalmic_sonography",
+      "confidence": 0.94,
+      "reason": "Durchgeführte ophthalmologische Sonografie erkannt",
+      "when": {
+        "any": [
+          {
+            "all": [
+              {"text_any": ["probefreq"]},
+              {"text_any": ["maxdepth", "scandate"]},
+              {"text_any": ["accutome", "ophthalmic", "glaskorper", "gkblutung"]}
+            ]
+          },
+          {
+            "all": [
+              {"text_all": ["eingelesenesdokument", "statusfertig", "dokumententypdiagnostik"]},
+              {"text_any": ["sonographie", "sonografie", "echographie", "ultraschall"]},
+              {"text_any": ["auge", "ophthalm", "glaskorper", "gkblutung"]}
+            ]
+          }
+        ]
+      }
     },
     {
       "rule_id": "segment.request.v1",
@@ -458,7 +483,7 @@
     "encounter": {
       "patterns": [
         {"source": "compact", "regex": "(?:aufnahmezna|ambaufnahmedatum|aufnahmedatum|aufnahme)(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
-        {"source": "compact", "regex": "(?:erstkontaktarzt|erstkontakt|behandlungsbeginn|termindgf)(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "(?:erstkontaktarzt|erstkontakt|behandlungsbeginn|termindgf):?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
         {"source": "compact", "regex": "vorstellung.{0,40}?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"}
       ]
     },
@@ -473,12 +498,18 @@
       "patterns": [
         {"source": "compact", "regex": "durchgefuhrt(?:am)?(\\d{2}\\.\\d{2}\\.\\d{4})um(\\d{2}:\\d{2})", "select": "last"}
       ]
+    },
+    "device_scan": {
+      "patterns": [
+        {"source": "compact", "regex": "scandate:?(\\d{1,2}/\\d{1,2}/\\d{4})", "date_format": "%m/%d/%Y", "time_group": 99}
+      ]
     }
   },
   "state_tracks": [
     {"name": "clinical", "datetime_role": "service", "when": {"segment_flag_any": ["clinical_context"]}},
     {"name": "laboratory", "datetime_role": "service_explicit", "when": {"segment_any": ["laboratory_result"]}},
-    {"name": "radiology", "datetime_role": "radiology", "when": {"segment_any": ["radiology_report", "treatment_report", "data_capture"]}}
+    {"name": "radiology", "datetime_role": "radiology", "when": {"segment_any": ["radiology_report", "treatment_report", "data_capture"]}},
+    {"name": "ophthalmic_sonography", "datetime_role": "device_scan", "when": {"segment_any": ["ophthalmic_sonography"]}}
   ],
   "context_updates": [
     {"key": "treatment_end", "datetime_role": "treatment_end", "when": {"datetime_present": ["treatment_end"]}}
@@ -496,7 +527,7 @@
         "all": [
           {"segment_flag_any": ["clinical_context"]},
           {"datetime_present": ["encounter"]},
-          {"any": [{"text_all": ["kvabrechnung", "notfall"]}, {"text_any": ["aufnahmezna", "vorstellungnotfk"]}, {"text_any": ["notfall", "zna", "akutambulanz"]}]}
+          {"any": [{"text_all": ["kvabrechnung", "notfall"]}, {"text_any": ["aufnahmezna", "vorstellungnotfk", "alsnotfall", "notfallvor", "notfallvr"]}, {"text_any": ["notfall", "zna", "akutambulanz"]}]}
         ]
       }
     },
@@ -546,7 +577,32 @@
       "label": "Augenhintergrund / Fundus-Hinweis",
       "confidence": 0.78,
       "search_terms": ["Augenhintergrund", "Fundus", "Binokulare Untersuchung des Augenhintergrundes"],
-      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["hintereraugenabschnitt", "netzhautzentralanliegend"]}]}
+      "when": {
+        "all": [
+          {"segment_flag_any": ["clinical_context"]},
+          {
+            "any": [
+              {"text_any": ["hintereraugenabschnitt", "netzhautzentralanliegend", "netzhautliegtan", "fundussichtbar"]},
+              {"regex_any": {"source": "folded", "values": ["hinterer.{0,80}augenabschnitt", "fundus.{0,50}(?:sichtbar|beurteilbar)"]}}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "evidence.ophthalmic_sonography.v1",
+      "kind": "clinical.diagnostics.ophthalmic_sonography",
+      "label": "Ophthalmologische Sonografie",
+      "confidence": 0.95,
+      "datetime_sources": ["device_scan", "state:ophthalmic_sonography", "state:clinical"],
+      "search_terms": ["Sonografie des Auges", "Ophthalmologische Sonografie", "Echografie des Auges"],
+      "metadata": {
+        "service_status": "performed",
+        "procedure_family": "sonography",
+        "body_region": "eye",
+        "dedupe_scope": "service_date"
+      },
+      "when": {"segment_any": ["ophthalmic_sonography"]}
     },
     {
       "rule_id": "evidence.service.consultation.v1",

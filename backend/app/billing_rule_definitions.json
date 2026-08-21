@@ -1,7 +1,16 @@
 {
   "schema_version": 1,
   "rule_set_id": "kbv-ebm-hessen-core",
-  "version": "2026.5",
+  "version": "2026.6",
+  "semantic_policy": {
+    "auto_accept_support_levels": ["validated_rule", "validated_rule_variant", "derived_rule", "explicit_candidate", "regional_catalog"],
+    "proposal_rejection_patterns": [
+      "\\bnicht\\s+(?:vollständig\\s+)?erfüllt\\b",
+      "\\bVoraussetzungen?.{0,100}(?:fehlt|fehlen|nicht erfüllt)\\b",
+      "\\bkeine?.{0,120}vorliegt\\b"
+    ],
+    "ensure_direct_rule_items": true
+  },
   "event_settings": {
     "default_session_gap_minutes": 180,
     "episode_gap_days": 14,
@@ -37,6 +46,8 @@
     {"rule_id": "context.kv_notfall_zna.01210.v1", "evidence_kind": "context.kv_notfall_zna", "gop": "01210", "title_hint": "Notfallpauschale I", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "clinical.diagnostics.ctg.01786.v1", "evidence_kind": "clinical.diagnostics.ctg", "gop": "01786", "title_hint": "Kardiotokografische Untersuchung", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "clinical.diagnostics.abdominal_sonography.33042.v1", "evidence_kind": "clinical.diagnostics.abdominal_sonography", "gop": "33042", "title_hint": "Sonografie des Abdomens und Retroperitoneums", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "clinical.ophthalmology_fundus.06333.v1", "evidence_kind": "clinical.ophthalmology_fundus", "gop": "06333", "title_hint": "Binokulare Untersuchung des Augenhintergrundes", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "clinical.diagnostics.ophthalmic_sonography.33000.v1", "evidence_kind": "clinical.diagnostics.ophthalmic_sonography", "gop": "33000", "title_hint": "Sonografie des Auges", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "radiology.ct_head_native.34310.v1", "evidence_kind": "radiology.ct_head_native", "gop": "34310", "title_hint": "CT-Untersuchung des Neurocraniums", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "radiology.ct_thorax.34330.v1", "evidence_kind": "radiology.ct_thorax", "gop": "34330", "title_hint": "CT-Untersuchung des Thorax", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "radiology.xray_shoulder_2_planes.34231.v1", "evidence_kind": "radiology.xray_shoulder_2_planes", "gop": "34231", "title_hint": "Aufnahmen der Schulter/des Schultergürtels", "valid_from": "2025/Q1", "regions": ["*"]},

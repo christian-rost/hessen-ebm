@@ -135,6 +135,7 @@ class BillingRuleSet:
     derived_rules: tuple[DerivedRuleDefinition, ...]
     event_settings: dict[str, Any]
     calendar_definitions: dict[str, Any]
+    semantic_policy: dict[str, Any]
 
 
 def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
@@ -162,6 +163,7 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
         derived_rules=derived_rules,
         event_settings=dict(payload.get("event_settings") or {}),
         calendar_definitions=dict(payload.get("calendar_definitions") or {}),
+        semantic_policy=dict(payload.get("semantic_policy") or {}),
     )
     _validate_unique_rule_ids(rule_set)
     return rule_set

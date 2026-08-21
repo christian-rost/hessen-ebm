@@ -33,7 +33,7 @@ from .catalog_rule_validation import apply_catalog_rule_validation
 from .config import Settings
 from .evidence_extraction import quarter_from_date
 from .models import BillingItem, CatalogEntry, Evidence, ExcludedEvidence, InvoiceSummary, ReviewCandidate
-from .rule_engine import append_derived_billing_items
+from .rule_engine import append_derived_billing_items, generate_billing_items
 
 
 class SemanticBillingError(RuntimeError):
@@ -77,6 +77,10 @@ def generate_semantic_billing_items(
     payload = _coerce_json_payload(raw_payload)
 
     items, item_review = _billing_items_from_payload(payload, billing_evidence, events, candidates, catalog, quarter, region)
+    rule_set = get_runtime_billing_rule_set(quarter, region)
+    if rule_set.semantic_policy.get("ensure_direct_rule_items", True):
+        deterministic_items, _ = generate_billing_items(billing_evidence, catalog, quarter, region)
+        _append_missing_rule_backed_items(items, deterministic_items)
     append_derived_billing_items(items, billing_evidence, catalog, quarter, region)
     catalog_rule_validation = [
         apply_catalog_rule_validation(
@@ -131,7 +135,13 @@ def _collect_catalog_candidates(
 ) -> list[dict[str, Any]]:
     by_key: dict[tuple[str, str], dict[str, Any]] = {}
 
-    def add(entry: CatalogEntry | None, evidence_ids: list[str], reason: str, requested_gop: str | None = None) -> None:
+    def add(
+        entry: CatalogEntry | None,
+        evidence_ids: list[str],
+        reason: str,
+        support_level: str,
+        requested_gop: str | None = None,
+    ) -> None:
         if not entry:
             return
         gop = canonical_gop(requested_gop or entry.gop)
@@ -157,27 +167,54 @@ def _collect_catalog_candidates(
                 "rule_texts": entry.rule_texts,
                 "evidence_ids": [],
                 "reason": reason,
+                "support_levels": [],
             }
         by_key[key]["evidence_ids"] = sorted(set(by_key[key]["evidence_ids"] + evidence_ids))
+        by_key[key]["support_levels"] = sorted(set(by_key[key]["support_levels"] + [support_level]))
 
     rules_by_kind: dict[str, list[str]] = {}
     for rule in evidence_billing_rules(quarter, region):
         rules_by_kind.setdefault(rule.evidence_kind, []).append(rule.gop)
+    trusted_variants = _trusted_rule_variants(rules_by_kind, quarter, region)
 
     for item in evidence:
         for gop in rules_by_kind.get(item.kind, []):
-            add(catalog.lookup(gop, quarter, region), [item.evidence_id], f"validated prior rule for {item.kind}", gop)
+            add(
+                catalog.lookup(gop, quarter, region),
+                [item.evidence_id],
+                f"validated prior rule for {item.kind}",
+                "validated_rule",
+                gop,
+            )
 
         for gop in candidate_gops_for_evidence_kind(item.kind, quarter, region):
-            add(catalog.lookup(gop, quarter, region), [item.evidence_id], f"time-dependent billing rule for {item.kind}", gop)
+            support_level = (
+                "validated_rule_variant"
+                if canonical_gop(gop) in trusted_variants.get(item.kind, set())
+                else "configured_candidate"
+            )
+            add(
+                catalog.lookup(gop, quarter, region),
+                [item.evidence_id],
+                f"time-dependent billing rule for {item.kind}",
+                support_level,
+                gop,
+            )
 
         for gop in _candidate_gops(item):
-            add(catalog.lookup(gop, quarter, region), [item.evidence_id], f"explicit candidate GOP for {item.kind}", gop)
+            add(
+                catalog.lookup(gop, quarter, region),
+                [item.evidence_id],
+                f"explicit candidate GOP for {item.kind}",
+                "explicit_candidate",
+                gop,
+            )
 
     for item in evidence:
         for term in _search_terms(item):
             for entry in catalog.search(term, quarter, limit=8):
-                add(entry, [item.evidence_id], f"catalog text search for '{term}'")
+                support_level = "regional_catalog" if entry.region else "semantic_search"
+                add(entry, [item.evidence_id], f"catalog text search for '{term}'", support_level)
 
         if len(by_key) >= max_candidates:
             break
@@ -208,6 +245,7 @@ def _collect_catalog_candidates(
             catalog.lookup(derived_decision.gop, quarter, region),
             list(derived_decision.evidence_ids),
             f"derived billing rule {derived_decision.rule_id}",
+            "derived_rule",
             derived_decision.gop,
         )
 
@@ -223,6 +261,45 @@ def _candidate_gops(item: Evidence) -> list[str]:
     if not isinstance(metadata_gops, list):
         return []
     return list(dict.fromkeys(canonical_gop(str(gop)) for gop in metadata_gops if str(gop).strip()))
+
+
+def _trusted_rule_variants(
+    rules_by_kind: dict[str, list[str]],
+    quarter: str,
+    region: str,
+) -> dict[str, set[str]]:
+    rule_set = get_runtime_billing_rule_set(quarter, region)
+    result = {kind: {canonical_gop(gop) for gop in gops} for kind, gops in rules_by_kind.items()}
+    for sequence_rule in rule_set.event_sequence_rules:
+        if not definition_is_applicable(
+            sequence_rule.valid_from,
+            sequence_rule.valid_to,
+            sequence_rule.regions,
+            quarter,
+            region,
+        ):
+            continue
+        for kind in sequence_rule.evidence_kinds:
+            if kind not in result:
+                continue
+            result[kind].update(
+                canonical_gop(gop)
+                for gop in (sequence_rule.initial_gop, sequence_rule.subsequent_gop)
+            )
+    for kind, trusted_gops in result.items():
+        trusted_bases = {normalize_gop(gop)[0] for gop in trusted_gops}
+        for temporal_rule in rule_set.temporal_rules:
+            if not definition_is_applicable(
+                temporal_rule.valid_from,
+                temporal_rule.valid_to,
+                temporal_rule.regions,
+                quarter,
+                region,
+            ):
+                continue
+            if trusted_bases.intersection(normalize_gop(gop)[0] for gop in temporal_rule.gops):
+                trusted_gops.update(canonical_gop(outcome.gop) for outcome in temporal_rule.outcomes)
+    return result
 
 
 def _search_terms(item: Evidence) -> list[str]:
@@ -254,6 +331,8 @@ def _build_messages(
             "service_time": item.service_time,
             "text": item.text,
             "confidence": item.confidence,
+            "value": item.value,
+            "metadata": item.metadata,
         }
         for item in evidence
     ]
@@ -273,6 +352,7 @@ def _build_messages(
             "rule_texts": item.get("rule_texts") or [],
             "evidence_ids": item["evidence_ids"],
             "reason": item["reason"],
+            "support_levels": item.get("support_levels") or [],
         }
         for item in candidates
     ]
@@ -289,6 +369,9 @@ def _build_messages(
         "Bei zeitabhängigen Positionen sind Leistungsdatum, Uhrzeit, Wochentag, Feiertag sowie Erst- oder Folgekontakt zu beachten. "
         "Wenn eine Leistung nur angefordert, storniert, intern dokumentiert oder unsicher ist, nimm sie nicht als item auf, "
         "sondern als review_candidate oder excluded_evidence. "
+        "Kandidaten mit ausschließlich configured_candidate oder semantic_search sind nur Suchhinweise und dürfen nicht "
+        "ohne zusätzliche strukturierte Evidenz als item übernommen werden. Eine ausdrücklich nicht vollständig erfüllte "
+        "Leistung darf niemals als item erscheinen. "
         "Antworte ausschließlich als JSON-Objekt."
     )
     user = {
@@ -422,6 +505,7 @@ def _billing_items_from_payload(
     used_event_gops: set[tuple[str, str]] = set()
 
     used_sequence_events: set[tuple[str, str]] = set()
+    semantic_policy = get_runtime_billing_rule_set(quarter, region).semantic_policy
 
     for proposal in _sorted_item_proposals(payload.get("items"), evidence_by_id):
         raw_gop = str(proposal.get("gop") or "").strip().upper()
@@ -440,6 +524,18 @@ def _billing_items_from_payload(
                     evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
                     possible_gops=[canonical_gop(gop)],
                     reason="GOP war nicht im bereitgestellten Katalog-Kandidatenpool und wurde nicht automatisch übernommen.",
+                )
+            )
+            continue
+        proposal_reason = _clean_optional_str(proposal.get("reason"))
+        acceptance_reason = _semantic_acceptance_failure(candidate, proposal_reason, semantic_policy)
+        if acceptance_reason:
+            review.append(
+                ReviewCandidate(
+                    evidence=f"Semantischer Vorschlag GOP {gop}",
+                    evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                    possible_gops=[canonical_gop(gop)],
+                    reason=acceptance_reason,
                 )
             )
             continue
@@ -634,12 +730,61 @@ def _billing_items_from_payload(
                 validation_status=validation_status,  # type: ignore[arg-type]
                 validation_notes=validation_notes,
                 derivation_source="semantic_llm",
-                semantic_reason=_clean_optional_str(proposal.get("reason")),
+                semantic_reason=proposal_reason,
                 semantic_catalog_candidates=[candidate["candidate_id"]],
             )
         )
 
     return items, review
+
+
+def _semantic_acceptance_failure(
+    candidate: dict[str, Any],
+    proposal_reason: str | None,
+    semantic_policy: dict[str, Any],
+) -> str | None:
+    support_levels = {str(value) for value in candidate.get("support_levels") or []}
+    accepted_levels = {
+        str(value)
+        for value in semantic_policy.get(
+            "auto_accept_support_levels",
+            ["validated_rule", "validated_rule_variant", "derived_rule", "explicit_candidate", "regional_catalog"],
+        )
+    }
+    if not support_levels.intersection(accepted_levels):
+        return (
+            "Der Vorschlag beruht nur auf einem internen oder semantischen Kataloghinweis. "
+            "Für eine automatische Übernahme fehlt eine validierte Leistungsregel oder strukturierte GOP-Evidenz."
+        )
+    if proposal_reason:
+        for pattern in semantic_policy.get("proposal_rejection_patterns") or []:
+            if re.search(str(pattern), proposal_reason, re.IGNORECASE | re.DOTALL):
+                return (
+                    "Die LLM-Herleitung beschreibt selbst eine nicht erfüllte oder fehlende "
+                    "Abrechnungsvoraussetzung; der Vorschlag wurde deshalb nicht übernommen."
+                )
+    return None
+
+
+def _append_missing_rule_backed_items(items: list[BillingItem], deterministic_items: list[BillingItem]) -> None:
+    existing = {
+        (
+            item.gop_base,
+            item.service_event_id or f"{item.service_date or ''}T{item.service_time or ''}",
+        )
+        for item in items
+    }
+    for item in deterministic_items:
+        key = (
+            item.gop_base,
+            item.service_event_id or f"{item.service_date or ''}T{item.service_time or ''}",
+        )
+        if key in existing:
+            continue
+        items.append(item)
+        existing.add(key)
+    for line, item in enumerate(items, start=1):
+        item.line = line
 
 
 def _select_billing_event(

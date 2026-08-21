@@ -384,6 +384,7 @@ def _merge_runtime_core_rules(local: BillingRuleSet, remote: BillingRuleSet) -> 
         derived_rules=merge(remote.derived_rules, local.derived_rules),
         event_settings=remote.event_settings or local.event_settings,
         calendar_definitions=remote.calendar_definitions or local.calendar_definitions,
+        semantic_policy=remote.semantic_policy or local.semantic_policy,
     )
 
 

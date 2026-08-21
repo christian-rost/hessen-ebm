@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from datetime import datetime
 from typing import Any
 
 from .billing_rules import candidate_gops_for_evidence_kind
@@ -272,7 +273,10 @@ def _extract_datetime(
         selected = matches[-1] if pattern_definition.get("select") == "last" else matches[0]
         date_group = int(pattern_definition.get("date_group") or 1)
         time_group = int(pattern_definition.get("time_group") or 2)
-        date_value = _date_to_iso(selected.group(date_group))
+        date_value = _date_to_iso(
+            selected.group(date_group),
+            str(pattern_definition.get("date_format") or "%d.%m.%Y"),
+        )
         time_value = selected.group(time_group) if selected.lastindex and selected.lastindex >= time_group else None
         return date_value, time_value
 
@@ -306,11 +310,13 @@ def _first_allowed_match(
     return None
 
 
-def _date_to_iso(value: str | None) -> str | None:
+def _date_to_iso(value: str | None, date_format: str = "%d.%m.%Y") -> str | None:
     if not value:
         return None
-    day, month, year = value.split(".")
-    return f"{year}-{month}-{day}"
+    try:
+        return datetime.strptime(value, date_format).date().isoformat()
+    except ValueError:
+        return None
 
 
 def _update_datetime_state(
@@ -479,10 +485,14 @@ def _join_datetime(date_value: str | None, time_value: str | None) -> str | None
 
 
 def _dedupe_evidence(items: list[Evidence]) -> list[Evidence]:
-    seen: set[tuple[str, int]] = set()
+    seen: set[tuple[object, ...]] = set()
     result: list[Evidence] = []
     for item in items:
-        key = (item.kind, item.page)
+        dedupe_scope = item.metadata.get("dedupe_scope") if isinstance(item.metadata, dict) else None
+        if dedupe_scope == "service_date" and item.service_date:
+            key: tuple[object, ...] = (item.kind, item.service_date)
+        else:
+            key = (item.kind, item.page)
         if key not in seen:
             seen.add(key)
             result.append(item)
