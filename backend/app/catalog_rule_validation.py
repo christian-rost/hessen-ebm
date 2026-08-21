@@ -11,6 +11,17 @@ from .ebm_rule_compiler import compile_catalog_quarter
 from .models import BillingItem, Evidence
 
 
+LONGITUDINAL_FREQUENCY_SCOPES = {
+    "disease_case",
+    "physician_case",
+    "physician_group_case",
+    "insured_case",
+    "quarter",
+    "calendar_week",
+    "calendar_year",
+}
+
+
 def apply_catalog_rule_validation(
     items: list[BillingItem],
     evidence: list[Evidence],
@@ -128,6 +139,11 @@ def _evaluate_clause(
                 f"Häufigkeitsgrenze überschritten ({_scope_label(scope)}): maximal {maximum}, "
                 f"vorhanden {existing_counts[item.gop_base]}."
             )
+        if scope in LONGITUDINAL_FREQUENCY_SCOPES:
+            return (
+                f"Häufigkeitsgrenze ({_scope_label(scope)}) muss zusätzlich gegen die "
+                "patientenbezogene Abrechnungshistorie geprüft werden."
+            )
         return None
 
     if clause_type == "requires_icd":
@@ -162,6 +178,7 @@ def _evaluate_clause(
     if clause_type in {
         "quantity_unit",
         "minimum_duration",
+        "duration_increment",
         "authorization",
         "service_location",
         "catalog_reference",
@@ -181,7 +198,7 @@ def _counts_for_scope(items: list[BillingItem], current: BillingItem, scope: str
                 for item in items
                 if item.service_date == current.service_date and item.service_time == current.service_time
             ]
-    elif scope == "treatment_day":
+    elif scope in {"treatment_day", "calendar_day"}:
         relevant = [item for item in items if item.service_date == current.service_date]
     elif scope == "quarter":
         relevant = [item for item in items if item.quarter == current.quarter]
@@ -260,8 +277,14 @@ def _scope_label(scope: str) -> str:
     return {
         "same_session": "dieselbe Sitzung",
         "treatment_day": "Behandlungstag",
+        "calendar_day": "Kalendertag",
         "treatment_case": "Behandlungsfall",
         "disease_case": "Krankheitsfall",
+        "physician_case": "Arztfall",
+        "physician_group_case": "Arztgruppenfall",
+        "insured_case": "Versichertenfall",
+        "calendar_week": "Kalenderwoche",
+        "calendar_year": "Kalenderjahr",
         "quarter": "Quartal",
     }.get(scope, scope or "Katalog")
 

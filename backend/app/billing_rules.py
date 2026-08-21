@@ -801,7 +801,13 @@ def _requires_diagnosis(rule_text: str) -> bool:
 
 
 def _requires_frequency_check(rule_text: str) -> bool:
-    return bool(re.search(r"\b(einmal|höchstens|maximal|je behandlungsfall|im krankheitsfall|im quartal|nicht mehrfach)\b", rule_text))
+    return bool(
+        re.search(
+            r"\b(einmal|höchstens|maximal|je sitzung|je behandlungstag|am behandlungstag|"
+            r"je behandlungsfall|im krankheitsfall|im quartal|nicht mehrfach)\b",
+            rule_text,
+        )
+    )
 
 
 def _requires_exclusion_check(rule_text: str) -> bool:

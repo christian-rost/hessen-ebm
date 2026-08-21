@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.billing_rule_store import build_clause_rows, build_definition_rows
-from app.ebm_rule_compiler import RuleCompilationError, compile_catalog_quarter
+from app.ebm_rule_compiler import RuleCompilationError, compile_catalog_quarter, compile_gop_rule
 
 
 def build_compiler_catalog(path: Path) -> None:
@@ -133,6 +133,65 @@ def test_compiler_extracts_generic_requirements_from_gop_text(tmp_path: Path) ->
     assert clauses["requires_icd"].machine_executable is True
     assert clauses["requires_personal_contact"].machine_executable is True
     assert clauses["exclusion"].parameters["gops"] == ["01224"]
+
+
+@pytest.mark.parametrize(
+    ("legend", "scope"),
+    [
+        ("Pauschale, einmal am Behandlungstag", "treatment_day"),
+        ("Pauschale, je Sitzung", "same_session"),
+        ("Pauschale, einmal im Behandlungsfall", "treatment_case"),
+        ("Pauschale, einmal im Krankheitsfall", "disease_case"),
+    ],
+)
+def test_compiler_reads_flat_rate_frequency_from_legend(legend: str, scope: str) -> None:
+    rule = compile_gop_rule(
+        definition_type="catalog_validation",
+        source_type="EBM_KBV",
+        source_catalog_id="test",
+        quarter="2026/Q2",
+        region="*",
+        catalog_key="99999",
+        gop="99999",
+        title="Testpauschale",
+        source_text=legend,
+        source_reference={"test": True},
+        scope={"kind": "gop", "affected_gops": ["99999"]},
+    )
+
+    frequency = [clause for clause in rule.clauses if clause.clause_type == "frequency_limit"]
+
+    assert len(frequency) == 1
+    assert frequency[0].scope == scope
+    assert frequency[0].parameters == {"maximum": 1}
+    assert not any(clause.clause_type.startswith("duration") for clause in rule.clauses)
+
+
+def test_compiler_creates_time_rules_only_for_explicit_duration_wording() -> None:
+    rule = compile_gop_rule(
+        definition_type="catalog_validation",
+        source_type="EBM_KBV",
+        source_catalog_id="test",
+        quarter="2026/Q2",
+        region="*",
+        catalog_key="99999",
+        gop="99999",
+        title="Zeitgebundene Leistung",
+        source_text=(
+            "Persönlicher Arzt-Patienten-Kontakt, mindestens 10 Minuten. "
+            "Zuschlag je weitere vollendete 5 Minuten."
+        ),
+        source_reference={"test": True},
+        scope={"kind": "gop", "affected_gops": ["99999"]},
+    )
+    clauses = {clause.clause_type: clause for clause in rule.clauses}
+
+    assert clauses["minimum_duration"].parameters == {"minutes": 10}
+    assert clauses["duration_increment"].parameters == {
+        "minutes": 5,
+        "additional_increment": True,
+    }
+    assert not any(clause.clause_type == "frequency_limit" for clause in rule.clauses)
 
 
 def test_selected_compilation_includes_matching_hierarchy_but_not_other_ranges(tmp_path: Path) -> None:

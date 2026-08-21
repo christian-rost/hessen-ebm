@@ -185,6 +185,8 @@ Produktiver Python-Code enthält keine konkreten GOP-Zuordnungen. Direkte Abrech
 
 Die zeitliche Regelschicht dedupliziert nicht mehr pauschal fallweit nach GOP. Sie verwendet den Schlüssel aus GOP und Leistungsereignis. Dadurch kann beispielsweise `01786` an zwei verschiedenen Behandlungstagen zweimal vorkommen, während CTG-Start, CTG-Ende, Kurve und Verlaufsnotiz derselben Sitzung nur eine Position erzeugen. Für Kontaktsequenzen gilt zusätzlich: Pro Sequenzereignis entsteht höchstens eine Basispauschale. Eine laufende Notfallsitzung über Mitternacht erzeugt daher keine zweite `01212`; nur ein belegter weiterer Kontakt wird in die passende Folgekonsultations-GOP überführt. Katalogausschlüsse und Häufigkeitsgrenzen werden entsprechend ihrem Geltungsbereich pro Sitzung, Behandlungstag, Behandlungsfall oder Quartal geprüft.
 
+Der Regelcompiler trennt Abrechnungshäufigkeit und Leistungsdauer. Formulierungen wie „einmal im Behandlungsfall“, „einmal im Krankheitsfall“, „je Sitzung“ und „einmal am Behandlungstag“ werden als Häufigkeitsgrenzen mit eigenem Bezugsraum gespeichert. Eine Zeitvorgabe entsteht ausschließlich aus einer ausdrücklichen Legendenformulierung wie „mindestens … Minuten“ oder „je vollendete … Minuten“; letztere wird als Zeitstaffel und nicht als Pauschalen-Häufigkeit modelliert.
+
 Bei `BILLING_RULES_SOURCE=auto` bleiben die aktiven Supabase-Regeln maßgeblich. Neue lokale Kernregeln werden bis zur nächsten Admin-Kompilierung ergänzend eingeblendet, wenn ihre Regel-ID in Supabase noch fehlt. `POST /api/admin/rules/compile` schreibt anschließend das vollständige Kernregelwerk einschließlich der Kandidaten-, Ereignis- und Sequenzregeln nach Supabase.
 
 Aktuell enthält das Regelwerk unter anderem folgende direkte Evidenzzuordnungen:

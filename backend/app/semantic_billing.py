@@ -372,6 +372,9 @@ def _build_messages(
         "Kandidaten mit ausschließlich configured_candidate oder semantic_search sind nur Suchhinweise und dürfen nicht "
         "ohne zusätzliche strukturierte Evidenz als item übernommen werden. Eine ausdrücklich nicht vollständig erfüllte "
         "Leistung darf niemals als item erscheinen. "
+        "Behandle Angaben wie einmal im Fall, je Sitzung oder am Behandlungstag als Abrechnungshäufigkeit. "
+        "Eine Leistungsdauer darfst du nur verlangen oder zur Mengenberechnung verwenden, wenn die Kataloglegende "
+        "ausdrücklich mindestens Minuten oder je vollendete Minuten nennt. "
         "Antworte ausschließlich als JSON-Objekt."
     )
     user = {

@@ -396,13 +396,22 @@ def _exclusion_clauses(text: str, own_gop: str) -> list[CompiledRuleClause]:
 
 def _frequency_clauses(text: str) -> list[CompiledRuleClause]:
     number = r"(?:einmal|zweimal|dreimal|viermal|fünfmal|sechsmal|\d+\s*mal)"
-    scope = r"(?:Behandlungstag|Behandlungsfall|Krankheitsfall|Quartal|Kalendervierteljahr)"
-    pattern = re.compile(rf"\b(?:(höchstens|maximal)\s+)?({number})\s+(?:je|im|pro)\s+({scope})\b", re.IGNORECASE)
+    scope = (
+        r"(?:Sitzung|Behandlungstag|Kalendertag|Behandlungsfall|Krankheitsfall|Arztfall|"
+        r"Arztgruppenfall|Versichertenfall|Quartal|Kalendervierteljahr|Kalenderwoche|Kalenderjahr)"
+    )
+    pattern = re.compile(
+        rf"\b(?:(höchstens|maximal)\s+)?({number})\s+"
+        rf"(?:je|im|pro|am|in\s+der|in\s+derselben)\s+({scope})\b",
+        re.IGNORECASE,
+    )
     clauses: list[CompiledRuleClause] = []
+    matched_spans: list[tuple[int, int]] = []
     for match in pattern.finditer(text):
         maximum = _number_value(match.group(2))
         if maximum is None:
             continue
+        matched_spans.append(match.span())
         clauses.append(
             _clause(
                 "frequency_limit",
@@ -414,12 +423,27 @@ def _frequency_clauses(text: str) -> list[CompiledRuleClause]:
                 0.94 if match.group(1) else 0.9,
             )
         )
+    per_unit_pattern = re.compile(r"\bje\s+(Sitzung|Behandlungstag|Kalendertag)\b", re.IGNORECASE)
+    for match in per_unit_pattern.finditer(text):
+        if any(start <= match.start() and match.end() <= end for start, end in matched_spans):
+            continue
+        clauses.append(
+            _clause(
+                "frequency_limit",
+                _scope_name(match.group(1)),
+                {"maximum": 1},
+                _excerpt(text, match.start(), match.end()),
+                True,
+                False,
+                0.94,
+            )
+        )
     return clauses
 
 
 def _quantity_unit_clauses(text: str) -> list[CompiledRuleClause]:
     pattern = re.compile(
-        r"\bje\s+(Untersuchung|Sitzung|vollendete\s+\d+\s+Minuten|Behandlungstag|Seite|Organ|Extremität)\b",
+        r"\bje\s+(Untersuchung|Seite|Organ|Extremität)\b",
         re.IGNORECASE,
     )
     return [
@@ -516,8 +540,8 @@ def _age_clauses(text: str) -> list[CompiledRuleClause]:
 
 
 def _duration_clauses(text: str) -> list[CompiledRuleClause]:
-    pattern = re.compile(r"\bmindestens\s+(\d{1,3})\s+Minuten\b", re.IGNORECASE)
-    return [
+    minimum_pattern = re.compile(r"\bmindestens\s+(\d{1,3})\s+Minuten\b", re.IGNORECASE)
+    clauses = [
         _clause(
             "minimum_duration",
             "service",
@@ -527,8 +551,25 @@ def _duration_clauses(text: str) -> list[CompiledRuleClause]:
             True,
             0.92,
         )
-        for match in pattern.finditer(text)
+        for match in minimum_pattern.finditer(text)
     ]
+    increment_pattern = re.compile(
+        r"\bje\s+(?:(weitere)\s+)?vollendete\s+(\d{1,3})\s+Minuten\b",
+        re.IGNORECASE,
+    )
+    clauses.extend(
+        _clause(
+            "duration_increment",
+            "service",
+            {"minutes": int(match.group(2)), "additional_increment": bool(match.group(1))},
+            _excerpt(text, match.start(), match.end()),
+            False,
+            True,
+            0.94,
+        )
+        for match in increment_pattern.finditer(text)
+    )
+    return clauses
 
 
 def _time_clauses(text: str) -> list[CompiledRuleClause]:
@@ -686,12 +727,26 @@ def _number_value(value: str) -> int | None:
 
 def _scope_name(value: str) -> str:
     folded = value.casefold()
+    if "sitzung" in folded:
+        return "same_session"
     if "behandlungstag" in folded:
         return "treatment_day"
+    if "kalendertag" in folded:
+        return "calendar_day"
     if "behandlungsfall" in folded:
         return "treatment_case"
     if "krankheitsfall" in folded:
         return "disease_case"
+    if "arztgruppenfall" in folded:
+        return "physician_group_case"
+    if "arztfall" in folded:
+        return "physician_case"
+    if "versichertenfall" in folded:
+        return "insured_case"
+    if "kalenderwoche" in folded:
+        return "calendar_week"
+    if "kalenderjahr" in folded:
+        return "calendar_year"
     return "quarter"
 
 

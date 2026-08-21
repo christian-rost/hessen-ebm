@@ -1,4 +1,6 @@
-from app.catalog_rule_validation import _counts_for_scope
+from collections import Counter
+
+from app.catalog_rule_validation import _counts_for_scope, _evaluate_clause
 from app.models import BillingItem
 
 
@@ -28,3 +30,18 @@ def test_catalog_counts_follow_session_day_and_case_scope() -> None:
     assert _counts_for_scope(items, first, "same_session") == {"01786": 1, "33042": 1}
     assert _counts_for_scope(items, first, "treatment_day") == {"01786": 1, "33042": 1}
     assert _counts_for_scope(items, first, "treatment_case") == {"01786": 2, "33042": 1}
+
+
+def test_longitudinal_frequency_requires_patient_history_check() -> None:
+    current = item("99999", "2026-01-03", "session-1", 1)
+    clause = {
+        "clause_type": "frequency_limit",
+        "scope": "disease_case",
+        "parameters": {"maximum": 1},
+        "source_text": "einmal im Krankheitsfall",
+    }
+
+    note = _evaluate_clause(clause, current, Counter({"99999": 1}), {})
+
+    assert note is not None
+    assert "patientenbezogene Abrechnungshistorie" in note
