@@ -32,6 +32,8 @@ def extract_evidence(
     case_context: dict[str, str | None] = {
         "treatment_start": None,
         "treatment_end": None,
+        "administrative_admission": None,
+        "first_personal_physician_contact": None,
         "quarter": None,
         "diagnosis": None,
     }
@@ -94,7 +96,8 @@ def extract_evidence(
                     page_evidence.append(item)
 
         for item in page_evidence:
-            fallback_treatment_start = fallback_treatment_start or _join_datetime(item.service_date, item.service_time)
+            if not item.metadata.get("timeline_only"):
+                fallback_treatment_start = fallback_treatment_start or _join_datetime(item.service_date, item.service_time)
         evidence.extend(page_evidence)
 
         service_date, _ = datetimes.get(str(rule_set.formats.get("review_datetime_role") or "service"), (None, None))
@@ -462,7 +465,10 @@ def _ev(
     metadata: dict[str, object] | None = None,
 ) -> Evidence:
     snippet = re.sub(r"\s+", " ", text).strip()[:240]
-    digest = hashlib.sha1(f"{kind}:{page}:{snippet}".encode("utf-8")).hexdigest()[:10]
+    event_type = str((metadata or {}).get("timeline_event_type") or "")
+    digest = hashlib.sha1(
+        f"{kind}:{page}:{service_date}:{service_time}:{event_type}:{snippet}".encode("utf-8")
+    ).hexdigest()[:10]
     return Evidence(
         evidence_id=f"ev-{digest}",
         kind=kind,
@@ -489,7 +495,14 @@ def _dedupe_evidence(items: list[Evidence]) -> list[Evidence]:
     result: list[Evidence] = []
     for item in items:
         dedupe_scope = item.metadata.get("dedupe_scope") if isinstance(item.metadata, dict) else None
-        if dedupe_scope == "service_date" and item.service_date:
+        if dedupe_scope == "service_datetime" and item.service_date:
+            key: tuple[object, ...] = (
+                item.kind,
+                item.service_date,
+                item.service_time,
+                item.metadata.get("timeline_event_type"),
+            )
+        elif dedupe_scope == "service_date" and item.service_date:
             key: tuple[object, ...] = (item.kind, item.service_date)
         else:
             key = (item.kind, item.page)

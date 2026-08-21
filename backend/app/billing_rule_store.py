@@ -373,6 +373,16 @@ def _merge_runtime_core_rules(local: BillingRuleSet, remote: BillingRuleSet) -> 
         by_id = {rule.rule_id: rule for rule in remote_rules}
         return tuple(remote_rules) + tuple(rule for rule in local_rules if rule.rule_id not in by_id)
 
+    def merge_settings(local_settings: dict[str, Any], remote_settings: dict[str, Any]) -> dict[str, Any]:
+        result = dict(local_settings)
+        for key, remote_value in remote_settings.items():
+            local_value = result.get(key)
+            if isinstance(local_value, dict) and isinstance(remote_value, dict):
+                result[key] = {**local_value, **remote_value}
+            else:
+                result[key] = remote_value
+        return result
+
     return BillingRuleSet(
         schema_version=remote.schema_version,
         rule_set_id=remote.rule_set_id,
@@ -382,7 +392,7 @@ def _merge_runtime_core_rules(local: BillingRuleSet, remote: BillingRuleSet) -> 
         temporal_rules=merge(remote.temporal_rules, local.temporal_rules),
         event_sequence_rules=merge(remote.event_sequence_rules, local.event_sequence_rules),
         derived_rules=merge(remote.derived_rules, local.derived_rules),
-        event_settings=remote.event_settings or local.event_settings,
+        event_settings=merge_settings(local.event_settings, remote.event_settings),
         calendar_definitions=remote.calendar_definitions or local.calendar_definitions,
         semantic_policy=remote.semantic_policy or local.semantic_policy,
     )

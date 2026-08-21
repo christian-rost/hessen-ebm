@@ -342,6 +342,10 @@ def test_runtime_rule_overlay_keeps_new_local_event_rules_until_supabase_is_reco
             "schema_version": 1,
             "rule_set_id": "remote",
             "version": "2026.1",
+            "event_settings": {
+                "default_session_gap_minutes": 90,
+                "timeline_role_priority": {"service_event": 7},
+            },
             "evidence_rules": [],
             "temporal_rules": [],
             "derived_rules": [],
@@ -352,6 +356,12 @@ def test_runtime_rule_overlay_keeps_new_local_event_rules_until_supabase_is_reco
             "schema_version": 1,
             "rule_set_id": "local",
             "version": "2026.2",
+            "event_settings": {
+                "default_session_gap_minutes": 180,
+                "episode_gap_days": 14,
+                "timeline_role_priority": {"initial_contact": 0, "service_event": 1},
+                "timeline_event_type_priority": {"administrative_admission": 0, "service_event": 4},
+            },
             "evidence_rules": [],
             "candidate_rules": [
                 {
@@ -381,3 +391,7 @@ def test_runtime_rule_overlay_keeps_new_local_event_rules_until_supabase_is_reco
     assert [rule.rule_id for rule in merged.event_sequence_rules] == ["sequence.test.v1"]
     assert [rule.rule_id for rule in merged.candidate_rules] == ["candidate.test.v1"]
     assert merged.version == "2026.1+core-2026.2"
+    assert merged.event_settings["default_session_gap_minutes"] == 90
+    assert merged.event_settings["episode_gap_days"] == 14
+    assert merged.event_settings["timeline_role_priority"] == {"initial_contact": 0, "service_event": 7}
+    assert merged.event_settings["timeline_event_type_priority"]["administrative_admission"] == 0

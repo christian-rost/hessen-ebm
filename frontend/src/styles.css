@@ -827,6 +827,44 @@ td code,
   font-weight: 700;
 }
 
+.invoice-timeline-table {
+  min-width: 760px;
+}
+
+.event-cell {
+  min-width: 210px;
+}
+
+.event-cell strong,
+.event-cell span {
+  display: block;
+}
+
+.event-cell strong {
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.event-cell span {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  margin-top: 0.2rem;
+}
+
+.timeline-gops {
+  min-width: 145px;
+}
+
+.timeline-gops code {
+  display: inline-block;
+  margin: 0 0.25rem 0.2rem 0;
+}
+
+.timeline-gops span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
 .source-cell {
   min-width: 180px;
 }

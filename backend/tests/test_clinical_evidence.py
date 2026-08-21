@@ -131,6 +131,49 @@ def test_ophthalmology_emergency_fundus_and_performed_sonography_are_distinguish
     assert context["quarter"] == "2026/Q2"
 
 
+def test_emergency_timeline_distinguishes_admission_triage_and_physician_contact():
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Behandlungsbericht ZNA Notfall. Aufnahme 24.04.2026 18:50. "
+                "Triage 24.04.2026 18:57. Erstkontakt Arzt 24.04.2026 19:05."
+            ),
+        )
+    ]
+
+    segments = segment_pages(pages)
+    evidence, review, _excluded, context = extract_evidence(pages, segments)
+    selected = {item.kind: item for item in evidence if item.kind.startswith(("timeline.", "context.kv_"))}
+
+    assert selected["timeline.administrative_admission"].service_time == "18:50"
+    assert selected["timeline.triage"].service_time == "18:57"
+    assert selected["context.kv_notfall_zna"].service_time == "19:05"
+    assert context["administrative_admission"] == "2026-04-24T18:50:00"
+    assert context["first_personal_physician_contact"] == "2026-04-24T19:05:00"
+    assert context["treatment_start"] == "2026-04-24T19:05:00"
+    assert not any("ohne sicher erkannten" in item.evidence for item in review)
+
+
+def test_emergency_admission_without_physician_contact_is_review_only():
+    pages = [
+        PageText(
+            page=1,
+            text="Behandlungsbericht ZNA Notfall. Aufnahme 24.04.2026 18:50.",
+        )
+    ]
+
+    segments = segment_pages(pages)
+    evidence, review, _excluded, context = extract_evidence(pages, segments)
+
+    assert any(item.kind == "timeline.administrative_admission" for item in evidence)
+    assert not any(item.kind == "context.kv_notfall_zna" for item in evidence)
+    assert context["administrative_admission"] == "2026-04-24T18:50:00"
+    assert context["first_personal_physician_contact"] is None
+    assert any("ohne sicher erkannten" in item.evidence for item in review)
+    assert any("01210" in item.possible_gops for item in review)
+
+
 def test_ophthalmology_data_capture_continuation_creates_all_internal_hints():
     pages = [
         PageText(

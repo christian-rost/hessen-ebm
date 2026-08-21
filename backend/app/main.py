@@ -21,6 +21,7 @@ from .document_segmentation import segment_pages
 from .evidence_extraction import extract_evidence
 from .invoice_export import load_analysis, save_upload, sha256_file, store_analysis
 from .invoice_store import delete_invoice, list_invoices, load_invoice, save_invoice
+from .invoice_timeline import build_invoice_timeline
 from .models import AnalysisResult, ReviewCandidate
 from .pdf_text import extract_pages
 from .rule_engine import generate_billing_items, rule_overview_payload
@@ -322,6 +323,12 @@ def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Setting
         items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter, region=region)
         billing_derivation = {"mode": "deterministic_rules", "fallback_reason": "Semantische Abrechnung ist deaktiviert."}
 
+    timeline_events = build_invoice_timeline(
+        billing_events,
+        items,
+        str(default_quarter),
+        region,
+    )
     item_quarters = sorted({item.quarter for item in items}) or [str(default_quarter)]
     regional_catalog_checks = [
         catalog.regional_catalog_check(
@@ -348,6 +355,7 @@ def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Setting
         pages=pages,
         segments=segments,
         evidence=evidence,
+        timeline_events=timeline_events,
         items=items,
         review_candidates=review_candidates,
         excluded_evidence=excluded,

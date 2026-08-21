@@ -19,6 +19,14 @@
       "follow_up_contact": 0,
       "service_event": 1
     },
+    "timeline_event_type_priority": {
+      "administrative_admission": 0,
+      "triage": 1,
+      "first_personal_physician_contact": 2,
+      "subsequent_personal_physician_contact": 3,
+      "service_event": 4,
+      "treatment_end": 5
+    },
     "anchor_strategies": [
       {
         "evidence_kind_prefix": "context.",

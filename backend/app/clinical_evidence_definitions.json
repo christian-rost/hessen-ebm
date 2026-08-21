@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "definition_set_id": "hessen-ebm-clinical-evidence",
-  "version": "2026.4",
+  "version": "2026.5",
   "formats": {
     "fallback_segment_type": "other",
     "fallback_reason": "Kein spezifischer Dokumentmarker gefunden",
@@ -480,11 +480,24 @@
       "fallback_excluded_before_regex": ["geb$"],
       "fallback_exclusion_window": 40
     },
-    "encounter": {
+    "administrative_admission": {
       "patterns": [
-        {"source": "compact", "regex": "(?:aufnahmezna|ambaufnahmedatum|aufnahmedatum|aufnahme)(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
-        {"source": "compact", "regex": "(?:erstkontaktarzt|erstkontakt|behandlungsbeginn|termindgf):?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
-        {"source": "compact", "regex": "vorstellung.{0,40}?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"}
+        {"source": "compact", "regex": "(?:aufnahmezna|ambaufnahmedatum|aufnahmedatum|aufnahmezeit|aufnahme)(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"}
+      ]
+    },
+    "triage": {
+      "patterns": [
+        {"source": "compact", "regex": "(?:triagebeginn|triagezeit|triage|ersteinschatzung|manchestertriage):?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"}
+      ]
+    },
+    "first_personal_physician_contact": {
+      "patterns": [
+        {"source": "compact", "regex": "(?:erstkontaktarzt|erstkontakt|ersterarztkontakt|ersterpersonlicherarztpatientenkontakt|behandlungsbeginn|termindgf):?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"}
+      ]
+    },
+    "subsequent_personal_physician_contact": {
+      "patterns": [
+        {"source": "compact", "regex": "(?:weitererpersonlicherarztpatientenkontakt|weitererpersonlicherarztkontakt|weitererarztkontakt|folgekontaktarzt|folgenkontaktarzt|wiedervorstellungarzt):?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"}
       ]
     },
     "treatment_end": {
@@ -512,21 +525,100 @@
     {"name": "ophthalmic_sonography", "datetime_role": "device_scan", "when": {"segment_any": ["ophthalmic_sonography"]}}
   ],
   "context_updates": [
+    {"key": "administrative_admission", "datetime_role": "administrative_admission", "when": {"datetime_present": ["administrative_admission"]}},
+    {"key": "first_personal_physician_contact", "datetime_role": "first_personal_physician_contact", "when": {"datetime_present": ["first_personal_physician_contact"]}},
     {"key": "treatment_end", "datetime_role": "treatment_end", "when": {"datetime_present": ["treatment_end"]}}
   ],
   "evidence_rules": [
     {
+      "rule_id": "evidence.timeline.administrative_admission.v1",
+      "kind": "timeline.administrative_admission",
+      "label": "Aufnahme",
+      "confidence": 0.98,
+      "requires_relevant": false,
+      "datetime_sources": ["administrative_admission"],
+      "metadata": {
+        "timeline_event_type": "administrative_admission",
+        "timeline_label": "Aufnahme",
+        "timeline_reason": "Administrativer Aufnahmezeitpunkt; daraus wird allein keine GOP abgeleitet.",
+        "timeline_only": true,
+        "dedupe_scope": "service_datetime"
+      },
+      "when": {"datetime_present": ["administrative_admission"]}
+    },
+    {
+      "rule_id": "evidence.timeline.triage.v1",
+      "kind": "timeline.triage",
+      "label": "Triage / Ersteinschätzung",
+      "confidence": 0.96,
+      "requires_relevant": false,
+      "datetime_sources": ["triage"],
+      "metadata": {
+        "timeline_event_type": "triage",
+        "timeline_label": "Triage / Ersteinschätzung",
+        "timeline_reason": "Klinischer Ersteinschätzungszeitpunkt; eine GOP-Zuordnung erfolgt nur bei passender Leistungsregel.",
+        "timeline_only": true,
+        "dedupe_scope": "service_datetime"
+      },
+      "when": {"datetime_present": ["triage"]}
+    },
+    {
+      "rule_id": "evidence.timeline.treatment_end.v1",
+      "kind": "timeline.treatment_end",
+      "label": "Behandlungsende",
+      "confidence": 0.96,
+      "requires_relevant": false,
+      "datetime_sources": ["treatment_end"],
+      "metadata": {
+        "timeline_event_type": "treatment_end",
+        "timeline_label": "Behandlungsende",
+        "timeline_reason": "Dokumentiertes Ende der Behandlung; eine GOP-Zuordnung erfolgt nur bei passender Leistungsregel.",
+        "timeline_only": true,
+        "dedupe_scope": "service_datetime"
+      },
+      "when": {"datetime_present": ["treatment_end"]}
+    },
+    {
       "rule_id": "evidence.emergency_encounter.v1",
       "kind": "context.kv_notfall_zna",
-      "label": "KV-Notfall/ZNA",
+      "label": "Erster persönlicher Arztkontakt im KV-Notfall",
       "confidence": 0.95,
-      "datetime_sources": ["encounter"],
-      "metadata": {"datetime_role": "encounter_start", "service_status": "occurred"},
+      "datetime_sources": ["first_personal_physician_contact"],
+      "metadata": {
+        "datetime_role": "first_personal_physician_contact",
+        "service_status": "occurred",
+        "timeline_event_type": "first_personal_physician_contact",
+        "timeline_label": "Erster persönlicher Arztkontakt",
+        "dedupe_scope": "service_datetime",
+        "force_separate_event": true
+      },
       "context_update": {"key": "treatment_start", "source": "datetime"},
       "when": {
         "all": [
           {"segment_flag_any": ["clinical_context"]},
-          {"datetime_present": ["encounter"]},
+          {"datetime_present": ["first_personal_physician_contact"]},
+          {"any": [{"text_all": ["kvabrechnung", "notfall"]}, {"text_any": ["aufnahmezna", "vorstellungnotfk", "alsnotfall", "notfallvor", "notfallvr"]}, {"text_any": ["notfall", "zna", "akutambulanz"]}]}
+        ]
+      }
+    },
+    {
+      "rule_id": "evidence.emergency_follow_up_encounter.v1",
+      "kind": "context.kv_notfall_zna",
+      "label": "Weiterer persönlicher Arztkontakt im KV-Notfall",
+      "confidence": 0.94,
+      "datetime_sources": ["subsequent_personal_physician_contact"],
+      "metadata": {
+        "datetime_role": "subsequent_personal_physician_contact",
+        "service_status": "occurred",
+        "timeline_event_type": "subsequent_personal_physician_contact",
+        "timeline_label": "Weiterer persönlicher Arztkontakt",
+        "dedupe_scope": "service_datetime",
+        "force_separate_event": true
+      },
+      "when": {
+        "all": [
+          {"segment_flag_any": ["clinical_context"]},
+          {"datetime_present": ["subsequent_personal_physician_contact"]},
           {"any": [{"text_all": ["kvabrechnung", "notfall"]}, {"text_any": ["aufnahmezna", "vorstellungnotfk", "alsnotfall", "notfallvor", "notfallvr"]}, {"text_any": ["notfall", "zna", "akutambulanz"]}]}
         ]
       }
@@ -1031,6 +1123,19 @@
     }
   ],
   "review_rules": [
+    {
+      "rule_id": "review.emergency.missing_physician_contact.v1",
+      "evidence": "Notfallaufnahme ohne sicher erkannten persönlichen Arztkontakt",
+      "candidate_kind": "context.kv_notfall_zna",
+      "reason": "Für die zeitabhängige Notfallpauschale ist der erste persönliche Arzt-Patienten-Kontakt maßgeblich; die administrative Aufnahmezeit darf nicht ersatzweise verwendet werden.",
+      "when": {
+        "all": [
+          {"datetime_present": ["administrative_admission"]},
+          {"not": {"datetime_present": ["first_personal_physician_contact"]}},
+          {"text_any": ["notfall", "zna", "akutambulanz"]}
+        ]
+      }
+    },
     {"rule_id": "review.consult.neurology.v1", "evidence": "Neurologisches Konsil", "reason": "Interne Konsiltypen sind nicht automatisch EBM-GOPs.", "when": {"all": [{"segment_any": ["consult"]}, {"text_any": ["neurologie"]}]}},
     {"rule_id": "review.consult.psychiatry.v1", "evidence": "Psychiatrisches Konsil", "reason": "Interne Konsiltypen sind nicht automatisch EBM-GOPs.", "when": {"all": [{"segment_any": ["consult"]}, {"text_any": ["psych", "psychische"]}]}},
     {"rule_id": "review.lab.pregnancy_test.v1", "evidence": "Schwangerschaftstest Urin", "candidate_kind": "lab.pregnancy_test", "reason": "Katalogtreffer möglich, aber noch keine validierte Positivregel.", "when": {"text_any": ["schwangerschaftstest", "schwangerschaftsnachweis"]}},

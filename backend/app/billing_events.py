@@ -169,6 +169,13 @@ def _same_session(
     event_settings: dict[str, object],
 ) -> bool:
     anchor = _select_event_anchor(cluster, event_settings)
+    force_separate = item.metadata.get("force_separate_event") or any(
+        evidence.metadata.get("force_separate_event") for evidence in cluster
+    )
+    if force_separate and (
+        anchor.service_date != item.service_date or anchor.service_time != item.service_time
+    ):
+        return False
     if not anchor.service_date or not item.service_date:
         return True
     if not anchor.service_time or not item.service_time:

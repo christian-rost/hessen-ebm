@@ -167,6 +167,8 @@ Der normale Ableitungspfad ist semantisch:
 6. Der Server übernimmt nur GOPs, die im bereitgestellten Kandidatenpool enthalten sind und im aktiven Katalog validiert werden können.
 7. Jede Rechnungsposition enthält `derivation_source`, `semantic_reason`, Leistungsereignis, Sitzung und zeitliche Einordnung.
 
+Der Rechnungsentwurf enthält zusätzlich eine vollständige Ereigniszeitleiste. Administrative Aufnahme, Triage beziehungsweise Ersteinschätzung, erster persönlicher Arztkontakt, weitere persönliche Arztkontakte und abrechenbare Leistungsereignisse werden getrennt dargestellt. Eine GOP wird ausschließlich über das zugehörige Leistungsereignis verknüpft. Deshalb bleibt beispielsweise eine Aufnahme um 18:50 Uhr als „Aufnahme“ sichtbar, ohne daraus automatisch eine Rechnungsposition abzuleiten. Für zeitabhängige Notfallpauschalen ist der erkannte erste persönliche Arzt-Patienten-Kontakt maßgeblich; fehlt dieser, erscheint der Fall im Review und die Aufnahmezeit wird nicht als Ersatz verwendet.
+
 Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, fällt die Analyse auf die deterministische Regel-Engine zurück und schreibt den Grund in `catalog_context.analysis_warnings`.
 
 Das fachliche Regelwerk liegt unter `backend/app/billing_rule_definitions.json`. Es ist vom Python-Code getrennt und enthält:

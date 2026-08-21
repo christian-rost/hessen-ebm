@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { AlertCircle, CheckCircle2, Database, FileJson, FileText, Globe2, RefreshCw, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock3, Database, FileJson, FileText, Globe2, RefreshCw, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
 import lenusLogo from "./assets/logo_lenus.svg";
 import "./styles.css";
 
@@ -31,7 +31,42 @@ function formatServiceMoment(serviceDate, serviceTime) {
 function temporalRoleLabel(role) {
   if (role === "initial_contact") return "Erstkontakt";
   if (role === "follow_up_contact") return "Folgekontakt";
+  if (role === "administrative_admission") return "Aufnahme";
+  if (role === "triage") return "Triage";
+  if (role === "first_personal_physician_contact") return "Erster persönlicher Arztkontakt";
+  if (role === "subsequent_personal_physician_contact") return "Weiterer persönlicher Arztkontakt";
+  if (role === "treatment_end") return "Behandlungsende";
   return "Leistungsereignis";
+}
+
+function timelineEventsForResult(result) {
+  if (Array.isArray(result.timeline_events) && result.timeline_events.length) {
+    return result.timeline_events;
+  }
+  const grouped = new Map();
+  (result.items || []).forEach((item, index) => {
+    const eventId = item.service_event_id || `legacy-billing-item-${item.line}`;
+    const existing = grouped.get(eventId);
+    if (existing) {
+      existing.gops = [...new Set([...existing.gops, item.gop_original])];
+      existing.evidence_pages = [...new Set([...existing.evidence_pages, ...(item.evidence_pages || [])])].sort((a, b) => a - b);
+      if (existing.label !== item.title) existing.label = "Abrechenbare Leistungen";
+      return;
+    }
+    grouped.set(eventId, {
+      event_id: eventId,
+      sequence: item.temporal_sequence || index + 1,
+      event_type: "service_event",
+      label: item.title,
+      service_date: item.service_date,
+      service_time: item.service_time,
+      temporal_role: item.temporal_role,
+      reason: item.temporal_reason,
+      gops: [item.gop_original],
+      evidence_pages: item.evidence_pages || []
+    });
+  });
+  return [...grouped.values()].sort((a, b) => a.sequence - b.sequence);
 }
 
 function temporalNotes(item) {
@@ -953,6 +988,7 @@ function ResultPanel({ result, onDownload }) {
   const regionalChecks = Array.isArray(result.catalog_context?.regional_catalog_checks)
     ? result.catalog_context.regional_catalog_checks
     : [];
+  const timelineEvents = timelineEventsForResult(result);
 
   return (
     <section className="result-panel">
@@ -967,6 +1003,44 @@ function ResultPanel({ result, onDownload }) {
       </div>
 
       <RegionalCatalogNotes checks={regionalChecks} />
+
+      <div className="section-header">
+        <Clock3 size={20} />
+        <h2>Zeitlicher Ablauf</h2>
+      </div>
+      <div className="table-wrap timeline-table-wrap">
+        <table className="invoice-timeline-table">
+          <thead>
+            <tr>
+              <th>Zeitpunkt</th>
+              <th>Ereignis</th>
+              <th>Zugeordnete GOP</th>
+              <th>Evidenz</th>
+              <th>Einordnung</th>
+            </tr>
+          </thead>
+          <tbody>
+            {timelineEvents.map((event) => (
+              <tr key={event.event_id}>
+                <td className="timeline-cell">
+                  <strong>{event.sequence ? `${event.sequence}. ` : ""}{formatServiceMoment(event.service_date, event.service_time)}</strong>
+                </td>
+                <td className="event-cell">
+                  <strong>{event.label}</strong>
+                  <span>{temporalRoleLabel(event.temporal_role)}</span>
+                </td>
+                <td className="timeline-gops">
+                  {(event.gops || []).length
+                    ? event.gops.map((gop) => <code key={`${event.event_id}-${gop}`}>{gop}</code>)
+                    : <span>Keine GOP zugeordnet</span>}
+                </td>
+                <td>{(event.evidence_pages || []).length ? `S. ${event.evidence_pages.join(", ")}` : "-"}</td>
+                <td className="reason-cell">{event.reason || "Ereignis aus klinischer Evidenz erkannt."}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <div className="section-header">
         <CheckCircle2 size={20} />

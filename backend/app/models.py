@@ -119,6 +119,21 @@ class InvoiceSummary(BaseModel):
     human_review_required: bool = True
 
 
+class InvoiceTimelineEvent(BaseModel):
+    event_id: str
+    sequence: int
+    event_type: str
+    label: str
+    service_date: str | None = None
+    service_time: str | None = None
+    temporal_role: str = "service_event"
+    reason: str | None = None
+    gops: list[str] = Field(default_factory=list)
+    billing_item_lines: list[int] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    evidence_pages: list[int] = Field(default_factory=list)
+
+
 class AnalysisResult(BaseModel):
     analysis_id: str
     export_profile: str = "EBM_KVDT_ADT_LIKE_V1_DRAFT"
@@ -129,6 +144,7 @@ class AnalysisResult(BaseModel):
     pages: list[PageText]
     segments: list[DocumentSegment]
     evidence: list[Evidence]
+    timeline_events: list[InvoiceTimelineEvent] = Field(default_factory=list)
     items: list[BillingItem]
     review_candidates: list[ReviewCandidate]
     excluded_evidence: list[ExcludedEvidence]

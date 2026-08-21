@@ -105,6 +105,7 @@ def test_case_FALL-C_reconstructs_expected_services_without_false_ctg_or_follow_
             page=1,
             text=(
                 "Behandlungsbericht ZNA Aufnahme 09.06.2026 21:55 Notfallambulanz KIM1. "
+                "Erstkontakt Arzt 09.06.2026 22:00. "
                 "Notfallsonographie: Ausschluss Perikarderguss, Ausschluss Pleuraergüsse beidseits, "
                 "Ausschluss Pneumothorax, keine intraabdominelle freie Flüssigkeit."
             ),
@@ -173,7 +174,9 @@ def test_case_FALL-C_reconstructs_expected_services_without_false_ctg_or_follow_
     items, _summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q2")
     gops = [item.gop_original for item in items]
 
-    assert context["treatment_start"] == "2026-06-09T21:55:00"
+    assert context["administrative_admission"] == "2026-06-09T21:55:00"
+    assert context["first_personal_physician_contact"] == "2026-06-09T22:00:00"
+    assert context["treatment_start"] == "2026-06-09T22:00:00"
     assert context["treatment_end"] == "2026-06-09T22:58:00"
     assert len(gops) == 17
     assert set(gops) == {
