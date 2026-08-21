@@ -1,0 +1,957 @@
+{
+  "schema_version": 1,
+  "definition_set_id": "hessen-ebm-clinical-evidence",
+  "version": "2026.2",
+  "formats": {
+    "fallback_segment_type": "other",
+    "fallback_reason": "Kein spezifischer Dokumentmarker gefunden",
+    "date_regex": "(\\d{2}\\.\\d{2}\\.\\d{4})",
+    "time_regex": "(\\d{2}:\\d{2})",
+    "review_datetime_role": "service",
+    "default_datetime_sources": ["service", "state:clinical"],
+    "segment_datetime_sources": {
+      "laboratory_result": ["service_explicit", "state:laboratory"]
+    },
+    "procedure_datetime_source": "key",
+    "procedure_datetime_patterns": [
+      ".{0,100}?durchgefuhrt(?:am)?(\\d{2}\\.\\d{2}\\.\\d{4})um(\\d{2}:\\d{2})",
+      ".{0,100}?durchgefuhrt(?:am)?(\\d{2}\\.\\d{2}\\.\\d{4})"
+    ]
+  },
+  "segment_types": {
+    "case_context": {"label": "Fallkontext / ZNA", "flags": ["billing_relevant", "clinical_context", "review_context"]},
+    "treatment_report": {"label": "Behandlungsbericht", "flags": ["billing_relevant", "clinical_context", "review_context"]},
+    "radiology_report": {"label": "Radiologiebefund", "flags": ["billing_relevant", "clinical_context", "review_context"]},
+    "laboratory_result": {"label": "Laborbefund", "flags": ["billing_relevant", "clinical_context", "review_context"]},
+    "consult": {"label": "Konsil", "flags": ["review_context"]},
+    "ecg": {"label": "EKG", "flags": ["billing_relevant", "clinical_context", "review_context"]},
+    "ctg": {"label": "CTG / Tokographie", "flags": ["billing_relevant", "clinical_context", "review_context"]},
+    "clinical_report": {"label": "Klinischer Bericht", "flags": ["billing_relevant", "clinical_context", "review_context"]},
+    "cardiology_report": {
+      "label": "Kardiologie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.cardiology", "label": "Kardiologie", "confidence": 0.76, "search_terms": ["Kardiologie", "EKG", "Echokardiographie", "Herzkatheter", "Schrittmacher"], "when": {"always": true}}
+    },
+    "pulmonology_report": {
+      "label": "Pneumologie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.pulmonology", "label": "Pneumologie", "confidence": 0.74, "search_terms": ["Pneumologie", "Lungenfunktion", "Spirometrie", "Bronchoskopie", "Asthma"], "when": {"always": true}}
+    },
+    "gastroenterology_report": {
+      "label": "Gastroenterologie / Endoskopie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.gastroenterology", "label": "Gastroenterologie / Endoskopie", "confidence": 0.74, "search_terms": ["Gastroenterologie", "Endoskopie", "Gastroskopie", "Koloskopie", "Abdomensonographie"], "when": {"always": true}}
+    },
+    "gynecology_obstetrics": {
+      "label": "Gynäkologie / Geburtshilfe",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.gynecology_obstetrics", "label": "Gynäkologie / Geburtshilfe", "confidence": 0.8, "search_terms": ["Schwangerschaft", "Geburtshilfe", "Gynäkologie", "Betreuung einer Schwangeren", "Pränataldiagnostik"], "when": {"always": true}}
+    },
+    "urology_report": {
+      "label": "Urologie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.urology", "label": "Urologie", "confidence": 0.74, "search_terms": ["Urologie", "Prostata", "Uroflow", "Zystoskopie", "Sonographie Niere"], "when": {"always": true}}
+    },
+    "dermatology_report": {
+      "label": "Dermatologie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.dermatology", "label": "Dermatologie", "confidence": 0.72, "search_terms": ["Dermatologie", "Haut", "Dermatoskopie", "Exzision", "Biopsie"], "when": {"always": true}}
+    },
+    "ent_report": {
+      "label": "HNO",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.ent", "label": "HNO", "confidence": 0.72, "search_terms": ["HNO", "Audiometrie", "Tympanometrie", "Laryngoskopie"], "when": {"always": true}}
+    },
+    "neurology_report": {
+      "label": "Neurologie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.neurology", "label": "Neurologie", "confidence": 0.72, "search_terms": ["Neurologie", "EEG", "EMG", "Nervenleitgeschwindigkeit", "Schlaganfall"], "when": {"always": true}}
+    },
+    "psychiatry_report": {
+      "label": "Psychiatrie / Psychotherapie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.psychiatry", "label": "Psychiatrie / Psychotherapie", "confidence": 0.7, "search_terms": ["Psychiatrie", "Psychotherapie", "Psychosomatik", "Gespräch", "Testverfahren"], "when": {"always": true}}
+    },
+    "orthopedics_report": {
+      "label": "Orthopädie / Unfallchirurgie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.orthopedics_trauma", "label": "Orthopädie / Unfallchirurgie", "confidence": 0.72, "search_terms": ["Orthopädie", "Unfallchirurgie", "Fraktur", "Gelenk", "Wundversorgung"], "when": {"always": true}}
+    },
+    "pediatrics_report": {
+      "label": "Pädiatrie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.pediatrics", "label": "Pädiatrie", "confidence": 0.72, "search_terms": ["Pädiatrie", "Kinder- und Jugendmedizin", "U-Untersuchung", "Neugeborene"], "when": {"always": true}}
+    },
+    "surgery_report": {
+      "label": "Chirurgie / OP",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.surgery", "label": "Chirurgie / OP", "confidence": 0.72, "search_terms": ["Chirurgie", "Operation", "Wundversorgung", "Exzision", "Naht"], "when": {"always": true}}
+    },
+    "anesthesia_report": {
+      "label": "Anästhesie / Schmerztherapie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.anesthesia_pain", "label": "Anästhesie / Schmerztherapie", "confidence": 0.7, "search_terms": ["Anästhesie", "Narkose", "Schmerztherapie", "Palliativmedizin"], "when": {"always": true}}
+    },
+    "pathology_report": {
+      "label": "Pathologie / Zytologie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.pathology_cytology", "label": "Pathologie / Zytologie", "confidence": 0.7, "search_terms": ["Pathologie", "Histologie", "Zytologie", "Biopsie", "Mikroskopie"], "when": {"always": true}}
+    },
+    "oncology_report": {
+      "label": "Onkologie / Hämatologie",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.oncology_hematology", "label": "Onkologie / Hämatologie", "confidence": 0.7, "search_terms": ["Onkologie", "Hämatologie", "Tumor", "Chemotherapie", "Immuntherapie"], "when": {"always": true}}
+    },
+    "nephrology_report": {
+      "label": "Nephrologie / Dialyse",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.nephrology_dialysis", "label": "Nephrologie / Dialyse", "confidence": 0.7, "search_terms": ["Nephrologie", "Dialyse", "Hämodialyse", "Niereninsuffizienz"], "when": {"always": true}}
+    },
+    "prevention_report": {
+      "label": "Prävention / Impfen",
+      "flags": ["billing_relevant", "clinical_context", "review_context"],
+      "primary_evidence": {"kind": "clinical.domain.prevention_vaccination", "label": "Prävention / Impfen", "confidence": 0.68, "search_terms": ["Impfung", "Vorsorge", "Früherkennung", "Screening", "DMP"], "when": {"always": true}}
+    },
+    "therapy_report": {"label": "Therapie / Heilmittel", "flags": ["billing_relevant", "clinical_context", "review_context"]},
+    "data_capture": {"label": "Datenerfassung", "flags": ["billing_relevant", "review_context"]},
+    "request": {"label": "Anforderung / Indikationsprüfung", "flags": []},
+    "other": {"label": "Sonstiges Dokument", "flags": []}
+  },
+  "segment_classifiers": [
+    {
+      "rule_id": "segment.data_capture.v1",
+      "segment_type": "data_capture",
+      "confidence": 0.88,
+      "reason": "Datenerfassung-/Leistungsbogen-Marker gefunden",
+      "when": {
+        "any": [
+          {"text_any": ["datenerfassung", "leistungsbogen"]},
+          {"all": [{"text_any": ["durchgefuhrteleistungen"]}, {"regex_any": {"source": "folded", "values": ["(?<![a-z0-9_])(?:\\d+(?:[,.]\\d+)?\\s*x?\\s*)?(?:all_[a-z0-9]+|aua_[a-z0-9]+|ra[a-z]{2,}\\d+[a-z0-9]*|erg|vep|tws)(?![a-z0-9_])"]}}]},
+          {"all": [{"text_any": ["leistungen", "prozeduren"]}, {"regex_any": {"source": "folded", "values": ["(?<![a-z0-9_])(?:\\d+(?:[,.]\\d+)?\\s*x?\\s*)?(?:all_[a-z0-9]+|aua_[a-z0-9]+|ra[a-z]{2,}\\d+[a-z0-9]*|erg|vep|tws)(?![a-z0-9_])"]}}]},
+          {"all": [{"text_any": ["privatliquidation"]}, {"regex_any": {"source": "folded", "values": ["(?<![a-z0-9_])(?:\\d+(?:[,.]\\d+)?\\s*x?\\s*)?(?:all_[a-z0-9]+|aua_[a-z0-9]+|ra[a-z]{2,}\\d+[a-z0-9]*|erg|vep|tws)(?![a-z0-9_])"]}}]}
+        ]
+      }
+    },
+    {
+      "rule_id": "segment.administrative.v1",
+      "segment_type": "other",
+      "confidence": 0.82,
+      "reason": "Administrative Patienten-/Einwilligungsseite erkannt",
+      "when": {
+        "all": [
+          {"text_any": ["behandlungsvertrag", "datenschutzeinwilligung", "patientenidentifikationsarmband", "schweigepflichtentbindung", "auskunftubermeinenkrankheitsverlauf"]},
+          {"text_none": ["ambulanzaugenbefund", "behandlungsbericht", "datenerfassung", "durchgefuhrteleistungen", "laborbefund", "radiologiebefund", "standard12ableitungen"]}
+        ]
+      }
+    },
+    {
+      "rule_id": "segment.laboratory.v1",
+      "segment_type": "laboratory_result",
+      "confidence": 0.95,
+      "reason": "Laborbefund-Marker gefunden",
+      "when": {"any": [{"text_any": ["laborbefund"]}, {"text_all": ["untersuchung", "referenzbereich"]}]}
+    },
+    {
+      "rule_id": "segment.radiology.v1",
+      "segment_type": "radiology_report",
+      "confidence": 0.95,
+      "reason": "Radiologiebefund-Marker gefunden",
+      "when": {"any": [{"text_any": ["radiologiebefund"]}, {"all": [{"text_any": ["befund"]}, {"text_any": ["ctkopf", "ctctschadel", "ctgehirnschadel"]}]}]}
+    },
+    {
+      "rule_id": "segment.request.v1",
+      "segment_type": "request",
+      "confidence": 0.72,
+      "reason": "Anforderungs-/Indikationsmarker gefunden",
+      "when": {
+        "any": [
+          {"text_any": ["ambulanzaugenanforderung", "statusangefordert", "indikationspr", "angeforderteuntersuchungen"]},
+          {"text_all": ["anforderung", "auftragsdatum"]}
+        ]
+      }
+    },
+    {
+      "rule_id": "segment.ophthalmology_report.v1",
+      "segment_type": "treatment_report",
+      "confidence": 0.86,
+      "reason": "Augenambulanz-/Fachambulanz-Befund gefunden",
+      "when": {
+        "any": [
+          {"text_any": ["ambulanzaugenbefund", "notfallsymptomorientierteuntersuchung", "vordereraugenabschnitt", "hintereraugenabschnitt", "glaskorperblutung"]},
+          {"all": [{"text_any": ["notfallambulanzaugenklinik"]}, {"text_any": ["befund"]}]},
+          {"all": [{"text_any": ["augenambulanz"]}, {"text_any": ["anamnese", "beurteilung"]}]},
+          {"all": [{"text_any": ["beurteilung"]}, {"text_any": ["therapie"]}]},
+          {"all": [{"text_any": ["diagnose"]}, {"text_any": ["herpeskeratitis"]}]},
+          {"all": [{"text_any": ["wirberichtenihnen"]}, {"text_any": ["augenambulanz"]}]}
+        ]
+      }
+    },
+    {
+      "rule_id": "segment.treatment_report.v1",
+      "segment_type": "treatment_report",
+      "confidence": 0.88,
+      "reason": "Behandlungsbericht/ZNA-Marker gefunden",
+      "when": {"any": [{"text_any": ["behandlungsberichtzna"]}, {"all": [{"text_any": ["diagnostik"]}, {"text_any": ["aufnahme"]}]}]}
+    },
+    {
+      "rule_id": "segment.case_context.v1",
+      "segment_type": "case_context",
+      "confidence": 0.9,
+      "reason": "ZNA-/KV-Notfall-Kontext gefunden",
+      "when": {"text_any": ["aufnahmezna", "kvabrechnungnotfalldienst"]}
+    },
+    {
+      "rule_id": "segment.consult.v1",
+      "segment_type": "consult",
+      "confidence": 0.82,
+      "reason": "Konsil-Marker gefunden",
+      "when": {"any": [{"text_any": ["konsilbefund"]}, {"all": [{"text_any": ["konsil"]}, {"text_any": ["durchgef"]}]}]}
+    },
+    {
+      "rule_id": "segment.ecg.v1",
+      "segment_type": "ecg",
+      "confidence": 0.78,
+      "reason": "EKG-Marker gefunden",
+      "when": {"any": [{"text_any": ["standard12ableitungen", "sinusrhythmus"]}, {"regex_any": {"source": "folded", "values": ["(?<![a-z0-9])ekg(?![a-z0-9])"]}}]}
+    },
+    {
+      "rule_id": "segment.ctg.v1",
+      "segment_type": "ctg",
+      "confidence": 0.82,
+      "reason": "CTG-/Tokographie-Marker gefunden",
+      "when": {"regex_any": {"source": "folded", "values": ["(?<![a-z0-9])(?:ctg(?:[-\\s]?(?:beurteilung|streifen|aufnahme|aufzeichnung|kontrolle))?|cardiotokographie|tokographie)(?![a-z0-9])"]}}
+    },
+    {
+      "rule_id": "segment.gynecology.v1",
+      "segment_type": "gynecology_obstetrics",
+      "confidence": 0.82,
+      "reason": "Gynäkologie-/Geburtshilfe-Marker gefunden",
+      "when": {"text_any": ["gynakologie", "geburtshilfe", "frauenklinik", "notfallambulanzfrauenklinik", "pranatal", "praenatal", "schwangerschaft", "ssw", "fetale", "fetal", "tokographie", "dopplersonographie", "vaginal", "zervix", "uterus", "ovar", "mamma", "granulationspolyp", "dammriss"]}
+    },
+    {
+      "rule_id": "segment.cardiology.v1",
+      "segment_type": "cardiology_report",
+      "confidence": 0.82,
+      "reason": "Kardiologie-Marker gefunden",
+      "when": {"text_any": ["kardiologie", "herz", "koronar", "angina", "herzinsuffizienz", "echokardiographie", "herzkatheter", "schrittmacher", "defibrillator", "langzeitekg", "belastungsekg"]}
+    },
+    {
+      "rule_id": "segment.pulmonology.v1",
+      "segment_type": "pulmonology_report",
+      "confidence": 0.82,
+      "reason": "Pneumologie-Marker gefunden",
+      "when": {
+        "any": [
+          {"text_any": ["pneumologie", "bronchoskopie", "spirometrie", "lungenfunktion", "asthma", "copd", "schlafapnoe"]},
+          {"all": [{"text_any": ["lunge", "sauerstoff"]}, {"text_none": ["einstellungen"]}]}
+        ]
+      }
+    },
+    {
+      "rule_id": "segment.gastroenterology.v1",
+      "segment_type": "gastroenterology_report",
+      "confidence": 0.82,
+      "reason": "Gastroenterologie-/Endoskopie-Marker gefunden",
+      "when": {"text_any": ["gastroenterologie", "gastroskopie", "koloskopie", "coloskopie", "rektoskopie", "endoskopie", "abdomen", "leber", "galle", "pankreas", "hepatitis"]}
+    },
+    {
+      "rule_id": "segment.urology.v1",
+      "segment_type": "urology_report",
+      "confidence": 0.82,
+      "reason": "Urologie-Marker gefunden",
+      "when": {
+        "all": [
+          {"text_any": ["urologie", "prostata", "harnblase", "zystoskopie", "cystoskopie", "uroflow", "harnstau", "niere", "ureter", "urin"]},
+          {"not": {"all": [{"text_any": ["neurologie", "nephrologie", "dialyse", "niereninsuffizienz"]}, {"text_none": ["prostata", "harnblase", "zystoskopie", "cystoskopie", "uroflow", "harnstau", "ureter", "urin"]}]}}
+        ]
+      }
+    },
+    {
+      "rule_id": "segment.dermatology.v1",
+      "segment_type": "dermatology_report",
+      "confidence": 0.82,
+      "reason": "Dermatologie-Marker gefunden",
+      "when": {
+        "any": [
+          {"text_any": ["dermatologie", "naevus", "navi", "melanom", "ekzem", "psoriasis", "dermatoskopie", "exzision"]},
+          {"all": [{"text_any": ["haut"]}, {"text_none": ["netzhaut", "netzahut"]}]}
+        ]
+      }
+    },
+    {
+      "rule_id": "segment.ent.v1",
+      "segment_type": "ent_report",
+      "confidence": 0.82,
+      "reason": "HNO-Marker gefunden",
+      "when": {"text_any": ["hno", "halsnasenohren", "audiometrie", "tympanometrie", "laryngoskopie", "rhinologie", "tonsillen", "ohr", "nase", "kehlkopf"]}
+    },
+    {
+      "rule_id": "segment.neurology.v1",
+      "segment_type": "neurology_report",
+      "confidence": 0.82,
+      "reason": "Neurologie-Marker gefunden",
+      "when": {"text_any": ["neurologie", "eeg", "emg", "nlg", "epilepsie", "schlaganfall", "parese", "parkinson", "demenz"]}
+    },
+    {
+      "rule_id": "segment.psychiatry.v1",
+      "segment_type": "psychiatry_report",
+      "confidence": 0.82,
+      "reason": "Psychiatrie-/Psychotherapie-Marker gefunden",
+      "when": {"text_any": ["psychiatrie", "psychotherapie", "psychosomatik", "depression", "angststorung", "suizid", "sucht", "gesprachstherapie"]}
+    },
+    {
+      "rule_id": "segment.orthopedics.v1",
+      "segment_type": "orthopedics_report",
+      "confidence": 0.82,
+      "reason": "Orthopädie-/Unfallchirurgie-Marker gefunden",
+      "when": {"text_any": ["orthopadie", "orthopaedie", "unfallchirurgie", "fraktur", "luxation", "gelenk", "wirbelsaule", "knie", "schulter", "trauma"]}
+    },
+    {
+      "rule_id": "segment.pediatrics.v1",
+      "segment_type": "pediatrics_report",
+      "confidence": 0.82,
+      "reason": "Pädiatrie-Marker gefunden",
+      "when": {"text_any": ["paediatrie", "padiatrie", "kinderklinik", "jugendmedizin", "uuntersuchung", "saugling", "neugeboren"]}
+    },
+    {
+      "rule_id": "segment.surgery.v1",
+      "segment_type": "surgery_report",
+      "confidence": 0.82,
+      "reason": "Chirurgie-/OP-Marker gefunden",
+      "when": {"text_any": ["chirurgie", "opbericht", "operationsbericht", "operation", "eingriff", "wundversorgung", "naht", "biopsie", "exzision", "abtragung"]}
+    },
+    {
+      "rule_id": "segment.anesthesia.v1",
+      "segment_type": "anesthesia_report",
+      "confidence": 0.82,
+      "reason": "Anästhesie-/Schmerztherapie-Marker gefunden",
+      "when": {"text_any": ["anasthesie", "anaesthesie", "narkose", "schmerztherapie", "palliativ", "regionalanasthesie", "sedierung"]}
+    },
+    {
+      "rule_id": "segment.pathology.v1",
+      "segment_type": "pathology_report",
+      "confidence": 0.82,
+      "reason": "Pathologie-/Zytologie-Marker gefunden",
+      "when": {"text_any": ["pathologie", "histologie", "zytologie", "zytologisch", "biopsat", "papanicolaou", "mikroskopie"]}
+    },
+    {
+      "rule_id": "segment.oncology.v1",
+      "segment_type": "oncology_report",
+      "confidence": 0.82,
+      "reason": "Onkologie-/Hämatologie-Marker gefunden",
+      "when": {"text_any": ["onkologie", "hamatologie", "haematologie", "tumor", "karzinom", "chemotherapie", "immuntherapie", "strahlentherapie"]}
+    },
+    {
+      "rule_id": "segment.nephrology.v1",
+      "segment_type": "nephrology_report",
+      "confidence": 0.82,
+      "reason": "Nephrologie-/Dialyse-Marker gefunden",
+      "when": {"text_any": ["nephrologie", "dialyse", "hamodialyse", "haemodialyse", "peritonealdialyse", "niereninsuffizienz"]}
+    },
+    {
+      "rule_id": "segment.prevention.v1",
+      "segment_type": "prevention_report",
+      "confidence": 0.82,
+      "reason": "Präventions-/Impfmarker gefunden",
+      "when": {"text_any": ["impfung", "impfstoff", "vorsorge", "fruherkennung", "screening", "gesundheitsuntersuchung", "dmp"]}
+    },
+    {
+      "rule_id": "segment.therapy.v1",
+      "segment_type": "therapy_report",
+      "confidence": 0.82,
+      "reason": "Therapie-/Heilmittel-Marker gefunden",
+      "when": {"text_any": ["physiotherapie", "ergotherapie", "logopadie", "heilmittel", "injektion", "infusion", "verband"]}
+    },
+    {
+      "rule_id": "segment.general_clinical.v1",
+      "segment_type": "clinical_report",
+      "confidence": 0.74,
+      "reason": "Allgemeiner klinischer Bericht gefunden",
+      "when": {
+        "any": [
+          {"text_any": ["wirberichten", "behandlungsbericht", "arztbrief"]},
+          {"all": [{"text_any": ["anamnese"]}, {"text_any": ["befund", "beurteilung", "procedere", "therapie", "diagnose"]}]},
+          {"all": [{"text_any": ["verlauf"]}, {"text_any": ["kontrolle", "befund", "beurteilung"]}]}
+        ]
+      }
+    }
+  ],
+  "datetime_roles": {
+    "service_explicit": {
+      "patterns": [
+        {"source": "compact", "regex": "durchgef.{0,40}?(\\d{2}\\.\\d{2}\\.\\d{4})um(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "probenentnahmedat\\.?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "bezugsdatum(\\d{2}\\.\\d{2}\\.\\d{4})zeit(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "aufnahmezna(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "aufnahme(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "termindgf:?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "leistungam(\\d{2}\\.\\d{2}\\.\\d{4})um(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "befundetam(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "auftragsdatum(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "(\\d{2}\\.\\d{2}\\.\\d{4})\\(?start:?(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "ctgstreifenvom(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"}
+      ]
+    },
+    "service": {
+      "patterns": [
+        {"source": "compact", "regex": "durchgef.{0,40}?(\\d{2}\\.\\d{2}\\.\\d{4})um(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "probenentnahmedat\\.?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "bezugsdatum(\\d{2}\\.\\d{2}\\.\\d{4})zeit(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "aufnahmezna(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "aufnahme(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "termindgf:?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "leistungam(\\d{2}\\.\\d{2}\\.\\d{4})um(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "befundetam(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "auftragsdatum(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "(\\d{2}\\.\\d{2}\\.\\d{4})\\(?start:?(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "ctgstreifenvom(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "am(\\d{2}\\.\\d{2}\\.\\d{4})inambulanterbehandlung", "time_group": 99},
+        {"source": "compact", "regex": "datum:?(\\d{2}\\.\\d{2}\\.\\d{4})", "time_group": 99},
+        {"source": "compact", "regex": "ctgstreifenvom(\\d{2}\\.\\d{2}\\.\\d{4})", "time_group": 99},
+        {"source": "compact", "regex": "behandlungsdatum:?(\\d{2}\\.\\d{2}\\.\\d{4})", "time_group": 99}
+      ],
+      "fallback_first": true,
+      "fallback_excluded_before": ["gebdat", "geburtsdatum", "geboren", "gebam", "zustandnach", "z.n.", "znveam", "entbindungperveam", "optermin", "operationstermin", "terminwurde", "terminfurden", "geplantfur", "vereinbartfur", "geburtstermin", "letzteperiode", "gedrucktam", "druckdatum", "importdatum", "entlassungszeit", "entlassungam", "erstelltam"],
+      "fallback_excluded_before_regex": ["geb$"],
+      "fallback_exclusion_window": 40
+    },
+    "encounter": {
+      "patterns": [
+        {"source": "compact", "regex": "(?:aufnahmezna|ambaufnahmedatum|aufnahmedatum|aufnahme)(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "(?:erstkontaktarzt|erstkontakt|behandlungsbeginn|termindgf)(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "vorstellung.{0,40}?(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"}
+      ]
+    },
+    "treatment_end": {
+      "patterns": [
+        {"source": "compact", "regex": "behandlungsende(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "ended\\.?behand(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"},
+        {"source": "compact", "regex": "endebehand(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"}
+      ]
+    },
+    "radiology": {
+      "patterns": [
+        {"source": "compact", "regex": "durchgefuhrt(?:am)?(\\d{2}\\.\\d{2}\\.\\d{4})um(\\d{2}:\\d{2})", "select": "last"}
+      ]
+    }
+  },
+  "state_tracks": [
+    {"name": "clinical", "datetime_role": "service", "when": {"segment_flag_any": ["clinical_context"]}},
+    {"name": "laboratory", "datetime_role": "service_explicit", "when": {"segment_any": ["laboratory_result"]}},
+    {"name": "radiology", "datetime_role": "radiology", "when": {"segment_any": ["radiology_report", "treatment_report", "data_capture"]}}
+  ],
+  "context_updates": [
+    {"key": "treatment_end", "datetime_role": "treatment_end", "when": {"datetime_present": ["treatment_end"]}}
+  ],
+  "evidence_rules": [
+    {
+      "rule_id": "evidence.emergency_encounter.v1",
+      "kind": "context.kv_notfall_zna",
+      "label": "KV-Notfall/ZNA",
+      "confidence": 0.95,
+      "datetime_sources": ["encounter"],
+      "metadata": {"datetime_role": "encounter_start", "service_status": "occurred"},
+      "context_update": {"key": "treatment_start", "source": "datetime"},
+      "when": {
+        "all": [
+          {"segment_flag_any": ["clinical_context"]},
+          {"datetime_present": ["encounter"]},
+          {"any": [{"text_all": ["kvabrechnung", "notfall"]}, {"text_any": ["aufnahmezna", "vorstellungnotfk"]}, {"text_any": ["notfall", "zna", "akutambulanz"]}]}
+        ]
+      }
+    },
+    {
+      "rule_id": "evidence.diagnosis_icd10.v1",
+      "kind": "diagnosis.icd10",
+      "label": "ICD-10 {value}",
+      "confidence": 0.75,
+      "capture": {"source": "upper", "regex": "(?:AUFNAHMEDIAGNOSEN?|DIAGNOSEN?|ICD).{0,500}?\\b([A-Z]\\d{2}(?:\\.\\d{1,2})?)(?![\\d.])", "group": 1},
+      "value": "{value}",
+      "text_mode": "fixed",
+      "text": "{value}",
+      "metadata": {"icd10": "{value}"},
+      "context_update": {"key": "diagnosis", "source": "value"},
+      "when": {"segment_flag_any": ["clinical_context"]}
+    },
+    {
+      "rule_id": "evidence.specialty_emergency.v1",
+      "kind": "context.specialty_ambulance_emergency",
+      "label": "Fachambulanz-/Notfallkontakt",
+      "confidence": 0.88,
+      "text_mode": "fixed",
+      "text": "Notfallkontakt in einer Fachambulanz dokumentiert",
+      "search_terms": ["Notfallpauschale", "Notfall", "Grundpauschale"],
+      "context_update": {"key": "treatment_start", "source": "datetime"},
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["notfallambulanz", "notfallambulanzaugenklinik", "notfallmassig", "notfallsymptomorientierteuntersuchung"]}]}
+    },
+    {
+      "rule_id": "evidence.ophthalmology_report.v1",
+      "kind": "clinical.ophthalmology_report",
+      "label": "Augenärztlicher Ambulanzbefund",
+      "confidence": 0.84,
+      "search_terms": ["Augenärztliche Untersuchung", "Augenheilkunde", "Ophthalmologische Untersuchung", "Grundpauschale Augen"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["ambulanzaugenbefund", "augenambulanz", "augenklinik"]}]}
+    },
+    {
+      "rule_id": "evidence.ophthalmology_exam.v1",
+      "kind": "clinical.ophthalmology_exam",
+      "label": "Ophthalmologische Untersuchung",
+      "confidence": 0.86,
+      "search_terms": ["Augenärztliche Untersuchung", "Visus", "Tonometrie", "Spaltlampenuntersuchung", "Hornhaut"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["visus", "tensio", "vordereraugenabschnitt", "hintereraugenabschnitt", "hornhauttopographie", "fluoreszein", "schirmertest"]}]}
+    },
+    {
+      "rule_id": "evidence.ophthalmology_fundus.v1",
+      "kind": "clinical.ophthalmology_fundus",
+      "label": "Augenhintergrund / Fundus-Hinweis",
+      "confidence": 0.78,
+      "search_terms": ["Augenhintergrund", "Fundus", "Binokulare Untersuchung des Augenhintergrundes"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["hintereraugenabschnitt", "netzhautzentralanliegend"]}]}
+    },
+    {
+      "rule_id": "evidence.service.consultation.v1",
+      "kind": "clinical.service.consultation",
+      "label": "Beratung / Aufklärung",
+      "confidence": 0.68,
+      "search_terms": ["Beratung", "Aufklärung", "Gespräch", "Grundpauschale"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["beratung", "aufklarung", "aufklaerung", "gesprach", "empfehlungenerlautert"]}]}
+    },
+    {
+      "rule_id": "evidence.service.examination.v1",
+      "kind": "clinical.service.examination",
+      "label": "Klinische Untersuchung / Befund",
+      "confidence": 0.66,
+      "search_terms": ["Untersuchung", "Klinischer Befund", "Grundpauschale"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["untersuchung", "befund", "beurteilung", "status", "palpation", "inspektion"]}]}
+    },
+    {
+      "rule_id": "evidence.sonography.v1",
+      "kind": "clinical.diagnostics.sonography",
+      "label": "Sonographie / Ultraschall",
+      "confidence": 0.76,
+      "search_terms": ["Sonographie", "Ultraschall", "Echographie"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["sonographie", "sonografie", "ultraschall", "sono", "echographie"]}]}
+    },
+    {
+      "rule_id": "evidence.doppler.v1",
+      "kind": "clinical.diagnostics.doppler_sonography",
+      "label": "Dopplersonographie",
+      "confidence": 0.8,
+      "search_terms": ["Dopplersonographie", "Doppler", "Sonographie"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["dopplersonographie", "doppler", "arteriaumbilicalis"]}]}
+    },
+    {
+      "rule_id": "evidence.ctg.v1",
+      "kind": "clinical.diagnostics.ctg",
+      "label": "CTG / Tokographie",
+      "confidence": 0.82,
+      "search_terms": ["CTG", "Tokographie", "Kardiotokographie"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"regex_any": {"source": "folded", "values": ["(?<![a-z0-9])(?:ctg(?:[-\\s]?(?:beurteilung|streifen|aufnahme|aufzeichnung|kontrolle))?|cardiotokographie|tokographie)(?![a-z0-9])"]}}]},
+      "unless": {
+        "all": [
+          {"text_any": ["alle2tagectg", "ctgalle2tage", "ctgempfohlen"]},
+          {"text_none": ["ctgaufnahmebegonnen", "ctgaufnahmebeendet", "ctgstreifen", "ctgbeurteilung", "aufnahmectgja"]}
+        ]
+      }
+    },
+    {
+      "rule_id": "evidence.prenatal_biometry.v1",
+      "kind": "clinical.diagnostics.prenatal_biometry",
+      "label": "Fetale Biometrie / Pränataldiagnostik",
+      "confidence": 0.76,
+      "search_terms": ["Fetale Biometrie", "Pränataldiagnostik", "Schwangerschaft", "Sonographie"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["fetalebiometrie", "bpd", "femur", "fruchtwasser", "gestationsalter", "einlingsschwangerschaft"]}]}
+    },
+    {
+      "rule_id": "evidence.endoscopy.v1",
+      "kind": "clinical.diagnostics.endoscopy",
+      "label": "Endoskopie",
+      "confidence": 0.76,
+      "search_terms": ["Endoskopie", "Gastroskopie", "Koloskopie", "Bronchoskopie", "Zystoskopie"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["endoskopie", "gastroskopie", "koloskopie", "bronchoskopie", "zystoskopie", "laryngoskopie"]}]}
+    },
+    {
+      "rule_id": "evidence.functional_test.v1",
+      "kind": "clinical.diagnostics.functional_test",
+      "label": "Funktionsdiagnostik",
+      "confidence": 0.72,
+      "search_terms": ["Funktionsdiagnostik", "Spirometrie", "Audiometrie", "EEG", "EMG", "Uroflow"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["spirometrie", "lungenfunktion", "audiometrie", "tympanometrie", "eeg", "emg", "nlg", "uroflow"]}]}
+    },
+    {
+      "rule_id": "evidence.minor_surgery.v1",
+      "kind": "clinical.procedure.wound_or_minor_surgery",
+      "label": "Wundversorgung / kleiner Eingriff",
+      "confidence": 0.76,
+      "search_terms": ["Wundversorgung", "Exzision", "Biopsie", "Operation", "Kleinchirurgie"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["wundversorgung", "wundheilungsstorung", "naht", "exzision", "abtragung", "granulationspolyp", "biopsie"]}]},
+      "unless": {"all": [{"text_any": ["geplantereingriff", "opplanung", "kanngeplantwerden"]}, {"text_none": ["durchgefuhrt", "opbericht", "operationsbericht"]}]}
+    },
+    {
+      "rule_id": "evidence.injection_infusion.v1",
+      "kind": "clinical.therapy.injection_infusion",
+      "label": "Injektion / Infusion",
+      "confidence": 0.7,
+      "search_terms": ["Injektion", "Infusion", "Schmerztherapie"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["injektion", "infusion", "intravenos", "subkutan", "infiltration"]}]}
+    },
+    {
+      "rule_id": "evidence.vaccination.v1",
+      "kind": "clinical.therapy.vaccination",
+      "label": "Impfung",
+      "confidence": 0.72,
+      "search_terms": ["Impfung", "Schutzimpfung", "Impfberatung"],
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["impfung", "geimpft", "impfstoff", "vakzination"]}]}
+    },
+    {
+      "rule_id": "evidence.abdominal_sonography.v1",
+      "kind": "clinical.diagnostics.abdominal_sonography",
+      "label": "Sonografie des Abdomens / Retroperitoneums",
+      "confidence": 0.94,
+      "search_terms": ["Sonografie Abdomen", "Abdomensonografie", "Retroperitoneum", "Nieren", "eFAST"],
+      "metadata": {"service_status": "performed", "procedure_family": "sonography", "body_region": "abdomen_retroperitoneum", "datetime_role": "service_performed"},
+      "datetime_sources": ["service", "state:clinical"],
+      "when": {
+        "all": [
+          {"segment_flag_any": ["clinical_context"]},
+          {"text_any": ["sonographie", "sonografie", "ultraschall", "sono", "echographie", "fetalebiometrie", "bpd", "notfallsonographie"]},
+          {"text_any": ["hydronephrose", "harnstau", "hstii", "niererechts", "nierenrechts", "mutterlicheniere", "muetterlicheniere", "intraabdominell", "abdomen", "retroperitone", "freieflussigkeit", "efast"]},
+          {"text_any": ["ausschluss", "kein", "keine", "unauffallig", "nachweis", "hydronephrose", "harnstau"]},
+          {"text_none": ["angefordert", "ruckweisegrund", "zuruckgewiesen", "storniert", "keinsono", "nichtdurchgefuhrt"]}
+        ]
+      }
+    },
+    {
+      "rule_id": "evidence.ecg_12_lead.v1",
+      "kind": "clinical.ecg_12_lead",
+      "label": "12-Kanal-EKG",
+      "confidence": 0.84,
+      "search_terms": ["EKG", "12-Kanal-EKG", "Elektrokardiogramm", "Standard 12 Ableitungen", "Ruhe-EKG"],
+      "when": {"all": [{"segment_any": ["ecg"]}, {"any": [{"text_any": ["standard12ableitungen", "12kanalekg", "sinusrhythmus"]}, {"regex_any": {"source": "folded", "values": ["(?<![a-z0-9])ekg(?![a-z0-9])"]}}]}]}
+    },
+    {
+      "rule_id": "evidence.ecg_rhythm.v1",
+      "kind": "clinical.ecg_rhythm_findings",
+      "label": "EKG-Rhythmusbefund",
+      "confidence": 0.72,
+      "text_mode": "fixed",
+      "text": "Sinusrhythmus im EKG dokumentiert",
+      "search_terms": ["EKG", "Rhythmusbefund", "Sinusrhythmus"],
+      "when": {"all": [{"segment_any": ["ecg"]}, {"text_any": ["sinusrhythmus"]}]}
+    },
+    {
+      "rule_id": "evidence.internal.consultation_fee.v1",
+      "kind": "internal_service.consultation_fee",
+      "label": "Interner Hinweis Konsultationsgebühr",
+      "confidence": 0.64,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Konsultationsgebühr",
+      "search_terms": ["Konsultationspauschale"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["ALL_KONGEB"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.internal.ordination_fee.v1",
+      "kind": "internal_service.ordination_fee",
+      "label": "Interner Hinweis Ordinationsgebühr",
+      "confidence": 0.66,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Ordinationsgebühr",
+      "search_terms": ["Augenärztliche Grundpauschale", "Grundpauschale Augen"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["ALL_ORDGEB"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.internal.emergency_ordination.v1",
+      "kind": "internal_service.emergency_ordination",
+      "label": "Interner Hinweis Ordinationsgebühr Notfall",
+      "confidence": 0.7,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Ordinationsgebühr Notfall",
+      "search_terms": ["Notfallpauschale", "Notfall", "Ordinationsgebühr", "Grundpauschale"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["ALL_ORDNOT"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.internal.ophthalmology_fundus.v1",
+      "kind": "internal_service.ophthalmology_fundus",
+      "label": "Interner Hinweis Augenhintergrund",
+      "confidence": 0.68,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält binokulare Untersuchung des Augenhintergrundes",
+      "search_terms": ["Augenhintergrund", "Fundus", "Binokulare Untersuchung des Augenhintergrundes"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_BUAHG"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.internal.aua_echo.v1",
+      "kind": "internal_service.aua_echo",
+      "label": "Interner Hinweis Echographie Auge",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Echographie",
+      "search_terms": ["Sonographie des Auges", "Ultraschall-Biometrie des Auges", "Ultraschall-Pachymetrie"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_ECHO"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.internal.aua_epu.v1",
+      "kind": "internal_service.aua_epu",
+      "label": "Interner Hinweis elektrophysiologische Untersuchung",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält elektrophysiologische Augen-Diagnostik",
+      "search_terms": ["Elektrophysiologische Untersuchung", "Elektroretinographie", "VEP"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_EPU", "ERG", "VEP"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.internal.aua_fag.v1",
+      "kind": "internal_service.aua_fag",
+      "label": "Interner Hinweis Fluoreszenzangiographie",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Fluoreszenzangiographie",
+      "search_terms": ["Fluoreszenzangiographie", "Angiographie Auge"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_FAG"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.internal.aua_pdt.v1",
+      "kind": "internal_service.aua_pdt",
+      "label": "Interner Hinweis PDT",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält PDT",
+      "search_terms": ["PDT", "Photodynamische Therapie"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_PDT"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.internal.aua_peri.v1",
+      "kind": "internal_service.aua_peri",
+      "label": "Interner Hinweis Perimetrie",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Perimetrie",
+      "search_terms": ["Perimetrie", "Gesichtsfeld"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_PERI"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.internal.aua_schiel.v1",
+      "kind": "internal_service.aua_schiel",
+      "label": "Interner Hinweis Schielbehandlung",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält quantitative Untersuchung des binokularen Sehens",
+      "search_terms": ["Schielbehandlung", "Quantitative Untersuchung des binokularen Sehens"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_SCHIEL"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.internal.aua_tws.v1",
+      "kind": "internal_service.aua_tws",
+      "label": "Interner Hinweis Tränenweg-Sondierung",
+      "confidence": 0.58,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Tränenweg-Sondierung",
+      "search_terms": ["Tränenweg", "Tränenwege", "Sondierung", "Kleinchirurgischer Eingriff am Auge"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["TWS"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.internal.aua_lidheber.v1",
+      "kind": "internal_service.aua_lidheber",
+      "label": "Interner Hinweis Lidheber-Operation",
+      "confidence": 0.58,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Lidheber-Operation",
+      "search_terms": ["Lidheber", "Lidoperation", "Kleinchirurgischer Eingriff am Auge"],
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_LIDHEB"]}]},
+      "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
+    },
+    {
+      "rule_id": "evidence.radiology.ct_head.v1",
+      "kind": "radiology.ct_head_native",
+      "label": "CT Kopf nativ",
+      "confidence": 0.96,
+      "text_mode": "fixed",
+      "text": "CT Kopf nativ durchgeführt",
+      "datetime_match_patterns": ["ctkopfnativ", "ctctschadelnativ", "ctgehirnschadel(?:nativ)?"],
+      "datetime_sources": ["service", "state:radiology"],
+      "metadata": {"service_status": "performed", "procedure_family": "computed_tomography", "body_region": "neurocranium", "datetime_role": "service_performed"},
+      "when": {"all": [{"segment_any": ["radiology_report", "treatment_report", "data_capture"]}, {"text_any": ["ctkopfnativ", "ctctschadelnativ", "ctgehirnschadelnativ"]}, {"text_any": ["durchgefuhrt", "racth", "racko", "rakgk"]}, {"text_none": ["storniert", "ruckweisegrund", "zuruckgewiesen", "nichtdurchgefuhrt"]}]}
+    },
+    {
+      "rule_id": "evidence.radiology.ct_thorax.v1",
+      "kind": "radiology.ct_thorax",
+      "label": "CT-Untersuchung des Thorax",
+      "confidence": 0.98,
+      "text_mode": "fixed",
+      "text": "CT des Thorax / CT-Angiographie der Pulmonalarterien durchgeführt",
+      "datetime_match_patterns": ["ctangioartpulmonalis", "ctctaartpulmonalis", "angioctartpulmonalis", "computertomographiedesthorax", "ctthorax"],
+      "datetime_sources": ["service", "state:radiology"],
+      "search_terms": ["CT-Untersuchung des Thorax", "CT Thorax", "CT-Angiographie Pulmonalarterien"],
+      "metadata": {"service_status": "performed", "procedure_family": "computed_tomography", "body_region": "thorax", "datetime_role": "service_performed"},
+      "when": {"all": [{"segment_any": ["radiology_report", "treatment_report", "data_capture"]}, {"text_any": ["ctangioartpulmonalis", "ctctaartpulmonalis", "angioctartpulmonalis", "computertomographiedesthorax", "ctthorax", "3222computertomographiedesthorax", "racth524"]}, {"text_any": ["durchgefuhrt", "racth", "racko", "rakgk"]}, {"text_none": ["storniert", "ruckweisegrund", "zuruckgewiesen", "nichtdurchgefuhrt"]}]}
+    },
+    {
+      "rule_id": "evidence.radiology.xray_shoulder.v1",
+      "kind": "radiology.xray_shoulder_2_planes",
+      "label": "Röntgen Schulter 2 Ebenen",
+      "confidence": 0.96,
+      "text_mode": "fixed",
+      "text": "Röntgen Schulter 2 Ebenen durchgeführt",
+      "when": {"all": [{"segment_any": ["radiology_report", "treatment_report", "data_capture"]}, {"text_any": ["rontgenschulter2eb", "roeschulter2eb"]}, {"text_any": ["durchgefuhrt", "racth", "racko", "rakgk"]}, {"text_none": ["storniert", "ruckweisegrund", "zuruckgewiesen", "nichtdurchgefuhrt"]}]}
+    },
+    {
+      "rule_id": "evidence.radiology.xray_spine.v1",
+      "kind": "radiology.xray_spine_hws_2_planes",
+      "label": "Röntgen HWS 2 Ebenen",
+      "confidence": 0.96,
+      "text_mode": "fixed",
+      "text": "Röntgen HWS 2 Ebenen durchgeführt",
+      "when": {"all": [{"segment_any": ["radiology_report", "treatment_report", "data_capture"]}, {"text_any": ["rontgenhws2ebenen", "roehws2ebenen"]}, {"text_any": ["durchgefuhrt", "racth", "racko", "rakgk"]}, {"text_none": ["storniert", "ruckweisegrund", "zuruckgewiesen", "nichtdurchgefuhrt"]}]}
+    },
+    {
+      "rule_id": "evidence.radiology.xray_thorax.v1",
+      "kind": "radiology.xray_thorax_2_planes",
+      "label": "Röntgen Thorax/Lunge 2 Ebenen",
+      "confidence": 0.86,
+      "text_mode": "fixed",
+      "text": "Röntgen Thorax/Lunge 2 Ebenen",
+      "when": {"all": [{"segment_any": ["radiology_report", "treatment_report", "data_capture"]}, {"text_any": ["rontgenlunge", "roelunge", "thorax"]}, {"any": [{"text_any": ["2ebenen"]}, {"regex_any": {"source": "folded", "values": ["(?<![a-z])p\\.a\\.(?![a-z])"]}}]}, {"text_none": ["storniert", "ruckweisegrund", "zuruckgewiesen", "nichtdurchgefuhrt"]}]}
+    },
+    {
+      "rule_id": "evidence.radiology.ct_spine.v1",
+      "kind": "radiology.ct_spine_section",
+      "label": "CT Wirbelsäulenabschnitt",
+      "confidence": 0.84,
+      "text_mode": "fixed",
+      "text": "CT Wirbelsäulenabschnitt durchgeführt",
+      "when": {"all": [{"segment_any": ["radiology_report", "treatment_report", "data_capture"]}, {"text_any": ["ctlws", "ctcthws", "cthws"]}, {"text_any": ["durchgefuhrt", "racth", "racko", "rakgk"]}, {"text_none": ["storniert", "ruckweisegrund", "zuruckgewiesen", "nichtdurchgefuhrt"]}]}
+    },
+    {
+      "rule_id": "evidence.radiology.xray_hand_foot.v1",
+      "kind": "radiology.xray_hand_foot",
+      "label": "Röntgen Hand/Fuß",
+      "confidence": 0.94,
+      "text_mode": "fixed",
+      "text": "Röntgen Hand/Fuß durchgeführt",
+      "search_terms": ["Aufnahmen der Hand, des Fußes", "Röntgen Hand", "Röntgen Fuß"],
+      "when": {"all": [{"segment_any": ["radiology_report", "treatment_report", "data_capture"]}, {"text_any": ["rontgenhand", "roehand", "rontgenfuss", "roefuss"]}, {"text_any": ["durchgefuhrt", "racth", "racko", "rakgk"]}, {"text_none": ["storniert", "ruckweisegrund", "zuruckgewiesen", "nichtdurchgefuhrt"]}]}
+    },
+    {
+      "rule_id": "evidence.radiology.xray_extremities.v1",
+      "kind": "radiology.xray_extremities",
+      "label": "Röntgen Extremitäten",
+      "confidence": 0.94,
+      "text_mode": "fixed",
+      "text": "Röntgen Extremitäten durchgeführt",
+      "search_terms": ["Aufnahmen der Extremitäten", "Röntgen Extremität", "Röntgen Unterarm"],
+      "when": {"all": [{"segment_any": ["radiology_report", "treatment_report", "data_capture"]}, {"text_any": ["rontgenunterarm", "roeunterarm", "rontgenoberarm", "roeoberarm", "rontgenellenbogen", "roeellenbogen", "rontgenknie", "roeknie", "rontgenunterschenkel", "roeunterschenkel", "rontgenoberschenkel", "roeoberschenkel", "rontgensprunggelenk", "roesprunggelenk"]}, {"text_any": ["durchgefuhrt", "racth", "racko", "rakgk"]}, {"text_none": ["storniert", "ruckweisegrund", "zuruckgewiesen", "nichtdurchgefuhrt"]}]}
+    },
+    {
+      "rule_id": "evidence.radiology.ct_hand_foot.v1",
+      "kind": "radiology.ct_hand_foot",
+      "label": "CT Hand/Fuß",
+      "confidence": 0.94,
+      "text_mode": "fixed",
+      "text": "CT Hand/Fuß nativ durchgeführt",
+      "datetime_match_patterns": ["cthandgelenk", "ctcthandgelenk", "cthand", "ctcthand", "ctfuss", "ctctfuss"],
+      "search_terms": ["CT-Untersuchung der Hand, des Fußes", "CT Hand", "CT Fuß"],
+      "when": {"all": [{"segment_any": ["radiology_report", "treatment_report", "data_capture"]}, {"text_any": ["cthandgelenk", "ctcthandgelenk", "cthand", "ctcthand", "ctfuss", "ctctfuss"]}, {"text_any": ["durchgefuhrt", "racth", "racko", "rakgk"]}, {"text_none": ["storniert", "ruckweisegrund", "zuruckgewiesen", "nichtdurchgefuhrt"]}]}
+    },
+    {
+      "rule_id": "evidence.radiology.ct_extremities.v1",
+      "kind": "radiology.ct_extremities",
+      "label": "CT Extremitäten",
+      "confidence": 0.9,
+      "text_mode": "fixed",
+      "text": "CT Extremitäten nativ durchgeführt",
+      "search_terms": ["CT-Untersuchung der Extremitäten", "CT Extremität"],
+      "when": {"all": [{"segment_any": ["radiology_report", "treatment_report", "data_capture"]}, {"text_any": ["ctunterarm", "ctctunterarm", "ctoberarm", "ctctoberarm", "ctellenbogen", "ctctellenbogen", "ctknie", "ctctknie", "ctunterschenkel", "ctctunterschenkel", "ctoberschenkel", "ctctoberschenkel"]}, {"text_any": ["durchgefuhrt", "racth", "racko", "rakgk"]}, {"text_none": ["storniert", "ruckweisegrund", "zuruckgewiesen", "nichtdurchgefuhrt"]}]}
+    },
+    {
+      "rule_id": "evidence.radiology.ct_contrast.v1",
+      "kind": "radiology.ct_contrast",
+      "label": "Primäre CT-Untersuchung mit Kontrastmittel",
+      "confidence": 0.98,
+      "text_mode": "fixed",
+      "text": "Intravenöse Kontrastmittelgabe zur CT dokumentiert",
+      "datetime_match_patterns": ["ctangioartpulmonalis", "ctctaartpulmonalis", "angioctartpulmonalis", "computertomographiedesthorax", "ctthorax"],
+      "datetime_sources": ["service", "state:radiology"],
+      "search_terms": ["CT mit Kontrastmittel", "Kontrastmitteleinbringung", "Imeron intravenös"],
+      "metadata": {"service_status": "performed", "procedure_family": "computed_tomography_contrast", "body_region": "thorax", "route": "intravenous", "related_procedure_kind": "radiology.ct_thorax", "datetime_role": "service_performed"},
+      "when": {
+        "all": [
+          {"segment_any": ["radiology_report", "treatment_report", "data_capture"]},
+          {"text_any": ["ctangioartpulmonalis", "ctctaartpulmonalis", "angioctartpulmonalis", "computertomographiedesthorax", "ctthorax", "3222computertomographiedesthorax", "racth524"]},
+          {"text_any": ["kmgabe", "nachkmgabe", "kontrastmittelgabe", "kmgabeintravenos", "kontrastmittelimeron", "stehendeskontrastmittel", "imeron400", "mitkontrastmittel", "artpulmonaliskm", "nachkontrastmittelgabe"]},
+          {"text_any": ["durchgefuhrt", "racth", "racko", "rakgk"]},
+          {"text_none": ["storniert", "ruckweisegrund", "zuruckgewiesen", "nichtdurchgefuhrt"]}
+        ]
+      }
+    },
+    {
+      "rule_id": "evidence.lab.quick.v1",
+      "kind": "lab.quick",
+      "label": "Quick",
+      "confidence": 0.9,
+      "text_mode": "fixed",
+      "text": "Quick-Wert valide",
+      "when": {"all": [{"segment_any": ["laboratory_result"]}, {"text_any": ["quick"]}, {"text_none": ["probeunterfullt"]}]}
+    },
+    {
+      "rule_id": "evidence.lab.blood_gas.v1",
+      "kind": "lab.blood_gas_analysis",
+      "label": "Blutgase und Säure-Basen-Status",
+      "confidence": 0.98,
+      "text_mode": "fixed",
+      "text": "pH, pCO2 und pO2 bestimmt",
+      "search_terms": ["Bestimmung der Blutgase", "Säure-Basen-Status", "pH pCO2 pO2"],
+      "metadata": {"service_status": "performed", "procedure_family": "laboratory_panel", "panel": "blood_gas_acid_base", "required_components": ["pH", "pCO2", "pO2"], "datetime_role": "specimen_collection"},
+      "when": {"all": [{"segment_any": ["laboratory_result"]}, {"text_any": ["blutgasanalyse", "blutgaseanalytik", "blutgase"]}, {"text_all": ["ph", "pco2", "po2"]}]}
+    },
+    {"rule_id": "evidence.lab.creatinine.v1", "kind": "lab.creatinine", "label": "Kreatinin", "confidence": 0.86, "text_mode": "fixed", "text": "Kreatinin", "when": {"all": [{"segment_any": ["laboratory_result"]}, {"text_any": ["kreatinin"]}]}},
+    {"rule_id": "evidence.lab.sodium.v1", "kind": "lab.sodium", "label": "Natrium", "confidence": 0.86, "text_mode": "fixed", "text": "Natrium", "when": {"all": [{"segment_any": ["laboratory_result"]}, {"text_any": ["natrium"]}]}},
+    {"rule_id": "evidence.lab.potassium.v1", "kind": "lab.potassium", "label": "Kalium", "confidence": 0.86, "text_mode": "fixed", "text": "Kalium", "when": {"all": [{"segment_any": ["laboratory_result"]}, {"text_any": ["kalium"]}]}},
+    {"rule_id": "evidence.lab.glucose.v1", "kind": "lab.glucose", "label": "Glucose", "confidence": 0.86, "text_mode": "fixed", "text": "Glucose", "when": {"all": [{"segment_any": ["laboratory_result"]}, {"text_any": ["glucose"]}]}},
+    {"rule_id": "evidence.lab.alt.v1", "kind": "lab.alt_gpt", "label": "ALT/GPT", "confidence": 0.86, "text_mode": "fixed", "text": "ALT/GPT", "when": {"all": [{"segment_any": ["laboratory_result"]}, {"regex_any": {"source": "folded", "values": ["(?<![a-z])(?:alt|gpt)(?![a-z])"]}}]}},
+    {"rule_id": "evidence.lab.erythrocytes.v1", "kind": "lab.erythrocytes", "label": "Erythrozyten", "confidence": 0.86, "text_mode": "fixed", "text": "Erythrozyten", "when": {"all": [{"segment_any": ["laboratory_result"]}, {"text_any": ["erythrozyten"]}]}},
+    {"rule_id": "evidence.lab.leukocytes.v1", "kind": "lab.leukocytes", "label": "Leukozyten", "confidence": 0.86, "text_mode": "fixed", "text": "Leukozyten", "when": {"all": [{"segment_any": ["laboratory_result"]}, {"text_any": ["leukozyten"]}]}},
+    {"rule_id": "evidence.lab.thrombocytes.v1", "kind": "lab.thrombocytes", "label": "Thrombozyten", "confidence": 0.86, "text_mode": "fixed", "text": "Thrombozyten", "when": {"all": [{"segment_any": ["laboratory_result"]}, {"text_any": ["thrombozyten"]}]}},
+    {"rule_id": "evidence.lab.hemoglobin.v1", "kind": "lab.hemoglobin", "label": "Hämoglobin", "confidence": 0.86, "text_mode": "fixed", "text": "Hämoglobin", "when": {"all": [{"segment_any": ["laboratory_result"]}, {"text_any": ["hamoglobin"]}]}},
+    {"rule_id": "evidence.lab.hematocrit.v1", "kind": "lab.hematocrit", "label": "Hämatokrit", "confidence": 0.86, "text_mode": "fixed", "text": "Hämatokrit", "when": {"all": [{"segment_any": ["laboratory_result"]}, {"text_any": ["hamatokrit"]}]}},
+    {
+      "rule_id": "evidence.general_document.v1",
+      "kind": "clinical.document.general",
+      "label": "Klinischer Dokumentinhalt",
+      "confidence": 0.58,
+      "search_terms": ["Grundpauschale", "Untersuchung", "Beratung"],
+      "emit_if_no_page_evidence": true,
+      "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"not": {"segment_any": ["laboratory_result", "radiology_report", "ecg", "ctg"]}}]}
+    }
+  ],
+  "review_rules": [
+    {"rule_id": "review.consult.neurology.v1", "evidence": "Neurologisches Konsil", "reason": "Interne Konsiltypen sind nicht automatisch EBM-GOPs.", "when": {"all": [{"segment_any": ["consult"]}, {"text_any": ["neurologie"]}]}},
+    {"rule_id": "review.consult.psychiatry.v1", "evidence": "Psychiatrisches Konsil", "reason": "Interne Konsiltypen sind nicht automatisch EBM-GOPs.", "when": {"all": [{"segment_any": ["consult"]}, {"text_any": ["psych", "psychische"]}]}},
+    {"rule_id": "review.lab.pregnancy_test.v1", "evidence": "Schwangerschaftstest Urin", "candidate_kind": "lab.pregnancy_test", "reason": "Katalogtreffer möglich, aber noch keine validierte Positivregel.", "when": {"text_any": ["schwangerschaftstest", "schwangerschaftsnachweis"]}},
+    {"rule_id": "review.lab.drug_screen.v1", "evidence": "Drogen-Screening Urin", "candidate_kind": "lab.drug_screen_urine", "reason": "Panel-/Einzeltestlogik und Abrechnungsfähigkeit nicht validiert.", "when": {"text_all": ["drogen", "urin"]}},
+    {"rule_id": "review.lab.urinalysis.v1", "evidence": "Urinstatus", "candidate_kind": "lab.urinalysis", "reason": "Im Goldstandard noch keine Positivregel.", "when": {"text_any": ["urinstatus"]}},
+    {"rule_id": "review.lab.extended_panel.v1", "evidence": "Erweiterte Laborwerte", "candidate_kind": "lab.extended_panel", "reason": "Nicht jeder dokumentierte Laborwert wird automatisch abgerechnet.", "when": {"text_any": ["crp", "ckmb", "myoglobin", "harnstoff", "gammagt", "ast"]}}
+  ],
+  "exclusion_rules": [
+    {"rule_id": "exclude.radiology.spine_cancelled.v1", "evidence": "CT HWS nativ", "candidate_kind": "radiology.ct_spine_section", "reason": "Nur storniert dokumentiert; kein durchgeführter Befund.", "when": {"text_all": ["ctcthws", "storniert"]}},
+    {
+      "rule_id": "exclude.radiology.native_without_contrast.v1",
+      "evidence": "CT-Kontrastmittelzuschlag",
+      "candidate_kind": "radiology.ct_contrast",
+      "reason": "CT als nativ dokumentiert; keine Kontrastmittelgabe.",
+      "when": {"all": [{"text_any": ["ctkopfnativ", "ctctschadelnativ", "ctgehirnschadelnativ"]}, {"text_none": ["kmgabe", "nachkmgabe", "kontrastmittelgabe", "kmgabeintravenos", "kontrastmittelimeron", "stehendeskontrastmittel", "imeron400", "mitkontrastmittel", "artpulmonaliskm", "nachkontrastmittelgabe", "ctangioartpulmonalis", "ctctaartpulmonalis", "angioctartpulmonalis"]}]}
+    },
+    {"rule_id": "exclude.lab.invalid_coagulation_sample.v1", "evidence": "Gerinnungsprobe", "reason": "Probe unterfüllt/falsches Mischungsverhältnis.", "when": {"text_any": ["probeunterfullt"]}},
+    {"rule_id": "exclude.internal.unmapped_radiology.v1", "evidence": "Interner Radiologie-Zuschlag", "reason": "Lokaler interner Code ohne freigegebenes EBM-/Hessen-GOP-Mapping.", "when": {"internal_code_any": ["RAS9048"]}}
+  ]
+}

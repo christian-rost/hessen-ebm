@@ -74,12 +74,14 @@ scripts/supabase/002_hessen_ebm_billing_rules.sql
 
 Die große SQLite-Datei bleibt die unveränderte, quartalsversionierte Rohquelle. Der Regelcompiler liest daraus alle Detaildatensätze eines Quartals und schreibt eine für die Laufzeit optimierte Fassung nach Supabase:
 
-- `hessen_ebm_rule_sets`: aktivierbare Regelsätze je Quartal und Region
+- `hessen_ebm_rule_sets`: aktivierbare Regelsätze je Quartal und Region, einschließlich der versionierten klinischen Dokument- und Evidenzdefinitionen
 - `hessen_ebm_rule_definitions`: GOP-Regeln, GOP-Varianten, Präambeln, Kapitelregeln und allgemeine Bestimmungen mit vollständigem Quelltext
 - `hessen_ebm_rule_clauses`: einzeln nachvollziehbare Bedingungen, Ausschlüsse und Prüfklauseln
 - `hessen_ebm_rule_compile_runs`: erfolgreiche und fehlgeschlagene Compilerläufe
 
 Der Compiler übernimmt jeden KBV-Detailtext und jeden regionalen Regeltext. Eindeutig interpretierbare Klauseln werden maschinell ausgeführt. Nicht hinreichend formalisierbare Texte bleiben vollständig erhalten und werden als `partial` oder `text_only` ausgewiesen; sie gelten nicht stillschweigend als automatisch geprüft.
+
+Auch Dokumentklassifikation, klinische Begriffe, interne Leistungscodes, Zeitrollen, Evidenz-, Review- und Ausschlussregeln sind datengetrieben. Sie liegen im Startbestand `backend/app/clinical_evidence_definitions.json` und werden beim Kompilieren im `core_payload` desselben aktiven Supabase-Regelsatzes übernommen. Die ausführenden Python-Module enthalten keine fach- oder GOP-spezifischen Kandidatenlisten.
 
 Produktiver Ablauf:
 

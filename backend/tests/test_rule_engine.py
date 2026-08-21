@@ -1,7 +1,9 @@
 from pathlib import Path
 
 from app.catalog import CatalogRepository
-from app.models import CatalogEntry, Evidence
+from app.document_segmentation import segment_pages
+from app.evidence_extraction import extract_evidence
+from app.models import CatalogEntry, Evidence, PageText
 from app.rule_engine import generate_billing_items
 
 
@@ -19,7 +21,10 @@ class FakeCatalog(CatalogRepository):
             "01226": ("Zuschlag Notfallpauschale zur GOP 01212", 90, 11.15),
             "01786": ("Kardiotokografische Untersuchung", 137, 17.45),
             "33042": ("Sonografie des Abdomens und Retroperitoneums", 143, 18.22),
+            "32247": ("Bestimmung der Blutgase und des Säure-Basen-Status", None, 9.50),
             "34310": ("CT-Untersuchung des Neurocraniums", 534, 66.18),
+            "34330": ("CT-Untersuchung des Thorax", 586, 74.65),
+            "34345": ("Zuschlag CT mit Kontrastmittel", 216, 27.52),
             "34231": ("Aufnahmen der Schulter", 137, 16.98),
             "34221": ("Aufnahmen von Teilen der Wirbelsäule", 140, 17.35),
             "34232": ("Aufnahmen der Hand, des Fußes", 99, 12.61),
@@ -92,6 +97,113 @@ def test_case_FALL-B_rule_total():
     assert [item.gop_original for item in items[:4]] == ["01212", "34310", "34231", "34221"]
     assert items[0].catalog_source_label == "KBV EBM 2025/Q4"
     assert items[0].rule_id.endswith("time.notfall.initial.01212.v1")
+
+
+def test_case_FALL-C_reconstructs_expected_services_without_false_ctg_or_follow_up():
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Behandlungsbericht ZNA Aufnahme 09.06.2026 21:55 Notfallambulanz KIM1. "
+                "Notfallsonographie: Ausschluss Perikarderguss, Ausschluss Pleuraergüsse beidseits, "
+                "Ausschluss Pneumothorax, keine intraabdominelle freie Flüssigkeit."
+            ),
+        ),
+        PageText(
+            page=2,
+            text=(
+                "Behandlungsbericht ZNA Behandlungsende 09.06.2026 22:58. Verstorben. "
+                "Entlassungszeit 10.06.2026 01:21 Entlassende FA Notfallambulanz KIM1."
+            ),
+        ),
+        PageText(
+            page=3,
+            text=(
+                "Radiologie - Befund CT Kopf nativ, durchgeführt am 09.06.2026 um 23:00. "
+                "CT-Angio Art. pulmonalis, durchgeführt am 09.06.2026 um 23:15. "
+                "Stehendes Kontrastmittel in der Vena cava superior."
+            ),
+        ),
+        PageText(
+            page=4,
+            text=(
+                "Leistungen 1.0x RACTH524 Angio-CT Art. pulmonalis + KM "
+                "1.0x RAKGK082 KM-Gabe intravenös über Hochdruckspritze. "
+                "Prozeduren 3-222 Computertomographie des Thorax mit Kontrastmittel. "
+                "Kontrastmittel Imeron 400 80,00 ml (i.v.)."
+            ),
+        ),
+        PageText(
+            page=5,
+            text=(
+                "Status fertig Blutgasanalyse Probenentnahmedat. 09.06.2026 22:08 "
+                "Untersuchung Wert Einheit Referenzbereich Blutgase & Analytik POCT "
+                "pH-Wert 7.008 pCO2 62.0 mmHg pO2 23.8 mmHg "
+                "HaemoglobinPOCT 12.6 g/dl HaematokritPOCT 38.7 % "
+                "KaliumPOCT 5.1 mmol/l NatriumPOCT 137 mmol/l GlucosePOCT 387 mg/dl"
+            ),
+        ),
+        PageText(
+            page=6,
+            text=(
+                "Status fertig Blutgasanalyse Probenentnahmedat. 09.06.2026 22:25 "
+                "Untersuchung Wert Einheit Referenzbereich Blutgase & Analytik POCT "
+                "pH-Wert 6.820 pCO2 98.0 mmHg pO2 19.9 mmHg HaemoglobinPOCT 12.2 g/dl"
+            ),
+        ),
+        PageText(
+            page=7,
+            text=(
+                "Laborbefund Probenentnahmedat. 09.06.2026 22:09 Untersuchung Wert Einheit Referenzbereich "
+                "Kreatinin 2.32 mg/dl Natrium 135 mmol/l Kalium 5.1 mmol/l Glucose 387 mg/dl ALT 42 U/l"
+            ),
+        ),
+        PageText(
+            page=8,
+            text=(
+                "Laborbefund Probenentnahmedat. 09.06.2026 22:09 Untersuchung Wert Einheit Referenzbereich "
+                "Quick 72 % Leukozyten 14.2 Mrd./l Erythrozyten 4.1 Bil./l "
+                "Hämoglobin 12.0 g/dl Hämatokrit 40.6 % Thrombozyten 208 Mrd./l"
+            ),
+        ),
+    ]
+
+    segments = segment_pages(pages)
+    evidence, _review, excluded, context = extract_evidence(pages, segments)
+    items, _summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q2")
+    gops = [item.gop_original for item in items]
+
+    assert context["treatment_start"] == "2026-06-09T21:55:00"
+    assert context["treatment_end"] == "2026-06-09T22:58:00"
+    assert len(gops) == 17
+    assert set(gops) == {
+        "01212",
+        "33042",
+        "32247",
+        "32025",
+        "32035A",
+        "32036A",
+        "32037A",
+        "32038A",
+        "32039A",
+        "32066",
+        "32081",
+        "32083",
+        "32070",
+        "32113",
+        "34310",
+        "34330",
+        "34345",
+    }
+    assert "01786" not in gops
+    assert "01218" not in gops
+    assert not any(item.kind == "clinical.diagnostics.ctg" for item in evidence)
+    assert not any(item.service_date == "2026-06-10" and item.kind == "context.kv_notfall_zna" for item in evidence)
+    assert excluded == []
+    assert any(
+        segment.segment_type == "data_capture" and segment.start_page <= 4 <= segment.end_page
+        for segment in segments
+    )
 
 
 def test_kv_notfall_zna_daytime_uses_01210():
@@ -214,7 +326,7 @@ def test_temporal_invoice_sequence_preserves_repeated_services_on_different_days
         ),
         Evidence(
             evidence_id="ev-renal-sono-jan-1",
-            kind="clinical.diagnostics.maternal_renal_sonography",
+            kind="clinical.diagnostics.abdominal_sonography",
             label="Sonografie der mütterlichen Nieren",
             page=5,
             service_date="2026-01-01",

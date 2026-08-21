@@ -399,36 +399,48 @@ def derive_additional_gops(
     return decisions
 
 
-def is_special_notfall_day(service_date: str | date, region: str = "Hessen") -> bool:
+def is_special_notfall_day(
+    service_date: str | date,
+    region: str = "Hessen",
+    rule_set: BillingRuleSet | None = None,
+) -> bool:
     day = service_date if isinstance(service_date, date) else _parse_date(service_date)
     if day is None:
         return False
-    special_dates = (
-        hessen_public_holidays(day.year) if region.strip().lower() == "hessen" else german_core_public_holidays(day.year)
-    )
-    return day.weekday() >= 5 or day in special_dates or (day.month, day.day) in {(12, 24), (12, 31)}
-
-
-def hessen_public_holidays(year: int) -> set[date]:
-    holidays = german_core_public_holidays(year)
-    easter = _easter_sunday(year)
-    holidays.add(easter + timedelta(days=60))  # Fronleichnam
-    return holidays
-
-
-def german_core_public_holidays(year: int) -> set[date]:
-    easter = _easter_sunday(year)
-    return {
-        date(year, 1, 1),
-        easter - timedelta(days=2),
-        easter + timedelta(days=1),
-        date(year, 5, 1),
-        easter + timedelta(days=39),
-        easter + timedelta(days=50),
-        date(year, 10, 3),
-        date(year, 12, 25),
-        date(year, 12, 26),
+    definitions = (rule_set or get_runtime_billing_rule_set()).calendar_definitions
+    calendar = _calendar_for_region(definitions, region)
+    weekdays = {int(value) for value in calendar.get("weekdays") or []}
+    if day.weekday() in weekdays:
+        return True
+    if day.strftime("%m-%d") in {str(value) for value in calendar.get("fixed_dates") or []}:
+        return True
+    easter = _easter_sunday(day.year)
+    return day in {
+        easter + timedelta(days=int(offset))
+        for offset in calendar.get("easter_offsets") or []
     }
+
+
+def _calendar_for_region(definitions: Mapping[str, Any], region: str) -> dict[str, Any]:
+    calendars = definitions.get("regions")
+    regional = calendars.get(region.strip().casefold()) if isinstance(calendars, Mapping) else None
+    default = definitions.get("default")
+    base = dict(default) if isinstance(default, Mapping) else {}
+    if not isinstance(regional, Mapping):
+        return base
+    inherited = regional.get("inherits")
+    if inherited and inherited != "default":
+        inherited_value = definitions.get(str(inherited))
+        if isinstance(inherited_value, Mapping):
+            base = dict(inherited_value)
+    for key, value in regional.items():
+        if key == "inherits":
+            continue
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            base[key] = list(base.get(key) or []) + list(value)
+        else:
+            base[key] = value
+    return base
 
 
 def _parse_date(value: str | None) -> date | None:

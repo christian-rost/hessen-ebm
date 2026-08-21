@@ -133,6 +133,8 @@ class BillingRuleSet:
     temporal_rules: tuple[TemporalRuleDefinition, ...]
     event_sequence_rules: tuple[EventSequenceRuleDefinition, ...]
     derived_rules: tuple[DerivedRuleDefinition, ...]
+    event_settings: dict[str, Any]
+    calendar_definitions: dict[str, Any]
 
 
 def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
@@ -158,6 +160,8 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
         temporal_rules=temporal_rules,
         event_sequence_rules=event_sequence_rules,
         derived_rules=derived_rules,
+        event_settings=dict(payload.get("event_settings") or {}),
+        calendar_definitions=dict(payload.get("calendar_definitions") or {}),
     )
     _validate_unique_rule_ids(rule_set)
     return rule_set

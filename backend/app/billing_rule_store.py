@@ -12,6 +12,12 @@ from .billing_rule_definitions import (
     parse_billing_rule_set,
 )
 from .config import get_settings
+from .clinical_definitions import (
+    ClinicalDefinitionSet,
+    clinical_definition_set_payload,
+    load_clinical_definition_set,
+    parse_clinical_definition_set,
+)
 from .database import get_supabase
 from .ebm_rule_compiler import CompiledCatalogRuleSet, CompiledGopRule
 
@@ -37,9 +43,14 @@ def rule_set_key(compiled: CompiledCatalogRuleSet) -> str:
 def build_rule_set_row(
     compiled: CompiledCatalogRuleSet,
     core_rule_set: BillingRuleSet,
+    clinical_definitions: ClinicalDefinitionSet | None = None,
     *,
     status: str = "publishing",
 ) -> dict[str, Any]:
+    core_payload = billing_rule_set_payload(core_rule_set)
+    core_payload["clinical_definitions"] = clinical_definition_set_payload(
+        clinical_definitions or load_clinical_definition_set()
+    )
     return {
         "rule_set_key": rule_set_key(compiled),
         "rule_set_id": compiled.rule_set_id,
@@ -52,7 +63,7 @@ def build_rule_set_row(
         "source_data_stand": compiled.source_data_stand,
         "source_hash": compiled.source_hash,
         "compiled_at": compiled.compiled_at,
-        "core_payload": billing_rule_set_payload(core_rule_set),
+        "core_payload": core_payload,
         "summary": compiled.summary,
     }
 
@@ -119,6 +130,7 @@ def build_clause_rows(compiled: CompiledCatalogRuleSet) -> list[dict[str, Any]]:
 def publish_compiled_rule_set(
     compiled: CompiledCatalogRuleSet,
     core_rule_set: BillingRuleSet | None = None,
+    clinical_definitions: ClinicalDefinitionSet | None = None,
 ) -> dict[str, Any]:
     client = get_supabase()
     if not client:
@@ -137,7 +149,9 @@ def publish_compiled_rule_set(
         }
     ).execute()
     try:
-        client.table(RULE_SETS_TABLE).upsert(build_rule_set_row(compiled, core)).execute()
+        client.table(RULE_SETS_TABLE).upsert(
+            build_rule_set_row(compiled, core, clinical_definitions)
+        ).execute()
         client.table(RULE_DEFINITIONS_TABLE).delete().eq("rule_set_key", key).execute()
         definitions = build_definition_rows(compiled)
         clauses = build_clause_rows(compiled)
@@ -255,6 +269,31 @@ def get_runtime_billing_rule_set(quarter: str | None = None, region: str = "Hess
         return local
 
 
+@lru_cache(maxsize=16)
+def get_runtime_clinical_definition_set(
+    quarter: str | None = None,
+    region: str = "Hessen",
+) -> ClinicalDefinitionSet:
+    local = load_clinical_definition_set()
+    settings = get_settings()
+    source = settings.billing_rules_source.strip().casefold()
+    if source not in {"auto", "supabase"}:
+        return local
+    try:
+        client = get_supabase()
+        if not client:
+            return local
+        row = _active_rule_set_row(client, quarter, region)
+        core_payload = row.get("core_payload") if row else None
+        payload = core_payload.get("clinical_definitions") if isinstance(core_payload, dict) else None
+        if not isinstance(payload, dict):
+            return local
+        return parse_clinical_definition_set(payload)
+    except Exception as exc:
+        _last_status["clinical_definitions_error"] = str(exc)
+        return local
+
+
 @lru_cache(maxsize=32)
 def load_compiled_catalog_rules(
     quarter: str,
@@ -316,6 +355,7 @@ def rule_store_status() -> dict[str, Any]:
 
 def clear_rule_store_cache() -> None:
     get_runtime_billing_rule_set.cache_clear()
+    get_runtime_clinical_definition_set.cache_clear()
     load_compiled_catalog_rules.cache_clear()
 
 
@@ -333,6 +373,8 @@ def _merge_runtime_core_rules(local: BillingRuleSet, remote: BillingRuleSet) -> 
         temporal_rules=merge(remote.temporal_rules, local.temporal_rules),
         event_sequence_rules=merge(remote.event_sequence_rules, local.event_sequence_rules),
         derived_rules=merge(remote.derived_rules, local.derived_rules),
+        event_settings=remote.event_settings or local.event_settings,
+        calendar_definitions=remote.calendar_definitions or local.calendar_definitions,
     )
 
 

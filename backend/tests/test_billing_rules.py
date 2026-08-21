@@ -274,6 +274,31 @@ def test_special_notfall_day_includes_hessen_public_holiday():
     assert is_special_notfall_day("2026-06-04", "Hessen") is True
 
 
+def test_special_day_calendar_is_supplied_by_the_rule_set() -> None:
+    rule_set = parse_billing_rule_set(
+        {
+            "schema_version": 1,
+            "rule_set_id": "calendar-test",
+            "version": "1",
+            "event_settings": {},
+            "calendar_definitions": {
+                "default": {
+                    "weekdays": [],
+                    "fixed_dates": ["02-03"],
+                    "easter_offsets": [],
+                },
+                "regions": {},
+            },
+            "evidence_rules": [],
+            "temporal_rules": [],
+            "derived_rules": [],
+        }
+    )
+
+    assert is_special_notfall_day("2026-02-03", "Testregion", rule_set) is True
+    assert is_special_notfall_day("2026-02-04", "Testregion", rule_set) is False
+
+
 def test_catalog_context_rules_require_review_for_missing_structured_context():
     decision = evaluate_catalog_context_rules(
         BillingRuleContext(

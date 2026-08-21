@@ -2,510 +2,28 @@ from __future__ import annotations
 
 import hashlib
 import re
-import unicodedata
+from typing import Any
 
 from .billing_rules import candidate_gops_for_evidence_kind
+from .billing_rule_store import get_runtime_clinical_definition_set
+from .clinical_definitions import ClinicalDefinitionSet
+from .clinical_rule_engine import (
+    MatchContext,
+    capture_value,
+    condition_matches,
+    normalize_text,
+    render_value,
+)
 from .models import DocumentSegment, Evidence, ExcludedEvidence, PageText, ReviewCandidate
-
-
-DATE_RE = re.compile(r"(\d{2}\.\d{2}\.\d{4})")
-TIME_RE = re.compile(r"(\d{2}:\d{2})")
-ICD_RE = re.compile(r"\b([A-Z]\d{2}(?:\.\d{1,2})?)(?![\d.])")
-
-CLINICAL_CONTEXT_SEGMENTS = {
-    "case_context",
-    "treatment_report",
-    "radiology_report",
-    "laboratory_result",
-    "ecg",
-    "ctg",
-    "clinical_report",
-    "cardiology_report",
-    "pulmonology_report",
-    "gastroenterology_report",
-    "gynecology_obstetrics",
-    "urology_report",
-    "dermatology_report",
-    "ent_report",
-    "neurology_report",
-    "psychiatry_report",
-    "orthopedics_report",
-    "pediatrics_report",
-    "surgery_report",
-    "anesthesia_report",
-    "pathology_report",
-    "oncology_report",
-    "nephrology_report",
-    "prevention_report",
-    "therapy_report",
-}
-
-DOMAIN_EVIDENCE: list[tuple[str, str, tuple[str, ...], tuple[str, ...], float]] = [
-    (
-        "clinical.domain.emergency",
-        "Akut-/Notfallkontakt",
-        ("notfall", "notaufnahme", "notfallambulanz", "zna", "akutambulanz"),
-        ("Notfallpauschale", "Notfall", "Akutbehandlung", "Grundpauschale"),
-        0.76,
-    ),
-    (
-        "clinical.domain.ophthalmology",
-        "Augenheilkunde",
-        ("augenklinik", "augenambulanz", "augenheilkunde", "visus", "tensio", "vordereraugenabschnitt", "hintereraugenabschnitt"),
-        ("Augenheilkunde", "Augenärztliche Untersuchung", "Visus", "Fundus"),
-        0.76,
-    ),
-    (
-        "clinical.domain.gynecology_obstetrics",
-        "Gynäkologie / Geburtshilfe",
-        ("gynakologie", "geburtshilfe", "frauenklinik", "schwangerschaft", "ssw", "fetale", "pranatal", "vaginal"),
-        ("Schwangerschaft", "Geburtshilfe", "Gynäkologie", "Betreuung einer Schwangeren", "Pränataldiagnostik"),
-        0.8,
-    ),
-    (
-        "clinical.domain.cardiology",
-        "Kardiologie",
-        ("kardiologie", "herz", "koronar", "echokardiographie", "herzkatheter", "schrittmacher", "ekg"),
-        ("Kardiologie", "EKG", "Echokardiographie", "Herzkatheter", "Schrittmacher"),
-        0.76,
-    ),
-    (
-        "clinical.domain.pulmonology",
-        "Pneumologie",
-        ("pneumologie", "lunge", "bronchoskopie", "spirometrie", "lungenfunktion", "asthma", "copd"),
-        ("Pneumologie", "Lungenfunktion", "Spirometrie", "Bronchoskopie", "Asthma"),
-        0.74,
-    ),
-    (
-        "clinical.domain.gastroenterology",
-        "Gastroenterologie / Endoskopie",
-        ("gastroenterologie", "gastroskopie", "koloskopie", "coloskopie", "rektoskopie", "endoskopie", "abdomen"),
-        ("Gastroenterologie", "Endoskopie", "Gastroskopie", "Koloskopie", "Abdomensonographie"),
-        0.74,
-    ),
-    (
-        "clinical.domain.urology",
-        "Urologie",
-        ("urologie", "prostata", "harnblase", "zystoskopie", "cystoskopie", "uroflow", "harnstau", "niere"),
-        ("Urologie", "Prostata", "Uroflow", "Zystoskopie", "Sonographie Niere"),
-        0.74,
-    ),
-    (
-        "clinical.domain.dermatology",
-        "Dermatologie",
-        ("dermatologie", "haut", "naevus", "melanom", "ekzem", "psoriasis", "dermatoskopie"),
-        ("Dermatologie", "Haut", "Dermatoskopie", "Exzision", "Biopsie"),
-        0.72,
-    ),
-    (
-        "clinical.domain.ent",
-        "HNO",
-        ("hno", "halsnasenohren", "audiometrie", "tympanometrie", "laryngoskopie", "tonsillen", "kehlkopf"),
-        ("HNO", "Audiometrie", "Tympanometrie", "Laryngoskopie"),
-        0.72,
-    ),
-    (
-        "clinical.domain.neurology",
-        "Neurologie",
-        ("neurologie", "eeg", "emg", "nlg", "epilepsie", "schlaganfall", "parese", "parkinson"),
-        ("Neurologie", "EEG", "EMG", "Nervenleitgeschwindigkeit", "Schlaganfall"),
-        0.72,
-    ),
-    (
-        "clinical.domain.psychiatry",
-        "Psychiatrie / Psychotherapie",
-        ("psychiatrie", "psychotherapie", "psychosomatik", "depression", "angststorung", "sucht"),
-        ("Psychiatrie", "Psychotherapie", "Psychosomatik", "Gespräch", "Testverfahren"),
-        0.7,
-    ),
-    (
-        "clinical.domain.orthopedics_trauma",
-        "Orthopädie / Unfallchirurgie",
-        ("orthopadie", "orthopaedie", "unfallchirurgie", "fraktur", "luxation", "gelenk", "wirbelsaule", "trauma"),
-        ("Orthopädie", "Unfallchirurgie", "Fraktur", "Gelenk", "Wundversorgung"),
-        0.72,
-    ),
-    (
-        "clinical.domain.pediatrics",
-        "Pädiatrie",
-        ("paediatrie", "padiatrie", "kinderklinik", "jugendmedizin", "neugeboren", "saugling"),
-        ("Pädiatrie", "Kinder- und Jugendmedizin", "U-Untersuchung", "Neugeborene"),
-        0.72,
-    ),
-    (
-        "clinical.domain.surgery",
-        "Chirurgie / OP",
-        ("chirurgie", "opbericht", "operationsbericht", "operation", "eingriff", "wundversorgung", "naht", "exzision", "abtragung"),
-        ("Chirurgie", "Operation", "Wundversorgung", "Exzision", "Naht"),
-        0.72,
-    ),
-    (
-        "clinical.domain.anesthesia_pain",
-        "Anästhesie / Schmerztherapie",
-        ("anasthesie", "anaesthesie", "narkose", "schmerztherapie", "palliativ", "sedierung"),
-        ("Anästhesie", "Narkose", "Schmerztherapie", "Palliativmedizin"),
-        0.7,
-    ),
-    (
-        "clinical.domain.pathology_cytology",
-        "Pathologie / Zytologie",
-        ("pathologie", "histologie", "zytologie", "biopsat", "papanicolaou", "mikroskopie"),
-        ("Pathologie", "Histologie", "Zytologie", "Biopsie", "Mikroskopie"),
-        0.7,
-    ),
-    (
-        "clinical.domain.oncology_hematology",
-        "Onkologie / Hämatologie",
-        ("onkologie", "hamatologie", "haematologie", "tumor", "karzinom", "chemotherapie", "immuntherapie"),
-        ("Onkologie", "Hämatologie", "Tumor", "Chemotherapie", "Immuntherapie"),
-        0.7,
-    ),
-    (
-        "clinical.domain.nephrology_dialysis",
-        "Nephrologie / Dialyse",
-        ("nephrologie", "dialyse", "hamodialyse", "haemodialyse", "peritonealdialyse", "niereninsuffizienz"),
-        ("Nephrologie", "Dialyse", "Hämodialyse", "Niereninsuffizienz"),
-        0.7,
-    ),
-    (
-        "clinical.domain.prevention_vaccination",
-        "Prävention / Impfen",
-        ("impfung", "impfstoff", "vorsorge", "fruherkennung", "screening", "gesundheitsuntersuchung", "dmp"),
-        ("Impfung", "Vorsorge", "Früherkennung", "Screening", "DMP"),
-        0.68,
-    ),
-]
-
-SEGMENT_DOMAIN_KIND = {
-    "cardiology_report": "clinical.domain.cardiology",
-    "pulmonology_report": "clinical.domain.pulmonology",
-    "gastroenterology_report": "clinical.domain.gastroenterology",
-    "gynecology_obstetrics": "clinical.domain.gynecology_obstetrics",
-    "urology_report": "clinical.domain.urology",
-    "dermatology_report": "clinical.domain.dermatology",
-    "ent_report": "clinical.domain.ent",
-    "neurology_report": "clinical.domain.neurology",
-    "psychiatry_report": "clinical.domain.psychiatry",
-    "orthopedics_report": "clinical.domain.orthopedics_trauma",
-    "pediatrics_report": "clinical.domain.pediatrics",
-    "surgery_report": "clinical.domain.surgery",
-    "anesthesia_report": "clinical.domain.anesthesia_pain",
-    "pathology_report": "clinical.domain.pathology_cytology",
-    "oncology_report": "clinical.domain.oncology_hematology",
-    "nephrology_report": "clinical.domain.nephrology_dialysis",
-    "prevention_report": "clinical.domain.prevention_vaccination",
-}
-
-SERVICE_EVIDENCE: list[tuple[str, str, tuple[str, ...], tuple[str, ...], float]] = [
-    (
-        "clinical.service.consultation",
-        "Beratung / Aufklärung",
-        ("beratung", "aufklarung", "aufklaerung", "gesprach", "empfehlungenerlautert"),
-        ("Beratung", "Aufklärung", "Gespräch", "Grundpauschale"),
-        0.68,
-    ),
-    (
-        "clinical.service.examination",
-        "Klinische Untersuchung / Befund",
-        ("untersuchung", "befund", "beurteilung", "status", "palpation", "inspektion"),
-        ("Untersuchung", "Klinischer Befund", "Grundpauschale"),
-        0.66,
-    ),
-    (
-        "clinical.diagnostics.sonography",
-        "Sonographie / Ultraschall",
-        ("sonographie", "ultraschall", "sono", "echographie"),
-        ("Sonographie", "Ultraschall", "Echographie"),
-        0.76,
-    ),
-    (
-        "clinical.diagnostics.doppler_sonography",
-        "Dopplersonographie",
-        ("dopplersonographie", "doppler", "arteriaumbilicalis"),
-        ("Dopplersonographie", "Doppler", "Sonographie"),
-        0.8,
-    ),
-    (
-        "clinical.diagnostics.ctg",
-        "CTG / Tokographie",
-        ("ctg", "tokographie", "cardiotokographie", "ctgbeurteilung", "ctgstreifen"),
-        ("CTG", "Tokographie", "Kardiotokographie"),
-        0.82,
-    ),
-    (
-        "clinical.diagnostics.prenatal_biometry",
-        "Fetale Biometrie / Pränataldiagnostik",
-        ("fetalebiometrie", "bpd", "femur", "fruchtwasser", "gestationsalter", "einlingsschwangerschaft"),
-        ("Fetale Biometrie", "Pränataldiagnostik", "Schwangerschaft", "Sonographie"),
-        0.76,
-    ),
-    (
-        "clinical.diagnostics.endoscopy",
-        "Endoskopie",
-        ("endoskopie", "gastroskopie", "koloskopie", "bronchoskopie", "zystoskopie", "laryngoskopie"),
-        ("Endoskopie", "Gastroskopie", "Koloskopie", "Bronchoskopie", "Zystoskopie"),
-        0.76,
-    ),
-    (
-        "clinical.diagnostics.functional_test",
-        "Funktionsdiagnostik",
-        ("spirometrie", "lungenfunktion", "audiometrie", "tympanometrie", "eeg", "emg", "nlg", "uroflow"),
-        ("Funktionsdiagnostik", "Spirometrie", "Audiometrie", "EEG", "EMG", "Uroflow"),
-        0.72,
-    ),
-    (
-        "clinical.procedure.wound_or_minor_surgery",
-        "Wundversorgung / kleiner Eingriff",
-        ("wundversorgung", "wundheilungsstorung", "naht", "exzision", "abtragung", "granulationspolyp", "biopsie"),
-        ("Wundversorgung", "Exzision", "Biopsie", "Operation", "Kleinchirurgie"),
-        0.76,
-    ),
-    (
-        "clinical.therapy.injection_infusion",
-        "Injektion / Infusion",
-        ("injektion", "infusion", "i.v.", "intravenos", "subkutan", "infiltration"),
-        ("Injektion", "Infusion", "Schmerztherapie"),
-        0.7,
-    ),
-    (
-        "clinical.therapy.vaccination",
-        "Impfung",
-        ("impfung", "geimpft", "impfstoff", "vakzination"),
-        ("Impfung", "Schutzimpfung", "Impfberatung"),
-        0.72,
-    ),
-]
-
-INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
-    {
-        "codes": ("ALL_KONGEB",),
-        "kind": "internal_service.consultation_fee",
-        "label": "Interner Hinweis Konsultationsgebühr",
-        "text": "Interner Leistungsbogen enthält ALL_KONGEB / Konsultationsgebühr",
-        "terms": ("Konsultationspauschale",),
-        "confidence": 0.64,
-    },
-    {
-        "codes": ("ALL_ORDGEB",),
-        "kind": "internal_service.ordination_fee",
-        "label": "Interner Hinweis Ordinationsgebühr",
-        "text": "Interner Leistungsbogen enthält ALL_ORDGEB / Ordinationsgebühr",
-        "terms": ("Augenärztliche Grundpauschale", "Grundpauschale Augen"),
-        "confidence": 0.66,
-    },
-    {
-        "codes": ("ALL_ORDNOT",),
-        "kind": "internal_service.emergency_ordination",
-        "label": "Interner Hinweis Ordinationsgebühr Notfall",
-        "text": "Interner Leistungsbogen enthält ALL_ORDNOT / Ordinationsgebühr Notfall",
-        "terms": ("Notfallpauschale", "Notfall", "Ordinationsgebühr", "Grundpauschale"),
-        "confidence": 0.7,
-    },
-    {
-        "codes": ("AUA_BUAHG",),
-        "kind": "internal_service.ophthalmology_fundus",
-        "label": "Interner Hinweis Augenhintergrund",
-        "text": "Interner Leistungsbogen enthält AUA_BUAHG / binokulare Untersuchung des Augenhintergrundes",
-        "terms": ("Augenhintergrund", "Fundus", "Binokulare Untersuchung des Augenhintergrundes"),
-        "confidence": 0.68,
-    },
-    {
-        "codes": ("AUA_ECHO",),
-        "kind": "internal_service.aua_echo",
-        "label": "Interner Hinweis Echographie Auge",
-        "text": "Interner Leistungsbogen enthält AUA_ECHO / Echographie",
-        "terms": ("Sonographie des Auges", "Ultraschall-Biometrie des Auges", "Ultraschall-Pachymetrie"),
-        "confidence": 0.62,
-    },
-    {
-        "codes": ("AUA_EPU", "ERG", "VEP"),
-        "kind": "internal_service.aua_epu",
-        "label": "Interner Hinweis elektrophysiologische Untersuchung",
-        "text": "Interner Leistungsbogen enthält elektrophysiologische Augen-Diagnostik",
-        "terms": ("Elektrophysiologische Untersuchung", "Elektroretinographie", "VEP"),
-        "confidence": 0.62,
-    },
-    {
-        "codes": ("AUA_FAG",),
-        "kind": "internal_service.aua_fag",
-        "label": "Interner Hinweis Fluoreszenzangiographie",
-        "text": "Interner Leistungsbogen enthält AUA_FAG / Fluoreszenzangiographie",
-        "terms": ("Fluoreszenzangiographie", "Angiographie Auge"),
-        "confidence": 0.62,
-    },
-    {
-        "codes": ("AUA_PDT",),
-        "kind": "internal_service.aua_pdt",
-        "label": "Interner Hinweis PDT",
-        "text": "Interner Leistungsbogen enthält AUA_PDT / PDT",
-        "terms": ("PDT", "Photodynamische Therapie"),
-        "confidence": 0.62,
-    },
-    {
-        "codes": ("AUA_PERI",),
-        "kind": "internal_service.aua_peri",
-        "label": "Interner Hinweis Perimetrie",
-        "text": "Interner Leistungsbogen enthält AUA_PERI / Perimetrie",
-        "terms": ("Perimetrie", "Gesichtsfeld"),
-        "confidence": 0.62,
-    },
-    {
-        "codes": ("AUA_SCHIEL",),
-        "kind": "internal_service.aua_schiel",
-        "label": "Interner Hinweis Schielbehandlung",
-        "text": "Interner Leistungsbogen enthält AUA_SCHIEL / quantitative Untersuchung des binokularen Sehens",
-        "terms": ("Schielbehandlung", "Quantitative Untersuchung des binokularen Sehens"),
-        "confidence": 0.62,
-    },
-    {
-        "codes": ("TWS",),
-        "kind": "internal_service.aua_tws",
-        "label": "Interner Hinweis Tränenweg-Sondierung",
-        "text": "Interner Leistungsbogen enthält TWS / TW-Sondierung",
-        "terms": ("Tränenweg", "Tränenwege", "Sondierung", "Kleinchirurgischer Eingriff am Auge"),
-        "confidence": 0.58,
-    },
-    {
-        "codes": ("AUA_LIDHEB",),
-        "kind": "internal_service.aua_lidheber",
-        "label": "Interner Hinweis Lidheber-Operation",
-        "text": "Interner Leistungsbogen enthält AUA_LIDHEB / OP der Lidsenkung mit Lidheber",
-        "terms": ("Lidheber", "Lidoperation", "Kleinchirurgischer Eingriff am Auge"),
-        "confidence": 0.58,
-    },
-]
-
-
-def _compact(text: str) -> str:
-    normalized = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
-    return re.sub(r"\s+", "", normalized.lower())
-
-
-def _date_to_iso(value: str | None) -> str | None:
-    if not value:
-        return None
-    day, month, year = value.split(".")
-    return f"{year}-{month}-{day}"
-
-
-def _first_date(text: str) -> str | None:
-    match = DATE_RE.search(text)
-    return _date_to_iso(match.group(1)) if match else None
-
-
-def _first_time(text: str) -> str | None:
-    match = TIME_RE.search(text)
-    return match.group(1) if match else None
-
-
-def _first_service_date(text: str) -> str | None:
-    for match in DATE_RE.finditer(text):
-        before = text[max(0, match.start() - 60) : match.start()]
-        before_key = re.sub(r"[^a-z0-9]+", "", _compact(before))
-        if before_key.endswith(("geb", "gebdat", "geburtsdatum", "geboren", "gebam")):
-            continue
-        if any(token in before_key[-30:] for token in ("gebdat", "geburtsdatum", "geboren", "gebam")):
-            continue
-        recent = before_key[-60:]
-        if any(
-            token in recent
-            for token in (
-                "zustandnach",
-                "z.n.",
-                "znveam",
-                "entbindungperveam",
-                "optermin",
-                "operationstermin",
-                "terminwurde",
-                "terminfurden",
-                "geplantfur",
-                "vereinbartfur",
-                "geburtstermin",
-                "letzteperiode",
-            )
-        ):
-            continue
-        return _date_to_iso(match.group(1))
-    return None
-
-
-def _service_datetime(text: str, fallback: bool = True) -> tuple[str | None, str | None]:
-    compact = _compact(text)
-    datetime_patterns = [
-        r"durchgef.{0,40}?(\d{2}\.\d{2}\.\d{4})um(\d{2}:\d{2})",
-        r"probenentnahmedat\.?(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
-        r"bezugsdatum(\d{2}\.\d{2}\.\d{4})zeit(\d{2}:\d{2})",
-        r"aufnahmezna(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
-        r"aufnahme(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
-        r"termindgf:?(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
-        r"leistungam(\d{2}\.\d{2}\.\d{4})um(\d{2}:\d{2})",
-        r"befundetam(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
-        r"auftragsdatum(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
-        r"(\d{2}\.\d{2}\.\d{4})\(?start:?(\d{2}:\d{2})",
-        r"ctgstreifenvom(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
-    ]
-    for pattern in datetime_patterns:
-        match = re.search(pattern, compact)
-        if match:
-            return _date_to_iso(match.group(1)), match.group(2)
-
-    date_patterns = [
-        r"am(\d{2}\.\d{2}\.\d{4})inambulanterbehandlung",
-        r"datum:?(\d{2}\.\d{2}\.\d{4})",
-        r"ctgstreifenvom(\d{2}\.\d{2}\.\d{4})",
-        r"behandlungsdatum:?(\d{2}\.\d{2}\.\d{4})",
-    ]
-    for pattern in date_patterns:
-        match = re.search(pattern, compact)
-        if match:
-            return _date_to_iso(match.group(1)), _first_time(text)
-
-    if not fallback:
-        return None, None
-    return _first_service_date(text), _first_time(text)
-
-
-def _treatment_end_datetime(text: str) -> tuple[str | None, str | None]:
-    compact = _compact(text)
-    patterns = [
-        r"ended\.?behand(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
-        r"endebehand(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, compact)
-        if match:
-            return _date_to_iso(match.group(1)), match.group(2)
-    return None, None
-
-
-def _extract_icd10(text: str) -> str | None:
-    compact_upper = _compact(text).upper()
-    for marker in ("AUFNAHMEDIAGNOSE", "AUFNAHMEDIAGNOSEN", "DIAGNOSE", "DIAGNOSEN", "ICD"):
-        index = compact_upper.find(marker)
-        if index >= 0:
-            match = ICD_RE.search(compact_upper[index : index + 500])
-            if match:
-                return match.group(1)
-    return None
-
-
-def _evidence_id(kind: str, page: int, text: str) -> str:
-    digest = hashlib.sha1(f"{kind}:{page}:{text}".encode("utf-8")).hexdigest()[:10]
-    return f"ev-{digest}"
 
 
 def extract_evidence(
     pages: list[PageText],
     segments: list[DocumentSegment],
+    definitions: ClinicalDefinitionSet | None = None,
 ) -> tuple[list[Evidence], list[ReviewCandidate], list[ExcludedEvidence], dict[str, str | None]]:
-    relevant_pages = set()
-    segment_type_by_page: dict[int, str] = {}
-    for segment in segments:
-        for page_no in range(segment.start_page, segment.end_page + 1):
-            segment_type_by_page[page_no] = segment.segment_type
-            if segment.relevant_for_billing:
-                relevant_pages.add(page_no)
-
+    rule_set = definitions or get_runtime_clinical_definition_set()
+    segment_type_by_page, relevant_pages = _segment_index(segments)
     evidence: list[Evidence] = []
     review: list[ReviewCandidate] = []
     excluded: list[ExcludedEvidence] = []
@@ -515,115 +33,369 @@ def extract_evidence(
         "quarter": None,
         "diagnosis": None,
     }
-    last_lab_datetime: tuple[str | None, str | None] = (None, None)
-    last_clinical_datetime: tuple[str | None, str | None] = (None, None)
-    last_clinical_segment: str | None = None
-    last_clinical_page: int | None = None
+    datetime_state: dict[str, tuple[str | None, str | None]] = {}
+    fallback_treatment_start: str | None = None
 
     for page in pages:
-        segment_type = segment_type_by_page.get(page.page, "other")
-        text = page.text or ""
-        compact = _compact(text)
-        if segment_type == "laboratory_result":
-            explicit_lab_datetime = _service_datetime(text, fallback=False)
-            if explicit_lab_datetime[0]:
-                last_lab_datetime = explicit_lab_datetime
+        segment_type = segment_type_by_page.get(page.page, str(rule_set.formats.get("fallback_segment_type") or "other"))
+        segment_definition = rule_set.segment_types.get(segment_type, {})
+        flags = {str(value) for value in segment_definition.get("flags") or []}
+        datetimes = {
+            role: _extract_datetime(page.text, definition, rule_set)
+            for role, definition in rule_set.datetime_roles.items()
+        }
+        match_context = normalize_text(
+            page.text or "",
+            segment_type=segment_type,
+            segment_flags=flags,
+            datetimes=datetimes,
+        )
+        facts = {
+            "page": page.page,
+            "segment_type": segment_type,
+        }
 
-        if segment_type in CLINICAL_CONTEXT_SEGMENTS:
-            if (
-                ("kv-abrechnung" in compact and "notfall" in compact)
-                or "aufnahmezna" in compact
-                or "notfallambulanz" in compact
-                or "vorstellungnotfk" in compact
-            ):
-                service_date, service_time = _service_datetime(text)
-                case_context["treatment_start"] = case_context["treatment_start"] or _join_datetime(service_date, service_time)
-                evidence.append(
-                    _ev(
-                        "context.kv_notfall_zna",
-                        "KV-Notfall/ZNA",
-                        page.page,
-                        text,
-                        service_date,
-                        service_time,
-                        0.95,
-                    )
-                )
+        _update_datetime_state(rule_set, match_context, datetime_state)
+        _apply_context_updates(rule_set, match_context, case_context)
 
-            specialty_evidence = _extract_specialty_ambulance(page, segment_type)
-            evidence.extend(specialty_evidence)
-            for item in specialty_evidence:
-                if item.kind == "context.specialty_ambulance_emergency" and item.service_date:
-                    case_context["treatment_start"] = case_context["treatment_start"] or _join_datetime(item.service_date, item.service_time)
-
-            end_date, end_time = _treatment_end_datetime(text)
-            if end_date:
-                case_context["treatment_end"] = _join_datetime(end_date, end_time)
-
-            diagnosis = _extract_icd10(text)
-            if diagnosis:
-                diagnosis_date, diagnosis_time = _service_datetime(text)
-                case_context["diagnosis"] = diagnosis
-                evidence.append(
-                    _ev(
-                        "diagnosis.icd10",
-                        f"ICD-10 {diagnosis}",
-                        page.page,
-                        diagnosis,
-                        diagnosis_date,
-                        diagnosis_time,
-                        0.75,
-                        value=diagnosis,
-                        metadata={"icd10": diagnosis},
-                    )
-                )
-
+        page_evidence: list[Evidence] = []
         if page.page in relevant_pages:
-            generic_evidence = _extract_generic_clinical_evidence(page, segment_type)
-            is_continuation = last_clinical_page == page.page - 1 and segment_type != "other"
-            if is_continuation and last_clinical_datetime[0]:
-                for item in generic_evidence:
-                    if not item.service_date:
-                        item.service_date, item.service_time = last_clinical_datetime
-                        item.metadata = {**item.metadata, "service_datetime_carried_from_previous_page": True}
-            dated_evidence = next((item for item in generic_evidence if item.service_date), None)
-            if dated_evidence:
-                last_clinical_datetime = (dated_evidence.service_date, dated_evidence.service_time)
-            last_clinical_segment = segment_type
-            last_clinical_page = page.page
-            evidence.extend(generic_evidence)
-            for item in generic_evidence:
-                if item.service_date:
-                    case_context["treatment_start"] = case_context["treatment_start"] or _join_datetime(item.service_date, item.service_time)
-            evidence.extend(_extract_radiology(page, segment_type))
-            evidence.extend(_extract_labs(page, segment_type, last_lab_datetime))
-            evidence.extend(_extract_ecg(page, segment_type))
+            primary = segment_definition.get("primary_evidence")
+            if isinstance(primary, dict) and condition_matches(primary.get("when") or {"always": True}, match_context):
+                page_evidence.append(
+                    _build_evidence(primary, page, match_context, datetimes, datetime_state, rule_set, facts)
+                )
 
-        evidence.extend(_extract_internal_service_hints(page, segment_type))
+        deferred: list[dict[str, Any]] = []
+        for rule in rule_set.evidence_rules:
+            if rule.get("emit_if_no_page_evidence"):
+                deferred.append(rule)
+                continue
+            if bool(rule.get("requires_relevant", True)) and page.page not in relevant_pages:
+                continue
+            item = _apply_evidence_rule(rule, page, match_context, datetimes, datetime_state, rule_set, facts)
+            if item is None:
+                continue
+            page_evidence.append(item)
+            _update_context_from_evidence(rule, item, case_context)
+            also_review = rule.get("also_review")
+            if isinstance(also_review, dict):
+                review.append(_review_from_evidence(also_review, item))
 
-        if segment_type in CLINICAL_CONTEXT_SEGMENTS or segment_type in {"consult", "data_capture"}:
-            review.extend(_extract_review_candidates(page, segment_type))
-            excluded.extend(_extract_exclusions(page, segment_type))
+        if not page_evidence:
+            for rule in deferred:
+                if bool(rule.get("requires_relevant", True)) and page.page not in relevant_pages:
+                    continue
+                item = _apply_evidence_rule(rule, page, match_context, datetimes, datetime_state, rule_set, facts)
+                if item is not None:
+                    page_evidence.append(item)
 
+        for item in page_evidence:
+            fallback_treatment_start = fallback_treatment_start or _join_datetime(item.service_date, item.service_time)
+        evidence.extend(page_evidence)
+
+        service_date, _ = datetimes.get(str(rule_set.formats.get("review_datetime_role") or "service"), (None, None))
+        review.extend(_apply_review_rules(rule_set, page, match_context, service_date))
+        excluded.extend(_apply_exclusion_rules(rule_set, page, match_context, service_date))
+
+    if not case_context["treatment_start"]:
+        case_context["treatment_start"] = fallback_treatment_start
     if case_context["treatment_start"]:
         case_context["quarter"] = quarter_from_date(case_context["treatment_start"][:10])
+    else:
+        service_dates = sorted(item.service_date for item in evidence if item.service_date)
+        if service_dates:
+            case_context["quarter"] = quarter_from_date(service_dates[0])
 
     return _dedupe_evidence(evidence), _dedupe_review(review), _dedupe_excluded(excluded), case_context
-
-
-def _join_datetime(date_value: str | None, time_value: str | None) -> str | None:
-    if not date_value:
-        return None
-    return f"{date_value}T{time_value or '00:00'}:00"
 
 
 def quarter_from_date(date_value: str | None) -> str | None:
     if not date_value:
         return None
     year, month, _ = date_value.split("-")
-    month_number = int(month)
-    quarter = (month_number - 1) // 3 + 1
+    quarter = (int(month) - 1) // 3 + 1
     return f"{year}/Q{quarter}"
+
+
+def _segment_index(segments: list[DocumentSegment]) -> tuple[dict[int, str], set[int]]:
+    segment_type_by_page: dict[int, str] = {}
+    relevant_pages: set[int] = set()
+    for segment in segments:
+        for page_no in range(segment.start_page, segment.end_page + 1):
+            segment_type_by_page[page_no] = segment.segment_type
+            if segment.relevant_for_billing:
+                relevant_pages.add(page_no)
+    return segment_type_by_page, relevant_pages
+
+
+def _apply_evidence_rule(
+    rule: dict[str, Any],
+    page: PageText,
+    context: MatchContext,
+    datetimes: dict[str, tuple[str | None, str | None]],
+    datetime_state: dict[str, tuple[str | None, str | None]],
+    definitions: ClinicalDefinitionSet,
+    facts: dict[str, Any],
+) -> Evidence | None:
+    if not condition_matches(rule["when"], context):
+        return None
+    unless = rule.get("unless")
+    if isinstance(unless, dict) and condition_matches(unless, context):
+        return None
+
+    capture = rule.get("capture")
+    value = capture_value(capture, context) if isinstance(capture, dict) else None
+    if capture and not value:
+        return None
+    return _build_evidence(rule, page, context, datetimes, datetime_state, definitions, {**facts, "value": value or ""})
+
+
+def _build_evidence(
+    rule: dict[str, Any],
+    page: PageText,
+    context: MatchContext,
+    datetimes: dict[str, tuple[str | None, str | None]],
+    datetime_state: dict[str, tuple[str | None, str | None]],
+    definitions: ClinicalDefinitionSet,
+    variables: dict[str, Any],
+) -> Evidence:
+    service_date, service_time, carried = _resolve_rule_datetime(
+        rule,
+        context,
+        datetimes,
+        datetime_state,
+        definitions,
+    )
+    rendered = dict(rule)
+    for field in ("kind", "label", "text", "value", "unit", "metadata", "search_terms"):
+        if field in rule:
+            rendered[field] = render_value(rule[field], variables)
+    text_value = page.text if rendered.get("text_mode", "source") == "source" else str(rendered.get("text") or "")
+    metadata = dict(rendered.get("metadata") or {})
+    search_terms = rendered.get("search_terms") or []
+    if search_terms:
+        metadata["search_terms"] = list(search_terms)
+    if carried:
+        metadata["service_datetime_carried_from_previous_page"] = True
+    value = variables.get("value") or rendered.get("value")
+    return _ev(
+        kind=str(rendered["kind"]),
+        label=str(rendered["label"]),
+        page=page.page,
+        text=text_value,
+        service_date=service_date,
+        service_time=service_time,
+        confidence=float(rendered.get("confidence") or 0.8),
+        value=str(value) if value else None,
+        unit=str(rendered.get("unit")) if rendered.get("unit") else None,
+        metadata=metadata,
+    )
+
+
+def _resolve_rule_datetime(
+    rule: dict[str, Any],
+    context: MatchContext,
+    datetimes: dict[str, tuple[str | None, str | None]],
+    datetime_state: dict[str, tuple[str | None, str | None]],
+    definitions: ClinicalDefinitionSet,
+) -> tuple[str | None, str | None, bool]:
+    procedure_patterns = rule.get("datetime_match_patterns")
+    if isinstance(procedure_patterns, list) and procedure_patterns:
+        value = _extract_procedure_datetime(context, [str(item) for item in procedure_patterns], definitions)
+        if value[0]:
+            return value[0], value[1], False
+
+    segment_sources = (definitions.formats.get("segment_datetime_sources") or {}).get(context.segment_type or "")
+    sources = rule.get("datetime_sources") or segment_sources or definitions.formats.get("default_datetime_sources") or ["service"]
+    for source in sources:
+        source_name = str(source)
+        if source_name.startswith("state:"):
+            value = datetime_state.get(source_name.split(":", 1)[1], (None, None))
+            if value[0]:
+                return value[0], value[1], True
+            continue
+        value = datetimes.get(source_name, (None, None))
+        if value[0]:
+            return value[0], value[1], False
+    return None, None, False
+
+
+def _extract_procedure_datetime(
+    context: MatchContext,
+    procedure_patterns: list[str],
+    definitions: ClinicalDefinitionSet,
+) -> tuple[str | None, str | None]:
+    source_name = str(definitions.formats.get("procedure_datetime_source") or "key")
+    source = context.source(source_name)
+    procedure = "(?:" + "|".join(procedure_patterns) + ")"
+    for suffix in definitions.formats.get("procedure_datetime_patterns") or []:
+        pattern = procedure + str(suffix)
+        matches = list(re.finditer(pattern, source, re.IGNORECASE))
+        if not matches:
+            continue
+        match = matches[-1]
+        date_value = _date_to_iso(match.group(1))
+        time_value = match.group(2) if match.lastindex and match.lastindex >= 2 else None
+        return date_value, time_value
+    return None, None
+
+
+def _extract_datetime(
+    text: str,
+    definition: dict[str, Any],
+    definitions: ClinicalDefinitionSet,
+) -> tuple[str | None, str | None]:
+    normalized = normalize_text(text)
+    for pattern_definition in definition.get("patterns") or []:
+        source = normalized.source(str(pattern_definition.get("source") or "compact"))
+        matches = list(re.finditer(str(pattern_definition["regex"]), source, re.IGNORECASE))
+        if not matches:
+            continue
+        selected = matches[-1] if pattern_definition.get("select") == "last" else matches[0]
+        date_group = int(pattern_definition.get("date_group") or 1)
+        time_group = int(pattern_definition.get("time_group") or 2)
+        date_value = _date_to_iso(selected.group(date_group))
+        time_value = selected.group(time_group) if selected.lastindex and selected.lastindex >= time_group else None
+        return date_value, time_value
+
+    if not definition.get("fallback_first"):
+        return None, None
+    date_regex = str(definitions.formats.get("date_regex") or r"(\d{2}\.\d{2}\.\d{4})")
+    time_regex = str(definitions.formats.get("time_regex") or r"(\d{2}:\d{2})")
+    excluded = [str(value) for value in definition.get("fallback_excluded_before") or []]
+    excluded_regex = [str(value) for value in definition.get("fallback_excluded_before_regex") or []]
+    exclusion_window = int(definition.get("fallback_exclusion_window") or 80)
+    date_value = _first_allowed_match(normalized.folded, date_regex, excluded, excluded_regex, exclusion_window)
+    time_value = _first_allowed_match(normalized.folded, time_regex, excluded, excluded_regex, exclusion_window)
+    return _date_to_iso(date_value), time_value
+
+
+def _first_allowed_match(
+    text: str,
+    pattern: str,
+    excluded_before: list[str],
+    excluded_before_regex: list[str],
+    exclusion_window: int,
+) -> str | None:
+    for match in re.finditer(pattern, text, re.IGNORECASE):
+        before = re.sub(r"[^a-z0-9]+", "", text[max(0, match.start() - 80) : match.start()].casefold())
+        recent = before[-exclusion_window:]
+        if any(re.sub(r"[^a-z0-9]+", "", value.casefold()) in recent for value in excluded_before):
+            continue
+        if any(re.search(pattern, recent, re.IGNORECASE) for pattern in excluded_before_regex):
+            continue
+        return match.group(1)
+    return None
+
+
+def _date_to_iso(value: str | None) -> str | None:
+    if not value:
+        return None
+    day, month, year = value.split(".")
+    return f"{year}-{month}-{day}"
+
+
+def _update_datetime_state(
+    definitions: ClinicalDefinitionSet,
+    context: MatchContext,
+    state: dict[str, tuple[str | None, str | None]],
+) -> None:
+    for track in definitions.state_tracks:
+        if not condition_matches(track["when"], context):
+            continue
+        role = str(track["datetime_role"])
+        value = (context.datetimes or {}).get(role, (None, None))
+        if value[0]:
+            state[str(track["name"])] = value
+
+
+def _apply_context_updates(
+    definitions: ClinicalDefinitionSet,
+    context: MatchContext,
+    case_context: dict[str, str | None],
+) -> None:
+    for update in definitions.context_updates:
+        if not condition_matches(update["when"], context):
+            continue
+        key = str(update["key"])
+        role = str(update["datetime_role"])
+        date_value, time_value = (context.datetimes or {}).get(role, (None, None))
+        value = _join_datetime(date_value, time_value)
+        if value and (update.get("replace") or not case_context.get(key)):
+            case_context[key] = value
+
+
+def _update_context_from_evidence(
+    rule: dict[str, Any],
+    evidence: Evidence,
+    case_context: dict[str, str | None],
+) -> None:
+    update = rule.get("context_update")
+    if not isinstance(update, dict):
+        return
+    key = str(update["key"])
+    source = str(update.get("source") or "datetime")
+    value = evidence.value if source == "value" else _join_datetime(evidence.service_date, evidence.service_time)
+    if value and (update.get("replace") or not case_context.get(key)):
+        case_context[key] = value
+
+
+def _apply_review_rules(
+    definitions: ClinicalDefinitionSet,
+    page: PageText,
+    context: MatchContext,
+    service_date: str | None,
+) -> list[ReviewCandidate]:
+    quarter = quarter_from_date(service_date)
+    result: list[ReviewCandidate] = []
+    for rule in definitions.review_rules:
+        if not condition_matches(rule["when"], context):
+            continue
+        candidate_kind = str(rule.get("candidate_kind") or "")
+        result.append(
+            ReviewCandidate(
+                evidence=str(rule["evidence"]),
+                evidence_pages=[page.page],
+                reason=str(rule["reason"]),
+                possible_gops=candidate_gops_for_evidence_kind(candidate_kind, quarter=quarter) if candidate_kind else [],
+            )
+        )
+    return result
+
+
+def _review_from_evidence(definition: dict[str, Any], evidence: Evidence) -> ReviewCandidate:
+    candidate_kind = str(definition.get("candidate_kind") or evidence.kind)
+    return ReviewCandidate(
+        evidence=str(definition.get("evidence") or evidence.label),
+        evidence_pages=[evidence.page],
+        reason=str(definition["reason"]),
+        possible_gops=candidate_gops_for_evidence_kind(candidate_kind, quarter=quarter_from_date(evidence.service_date)),
+    )
+
+
+def _apply_exclusion_rules(
+    definitions: ClinicalDefinitionSet,
+    page: PageText,
+    context: MatchContext,
+    service_date: str | None,
+) -> list[ExcludedEvidence]:
+    quarter = quarter_from_date(service_date)
+    result: list[ExcludedEvidence] = []
+    for rule in definitions.exclusion_rules:
+        if not condition_matches(rule["when"], context):
+            continue
+        candidate_kind = str(rule.get("candidate_kind") or "")
+        candidates = candidate_gops_for_evidence_kind(candidate_kind, quarter=quarter) if candidate_kind else []
+        result.append(
+            ExcludedEvidence(
+                evidence=str(rule["evidence"]),
+                evidence_pages=[page.page],
+                reason=str(rule["reason"]),
+                not_billed_gop=candidates[0] if candidates else None,
+            )
+        )
+    return result
 
 
 def _ev(
@@ -639,8 +411,9 @@ def _ev(
     metadata: dict[str, object] | None = None,
 ) -> Evidence:
     snippet = re.sub(r"\s+", " ", text).strip()[:240]
+    digest = hashlib.sha1(f"{kind}:{page}:{snippet}".encode("utf-8")).hexdigest()[:10]
     return Evidence(
-        evidence_id=_evidence_id(kind, page, snippet),
+        evidence_id=f"ev-{digest}",
         kind=kind,
         label=label,
         page=page,
@@ -654,518 +427,10 @@ def _ev(
     )
 
 
-def _search_terms(*terms: str) -> dict[str, object]:
-    return {"search_terms": [term for term in terms if term]}
-
-
-def _has_internal_code(text: str, *codes: str) -> bool:
-    folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower()
-    for code in codes:
-        pattern = rf"(?<![a-z0-9_])(?:\d+(?:[,.]\d+)?\s*)?{re.escape(code.lower())}(?![a-z0-9_])"
-        if re.search(pattern, folded):
-            return True
-    return False
-
-
-def _matches_markers(kind: str, compact: str, markers: tuple[str, ...]) -> bool:
-    if kind == "clinical.domain.surgery" and any(marker in compact for marker in ("geplantereingriff", "opplanung", "kanngeplantwerden")):
-        if not any(marker in compact for marker in ("durchgefuhrt", "opbericht", "operationsbericht")):
-            return False
-    if kind == "clinical.domain.dermatology":
-        clear_dermatology = tuple(marker for marker in markers if marker != "haut")
-        if any(marker in compact for marker in clear_dermatology):
-            return True
-        return "haut" in compact and "netzhaut" not in compact and "netzahut" not in compact
-    if kind == "clinical.domain.urology":
-        clear_urology = ("prostata", "harnblase", "zystoskopie", "cystoskopie", "uroflow", "harnstau", "ureter", "urin")
-        if "neurologie" in compact and not any(marker in compact for marker in clear_urology):
-            return False
-        if any(marker in compact for marker in ("nephrologie", "dialyse", "niereninsuffizienz")) and not any(marker in compact for marker in clear_urology):
-            return False
-    return any(marker in compact for marker in markers)
-
-
-def _extract_generic_clinical_evidence(page: PageText, segment_type: str) -> list[Evidence]:
-    if segment_type not in CLINICAL_CONTEXT_SEGMENTS:
-        return []
-
-    text = page.text
-    compact = _compact(text)
-    service_date, service_time = _service_datetime(text)
-    found: list[Evidence] = []
-    primary_domain_kind = SEGMENT_DOMAIN_KIND.get(segment_type)
-    broad_domain_matching = segment_type in {"case_context", "treatment_report", "clinical_report"}
-
-    for kind, label, markers, terms, confidence in DOMAIN_EVIDENCE:
-        is_primary_domain = kind == primary_domain_kind
-        is_emergency_domain = kind == "clinical.domain.emergency" and _matches_markers(kind, compact, markers)
-        is_broad_domain_match = broad_domain_matching and _matches_markers(kind, compact, markers)
-        if is_primary_domain or is_emergency_domain or is_broad_domain_match:
-            found.append(
-                _ev(
-                    kind,
-                    label,
-                    page.page,
-                    text,
-                    service_date,
-                    service_time,
-                    confidence,
-                    metadata=_search_terms(*terms),
-                )
-            )
-
-    for kind, label, markers, terms, confidence in SERVICE_EVIDENCE:
-        if any(marker in compact for marker in markers) and not _service_is_only_planned(kind, compact):
-            found.append(
-                _ev(
-                    kind,
-                    label,
-                    page.page,
-                    text,
-                    service_date,
-                    service_time,
-                    confidence,
-                    metadata=_search_terms(*terms),
-                )
-            )
-
-    renal_finding = any(
-        marker in compact
-        for marker in (
-            "hydronephrose",
-            "harnstau",
-            "hstii",
-            "niererechts",
-            "nierenrechts",
-            "mutterlicheniere",
-            "muetterlicheniere",
-        )
-    )
-    sonography_context = any(
-        marker in compact
-        for marker in ("sonographie", "ultraschall", "sono", "echographie", "fetalebiometrie", "bpd")
-    )
-    if renal_finding and sonography_context:
-        found.append(
-            _ev(
-                "clinical.diagnostics.maternal_renal_sonography",
-                "Sonografie der mütterlichen Nieren / des Retroperitoneums",
-                page.page,
-                text,
-                service_date,
-                service_time,
-                0.88,
-                metadata=_search_terms("Sonografie Niere", "Abdomensonografie", "Retroperitoneum", "Hydronephrose"),
-            )
-        )
-
-    if not found and segment_type not in {"laboratory_result", "radiology_report", "ecg", "ctg"}:
-        found.append(
-            _ev(
-                "clinical.document.general",
-                "Klinischer Dokumentinhalt",
-                page.page,
-                text,
-                service_date,
-                service_time,
-                0.58,
-                metadata=_search_terms("Grundpauschale", "Untersuchung", "Beratung"),
-            )
-        )
-
-    return found
-
-
-def _service_is_only_planned(kind: str, compact: str) -> bool:
-    if kind == "clinical.diagnostics.ctg":
-        planned = any(marker in compact for marker in ("alle2tagectg", "ctgalle2tage", "ctgempfohlen"))
-        performed = any(
-            marker in compact
-            for marker in ("ctgaufnahmebegonnen", "ctgaufnahmebeendet", "ctgstreifen", "ctgbeurteilung", "aufnahmectgja")
-        )
-        return planned and not performed
-    return False
-
-
-def _extract_specialty_ambulance(page: PageText, segment_type: str) -> list[Evidence]:
-    if segment_type not in CLINICAL_CONTEXT_SEGMENTS:
-        return []
-
-    text = page.text
-    compact = _compact(text)
-    service_date, service_time = _service_datetime(text)
-    found: list[Evidence] = []
-
-    if (
-        "notfallambulanz" in compact
-        or "notfallambulanzaugenklinik" in compact
-        or "notfallmassig" in compact
-        or "notfallsymptomorientierteuntersuchung" in compact
-        or "notfall-symptomorientierteuntersuchung" in compact
-    ):
-        search_terms = [
-            "Notfallpauschale",
-            "Notfall",
-            "Grundpauschale",
-        ]
-        if "augen" in compact:
-            search_terms.extend(["Augenheilkunde", "Augenärztliche Grundpauschale"])
-        if any(token in compact for token in ("frauenklinik", "gynakologie", "geburtshilfe", "schwangerschaft")):
-            search_terms.extend(["Gynäkologie", "Geburtshilfe", "Schwangerschaft"])
-
-        found.append(
-            _ev(
-                "context.specialty_ambulance_emergency",
-                "Fachambulanz-/Notfallkontakt",
-                page.page,
-                "Notfallkontakt in einer Fachambulanz dokumentiert",
-                service_date,
-                service_time,
-                0.88,
-                metadata=_search_terms(*search_terms),
-            )
-        )
-
-    if "ambulanzaugen-befund" in compact or "augenambulanz" in compact or "augenklinik" in compact:
-        found.append(
-            _ev(
-                "clinical.ophthalmology_report",
-                "Augenärztlicher Ambulanzbefund",
-                page.page,
-                text,
-                service_date,
-                service_time,
-                0.84,
-                metadata=_search_terms(
-                    "Augenärztliche Untersuchung",
-                    "Augenheilkunde",
-                    "Ophthalmologische Untersuchung",
-                    "Grundpauschale Augen",
-                ),
-            )
-        )
-
-    if any(
-        token in compact
-        for token in [
-            "visus",
-            "tensio",
-            "vordereraugenabschnitt",
-            "hintereraugenabschnitt",
-            "hornhaut-topographie",
-            "fluoreszein",
-            "schirmer-test",
-        ]
-    ):
-        found.append(
-            _ev(
-                "clinical.ophthalmology_exam",
-                "Ophthalmologische Untersuchung",
-                page.page,
-                text,
-                service_date,
-                service_time,
-                0.86,
-                metadata=_search_terms(
-                    "Augenärztliche Untersuchung",
-                    "Visus",
-                    "Tonometrie",
-                    "Spaltlampenuntersuchung",
-                    "Hornhaut",
-                ),
-            )
-        )
-
-    if "hintereraugenabschnitt" in compact or "netzhautzentralanliegend" in compact:
-        found.append(
-            _ev(
-                "clinical.ophthalmology_fundus",
-                "Augenhintergrund / Fundus-Hinweis",
-                page.page,
-                text,
-                service_date,
-                service_time,
-                0.78,
-                metadata=_search_terms(
-                    "Augenhintergrund",
-                    "Fundus",
-                    "Binokulare Untersuchung des Augenhintergrundes",
-                ),
-            )
-        )
-
-    return found
-
-
-def _extract_ecg(page: PageText, segment_type: str) -> list[Evidence]:
-    if segment_type != "ecg":
-        return []
-
-    text = page.text
-    compact = _compact(text)
-    service_date, service_time = _service_datetime(text)
-    found: list[Evidence] = []
-
-    if (
-        "standard12ableitungen" in compact
-        or "12-kanal-ekg" in compact
-        or "12kanalekg" in compact
-        or "ekg" in compact
-        or "sinusrhythmus" in compact
-    ):
-        found.append(
-            _ev(
-                "clinical.ecg_12_lead",
-                "12-Kanal-EKG",
-                page.page,
-                text,
-                service_date,
-                service_time,
-                0.84,
-                metadata=_search_terms(
-                    "EKG",
-                    "12-Kanal-EKG",
-                    "Elektrokardiogramm",
-                    "Standard 12 Ableitungen",
-                    "Ruhe-EKG",
-                ),
-            )
-        )
-
-    if "sinusrhythmus" in compact:
-        found.append(
-            _ev(
-                "clinical.ecg_rhythm_findings",
-                "EKG-Rhythmusbefund",
-                page.page,
-                "Sinusrhythmus im EKG dokumentiert",
-                service_date,
-                service_time,
-                0.72,
-                metadata=_search_terms("EKG", "Rhythmusbefund", "Sinusrhythmus"),
-            )
-        )
-
-    return found
-
-
-def _extract_internal_service_hints(page: PageText, segment_type: str) -> list[Evidence]:
-    if segment_type != "data_capture":
-        return []
-
-    text = page.text
-    service_date, service_time = _service_datetime(text)
-    found: list[Evidence] = []
-
-    for hint in INTERNAL_SERVICE_HINTS:
-        codes = tuple(str(code) for code in hint["codes"])
-        if _has_internal_code(text, *codes):
-            found.append(
-                _ev(
-                    str(hint["kind"]),
-                    str(hint["label"]),
-                    page.page,
-                    str(hint["text"]),
-                    service_date,
-                    service_time,
-                    float(hint["confidence"]),
-                    metadata=_search_terms(*(str(term) for term in hint["terms"])),
-                )
-            )
-
-    return found
-
-
-def _extract_radiology(page: PageText, segment_type: str) -> list[Evidence]:
-    if segment_type not in {"radiology_report", "treatment_report"}:
-        return []
-
-    text = page.text
-    compact = _compact(text)
-    service_date, service_time = _service_datetime(text, fallback=False)
-    found: list[Evidence] = []
-    performed = "durchgefuhrt" in compact and "storniert" not in compact
-
-    if ("ctkopfnativ" in compact or "ctctschadelnativ" in compact) and performed:
-        found.append(_ev("radiology.ct_head_native", "CT Kopf nativ", page.page, "CT Kopf nativ durchgeführt", service_date, service_time, 0.96))
-
-    if ("rontgenschulter2eb" in compact or "roeschulter2eb" in compact) and performed:
-        found.append(_ev("radiology.xray_shoulder_2_planes", "Röntgen Schulter 2 Ebenen", page.page, "Röntgen Schulter 2 Ebenen durchgeführt", service_date, service_time, 0.96))
-
-    if ("rontgenhws2ebenen" in compact or "roehws2ebenen" in compact) and performed:
-        found.append(_ev("radiology.xray_spine_hws_2_planes", "Röntgen HWS 2 Ebenen", page.page, "Röntgen HWS 2 Ebenen durchgeführt", service_date, service_time, 0.96))
-
-    if ("rontgenlunge" in compact or "roelunge" in compact or "thorax" in compact) and ("2ebenen" in compact or "p.a." in text.lower()):
-        found.append(_ev("radiology.xray_thorax_2_planes", "Röntgen Thorax/Lunge 2 Ebenen", page.page, "Röntgen Thorax/Lunge 2 Ebenen", service_date, service_time, 0.86))
-
-    if ("ctlws" in compact or "ct-lws" in compact or "ctcthws" in compact or "cthws" in compact) and performed:
-        found.append(_ev("radiology.ct_spine_section", "CT Wirbelsäulenabschnitt", page.page, "CT Wirbelsäulenabschnitt durchgeführt", service_date, service_time, 0.84))
-
-    if _has_any(compact, "rontgenhand", "roehand", "rontgenfuss", "roefuss") and performed:
-        found.append(
-            _ev(
-                "radiology.xray_hand_foot",
-                "Röntgen Hand/Fuß",
-                page.page,
-                "Röntgen Hand/Fuß durchgeführt",
-                service_date,
-                service_time,
-                0.94,
-                metadata=_search_terms("Aufnahmen der Hand, des Fußes", "Röntgen Hand", "Röntgen Fuß"),
-            )
-        )
-
-    if _has_any(compact, "rontgenunterarm", "roeunterarm", "rontgenoberarm", "roeoberarm", "rontgenellenbogen", "roeellenbogen", "rontgenknie", "roeknie", "rontgenunterschenkel", "roeunterschenkel", "rontgenoberschenkel", "roeoberschenkel", "rontgensprunggelenk", "roesprunggelenk") and performed:
-        found.append(
-            _ev(
-                "radiology.xray_extremities",
-                "Röntgen Extremitäten",
-                page.page,
-                "Röntgen Extremitäten durchgeführt",
-                service_date,
-                service_time,
-                0.94,
-                metadata=_search_terms("Aufnahmen der Extremitäten", "Röntgen Extremität", "Röntgen Unterarm"),
-            )
-        )
-
-    if _has_any(compact, "cthandgelenk", "ctcthandgelenk", "cthand", "ctcthand", "ctfuss", "ctctfuss") and performed:
-        found.append(
-            _ev(
-                "radiology.ct_hand_foot",
-                "CT Hand/Fuß",
-                page.page,
-                "CT Hand/Fuß nativ durchgeführt",
-                service_date,
-                service_time,
-                0.94,
-                metadata=_search_terms("CT-Untersuchung der Hand, des Fußes", "CT Hand", "CT Fuß"),
-            )
-        )
-
-    if _has_any(compact, "ctunterarm", "ctctunterarm", "ctoberarm", "ctctoberarm", "ctellenbogen", "ctctellenbogen", "ctknie", "ctctknie", "ctunterschenkel", "ctctunterschenkel", "ctoberschenkel", "ctctoberschenkel") and performed:
-        found.append(
-            _ev(
-                "radiology.ct_extremities",
-                "CT Extremitäten",
-                page.page,
-                "CT Extremitäten nativ durchgeführt",
-                service_date,
-                service_time,
-                0.9,
-                metadata=_search_terms("CT-Untersuchung der Extremitäten", "CT Extremität"),
-            )
-        )
-
-    if ("+km" in compact or "kontrastmittel" in compact or "imeron" in compact) and "nativ" not in compact:
-        found.append(_ev("radiology.ct_contrast", "CT-Kontrastmittel", page.page, "Kontrastmittelgabe dokumentiert", service_date, service_time, 0.8))
-
-    return found
-
-
-def _has_any(text: str, *needles: str) -> bool:
-    return any(needle in text for needle in needles)
-
-
-def _extract_labs(
-    page: PageText,
-    segment_type: str,
-    carried_datetime: tuple[str | None, str | None],
-) -> list[Evidence]:
-    if segment_type != "laboratory_result":
-        return []
-
-    text = page.text
-    compact = _compact(text)
-    service_date, service_time = _service_datetime(text, fallback=False)
-    if not service_date:
-        service_date, service_time = carried_datetime
-    found: list[Evidence] = []
-
-    lab_patterns = [
-        ("lab.creatinine", "Kreatinin", "kreatinin"),
-        ("lab.sodium", "Natrium", "natrium"),
-        ("lab.potassium", "Kalium", "kalium"),
-        ("lab.glucose", "Glucose", "glucose"),
-        ("lab.alt_gpt", "ALT/GPT", "alt"),
-        ("lab.erythrocytes", "Erythrozyten", "erythrozyten"),
-        ("lab.leukocytes", "Leukozyten", "leukozyten"),
-        ("lab.thrombocytes", "Thrombozyten", "thrombozyten"),
-        ("lab.hemoglobin", "Hämoglobin", "hamoglobin"),
-        ("lab.hematocrit", "Hämatokrit", "hamatokrit"),
-    ]
-
-    if "quick" in compact and "probeunterfullt" not in compact:
-        found.append(_ev("lab.quick", "Quick", page.page, "Quick-Wert valide", service_date, service_time, 0.9))
-
-    for kind, label, needle in lab_patterns:
-        if needle in compact:
-            found.append(_ev(kind, label, page.page, label, service_date, service_time, 0.86))
-
-    return found
-
-
-def _extract_review_candidates(page: PageText, segment_type: str) -> list[ReviewCandidate]:
-    text = page.text
-    compact = _compact(text)
-    service_date, _ = _service_datetime(text)
-    quarter = quarter_from_date(service_date)
-    candidates: list[ReviewCandidate] = []
-
-    if segment_type == "consult" and "neurologie" in text.lower():
-        candidates.append(ReviewCandidate(evidence="Neurologisches Konsil", evidence_pages=[page.page], reason="Interne Konsiltypen sind nicht automatisch EBM-GOPs."))
-    if segment_type == "consult" and ("psych" in text.lower() or "psychische" in text.lower()):
-        candidates.append(ReviewCandidate(evidence="Psychiatrisches Konsil", evidence_pages=[page.page], reason="Interne Konsiltypen sind nicht automatisch EBM-GOPs."))
-    if "schwangerschaftstest" in compact or "schwangerschaftsnachweis" in compact:
-        candidates.append(ReviewCandidate(evidence="Schwangerschaftstest Urin", evidence_pages=[page.page], possible_gops=_configured_candidate_gops("lab.pregnancy_test", quarter), reason="Katalogtreffer möglich, aber noch keine validierte Positivregel."))
-    if "drogen" in compact and "urin" in compact:
-        candidates.append(ReviewCandidate(evidence="Drogen-Screening Urin", evidence_pages=[page.page], possible_gops=_configured_candidate_gops("lab.drug_screen_urine", quarter), reason="Panel-/Einzeltestlogik und Abrechnungsfähigkeit nicht validiert."))
-    if "urinstatus" in compact:
-        candidates.append(ReviewCandidate(evidence="Urinstatus", evidence_pages=[page.page], possible_gops=_configured_candidate_gops("lab.urinalysis", quarter), reason="Im Goldstandard noch keine Positivregel."))
-    if any(token in compact for token in ["crp", "ck-mb", "myoglobin", "harnstoff", "gamma-gt", "ast"]):
-        candidates.append(ReviewCandidate(evidence="Erweiterte Laborwerte", evidence_pages=[page.page], possible_gops=_configured_candidate_gops("lab.extended_panel", quarter), reason="Nicht jeder dokumentierte Laborwert wird automatisch abgerechnet."))
-    if segment_type == "data_capture":
-        for hint in INTERNAL_SERVICE_HINTS:
-            codes = tuple(str(code) for code in hint["codes"])
-            if _has_internal_code(text, *codes):
-                candidates.append(
-                    ReviewCandidate(
-                        evidence=str(hint["label"]),
-                        evidence_pages=[page.page],
-                        possible_gops=_configured_candidate_gops(str(hint["kind"]), quarter),
-                        reason="Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen.",
-                    )
-                )
-
-    return candidates
-
-
-def _extract_exclusions(page: PageText, segment_type: str) -> list[ExcludedEvidence]:
-    text = page.text
-    compact = _compact(text)
-    service_date, _ = _service_datetime(text)
-    quarter = quarter_from_date(service_date)
-    excluded: list[ExcludedEvidence] = []
-
-    if "ctcthws" in compact and "storniert" in compact:
-        excluded.append(ExcludedEvidence(evidence="CT HWS nativ", evidence_pages=[page.page], not_billed_gop=_first_configured_candidate_gop("radiology.ct_spine_section", quarter), reason="Nur storniert dokumentiert; kein durchgeführter Befund."))
-    if "ctkopfnativ" in compact and "nativ" in compact:
-        excluded.append(ExcludedEvidence(evidence="CT-Kontrastmittelzuschlag", evidence_pages=[page.page], not_billed_gop=_first_configured_candidate_gop("radiology.ct_contrast", quarter), reason="CT als nativ dokumentiert; keine Kontrastmittelgabe."))
-    if "probeunterfullt" in compact:
-        excluded.append(ExcludedEvidence(evidence="Gerinnungsprobe", evidence_pages=[page.page], reason="Probe unterfüllt/falsches Mischungsverhältnis."))
-    if "ras9048" in compact:
-        excluded.append(ExcludedEvidence(evidence="Interner Radiologie-Zuschlag RAS9048", evidence_pages=[page.page], reason="Lokaler interner Code ohne freigegebenes EBM-/Hessen-GOP-Mapping."))
-
-    return excluded
-
-
-def _configured_candidate_gops(evidence_kind: str, quarter: str | None = None) -> list[str]:
-    return candidate_gops_for_evidence_kind(evidence_kind, quarter=quarter)
-
-
-def _first_configured_candidate_gop(evidence_kind: str, quarter: str | None = None) -> str | None:
-    candidates = _configured_candidate_gops(evidence_kind, quarter)
-    return candidates[0] if candidates else None
+def _join_datetime(date_value: str | None, time_value: str | None) -> str | None:
+    if not date_value:
+        return None
+    return f"{date_value}T{time_value or '00:00'}:00"
 
 
 def _dedupe_evidence(items: list[Evidence]) -> list[Evidence]:
@@ -1173,10 +438,9 @@ def _dedupe_evidence(items: list[Evidence]) -> list[Evidence]:
     result: list[Evidence] = []
     for item in items:
         key = (item.kind, item.page)
-        if key in seen:
-            continue
-        seen.add(key)
-        result.append(item)
+        if key not in seen:
+            seen.add(key)
+            result.append(item)
     return result
 
 

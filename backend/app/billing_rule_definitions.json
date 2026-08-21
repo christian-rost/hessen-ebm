@@ -1,12 +1,44 @@
 {
   "schema_version": 1,
   "rule_set_id": "kbv-ebm-hessen-core",
-  "version": "2026.3",
+  "version": "2026.5",
+  "event_settings": {
+    "default_session_gap_minutes": 180,
+    "episode_gap_days": 14,
+    "timeline_role_priority": {
+      "initial_contact": 0,
+      "follow_up_contact": 0,
+      "service_event": 1
+    },
+    "anchor_strategies": [
+      {
+        "evidence_kind_prefix": "context.",
+        "sort_fields": ["service_date", "page", "confidence_desc", "service_time"]
+      },
+      {
+        "sort_fields": ["service_date", "service_time", "confidence_desc", "page"]
+      }
+    ]
+  },
+  "calendar_definitions": {
+    "default": {
+      "weekdays": [5, 6],
+      "fixed_dates": ["01-01", "05-01", "10-03", "12-24", "12-25", "12-26", "12-31"],
+      "easter_offsets": [-2, 1, 39, 50]
+    },
+    "regions": {
+      "hessen": {
+        "inherits": "default",
+        "easter_offsets": [60]
+      }
+    }
+  },
   "evidence_rules": [
     {"rule_id": "context.kv_notfall_zna.01210.v1", "evidence_kind": "context.kv_notfall_zna", "gop": "01210", "title_hint": "Notfallpauschale I", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "clinical.diagnostics.ctg.01786.v1", "evidence_kind": "clinical.diagnostics.ctg", "gop": "01786", "title_hint": "Kardiotokografische Untersuchung", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "clinical.diagnostics.maternal_renal_sonography.33042.v1", "evidence_kind": "clinical.diagnostics.maternal_renal_sonography", "gop": "33042", "title_hint": "Sonografie des Abdomens und Retroperitoneums", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "clinical.diagnostics.abdominal_sonography.33042.v1", "evidence_kind": "clinical.diagnostics.abdominal_sonography", "gop": "33042", "title_hint": "Sonografie des Abdomens und Retroperitoneums", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "radiology.ct_head_native.34310.v1", "evidence_kind": "radiology.ct_head_native", "gop": "34310", "title_hint": "CT-Untersuchung des Neurocraniums", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "radiology.ct_thorax.34330.v1", "evidence_kind": "radiology.ct_thorax", "gop": "34330", "title_hint": "CT-Untersuchung des Thorax", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "radiology.xray_shoulder_2_planes.34231.v1", "evidence_kind": "radiology.xray_shoulder_2_planes", "gop": "34231", "title_hint": "Aufnahmen der Schulter/des Schultergürtels", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "radiology.xray_spine_hws_2_planes.34221.v1", "evidence_kind": "radiology.xray_spine_hws_2_planes", "gop": "34221", "title_hint": "Aufnahmen von Teilen der Wirbelsäule", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "radiology.xray_thorax_2_planes.34241.v1", "evidence_kind": "radiology.xray_thorax_2_planes", "gop": "34241", "title_hint": "Röntgen Thorax/Lunge 2 Ebenen", "valid_from": "2025/Q1", "regions": ["*"]},
@@ -17,6 +49,7 @@
     {"rule_id": "radiology.ct_hand_foot.34351.v1", "evidence_kind": "radiology.ct_hand_foot", "gop": "34351", "title_hint": "CT-Untersuchung der Hand, des Fußes", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "radiology.ct_contrast.34345.v1", "evidence_kind": "radiology.ct_contrast", "gop": "34345", "title_hint": "CT-Kontrastmittelzuschlag", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "lab.quick.32113.v1", "evidence_kind": "lab.quick", "gop": "32113", "title_hint": "Quick-Wert, Plasma", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "lab.blood_gas_analysis.32247.v1", "evidence_kind": "lab.blood_gas_analysis", "gop": "32247", "title_hint": "Bestimmung der Blutgase und des Säure-Basen-Status", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "lab.creatinine.32066.v1", "evidence_kind": "lab.creatinine", "gop": "32066", "title_hint": "Kreatinin", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "lab.sodium.32083.v1", "evidence_kind": "lab.sodium", "gop": "32083", "title_hint": "Natrium", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "lab.potassium.32081.v1", "evidence_kind": "lab.potassium", "gop": "32081", "title_hint": "Kalium", "valid_from": "2025/Q1", "regions": ["*"]},

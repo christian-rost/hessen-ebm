@@ -275,7 +275,7 @@ def test_obstetric_gynecology_pages_create_generic_semantic_evidence():
     assert excluded == []
 
 
-def test_maternal_renal_sonography_inherits_date_from_contiguous_report_page():
+def test_abdominal_sonography_inherits_date_from_contiguous_report_page():
     pages = [
         PageText(
             page=1,
@@ -295,7 +295,7 @@ def test_maternal_renal_sonography_inherits_date_from_contiguous_report_page():
 
     segments = segment_pages(pages)
     evidence, _review, _excluded, _context = extract_evidence(pages, segments)
-    renal = next(item for item in evidence if item.kind == "clinical.diagnostics.maternal_renal_sonography")
+    renal = next(item for item in evidence if item.kind == "clinical.diagnostics.abdominal_sonography")
 
     assert renal.service_date == "2026-01-01"
     assert "candidate_gops" not in renal.metadata

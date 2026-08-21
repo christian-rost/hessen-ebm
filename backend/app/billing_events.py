@@ -13,10 +13,6 @@ from .billing_rule_store import get_runtime_billing_rule_set
 from .models import BillingItem, Evidence
 
 
-DEFAULT_SESSION_GAP_MINUTES = 180
-DEFAULT_EPISODE_GAP_DAYS = 14
-
-
 @dataclass
 class BillingEvent:
     event_id: str
@@ -48,6 +44,8 @@ def build_billing_events(
     rule_set: BillingRuleSet | None = None,
 ) -> list[BillingEvent]:
     definitions = rule_set or get_runtime_billing_rule_set(quarter, region)
+    default_session_gap = _positive_setting(definitions.event_settings, "default_session_gap_minutes")
+    episode_gap_days = _positive_setting(definitions.event_settings, "episode_gap_days")
     sequence_rules = [
         rule
         for rule in definitions.event_sequence_rules
@@ -65,9 +63,9 @@ def build_billing_events(
         by_kind.setdefault(item.kind, []).append(item)
 
     for kind, matches in by_kind.items():
-        gap = rule_by_kind.get(kind).session_gap_minutes if kind in rule_by_kind else DEFAULT_SESSION_GAP_MINUTES
-        for cluster in _cluster_evidence(matches, gap):
-            selected = _select_event_anchor(cluster)
+        gap = rule_by_kind.get(kind).session_gap_minutes if kind in rule_by_kind else default_session_gap
+        for cluster in _cluster_evidence(matches, gap, definitions.event_settings):
+            selected = _select_event_anchor(cluster, definitions.event_settings)
             events.append(
                 BillingEvent(
                     event_id=_event_id(kind, cluster),
@@ -78,8 +76,8 @@ def build_billing_events(
                 )
             )
 
-    _assign_episodes(events, definitions)
-    _assign_sessions(events)
+    _assign_episodes(events, definitions, episode_gap_days)
+    _assign_sessions(events, default_session_gap)
     for rule in sequence_rules:
         _apply_sequence_rule(events, rule)
     return sorted(events, key=_event_sort_key)
@@ -105,6 +103,10 @@ def primary_episode_evidence(events: list[BillingEvent]) -> list[Evidence]:
 
 
 def episode_selection_payload(events: list[BillingEvent]) -> dict[str, object]:
+    episode_gap_days = _positive_setting(
+        get_runtime_billing_rule_set().event_settings,
+        "episode_gap_days",
+    )
     by_episode: dict[str, list[BillingEvent]] = {}
     for event in events:
         by_episode.setdefault(event.episode_id or "episode-undated", []).append(event)
@@ -122,12 +124,16 @@ def episode_selection_payload(events: list[BillingEvent]) -> dict[str, object]:
                 "evidence_pages": pages,
             }
         )
-    return {"episode_gap_days": DEFAULT_EPISODE_GAP_DAYS, "episodes": episodes}
+    return {"episode_gap_days": episode_gap_days, "episodes": episodes}
 
 
 def finalize_billing_timeline(items: list[BillingItem]) -> None:
     original_order = {id(item): index for index, item in enumerate(items)}
-    role_priority = {"initial_contact": 0, "follow_up_contact": 0, "service_event": 1}
+    settings = get_runtime_billing_rule_set().event_settings
+    role_priority = {
+        str(role): int(priority)
+        for role, priority in (settings.get("timeline_role_priority") or {}).items()
+    }
     items.sort(
         key=lambda item: (
             item.service_date or "9999-12-31",
@@ -141,19 +147,28 @@ def finalize_billing_timeline(items: list[BillingItem]) -> None:
         item.temporal_sequence = index
 
 
-def _cluster_evidence(matches: list[Evidence], gap_minutes: int) -> list[list[Evidence]]:
+def _cluster_evidence(
+    matches: list[Evidence],
+    gap_minutes: int,
+    event_settings: dict[str, object],
+) -> list[list[Evidence]]:
     dated = sorted(matches, key=_evidence_sort_key)
     clusters: list[list[Evidence]] = []
     for item in dated:
-        if not clusters or not _same_session(clusters[-1], item, gap_minutes):
+        if not clusters or not _same_session(clusters[-1], item, gap_minutes, event_settings):
             clusters.append([item])
         else:
             clusters[-1].append(item)
     return clusters
 
 
-def _same_session(cluster: list[Evidence], item: Evidence, gap_minutes: int) -> bool:
-    anchor = _select_event_anchor(cluster)
+def _same_session(
+    cluster: list[Evidence],
+    item: Evidence,
+    gap_minutes: int,
+    event_settings: dict[str, object],
+) -> bool:
+    anchor = _select_event_anchor(cluster, event_settings)
     if not anchor.service_date or not item.service_date:
         return True
     if not anchor.service_time or not item.service_time:
@@ -190,11 +205,19 @@ def _apply_sequence_rule(events: list[BillingEvent], rule: EventSequenceRuleDefi
                 )
 
 
-def _assign_episodes(events: list[BillingEvent], rule_set: BillingRuleSet) -> None:
+def _assign_episodes(
+    events: list[BillingEvent],
+    rule_set: BillingRuleSet,
+    episode_gap_days: int,
+) -> None:
     dated_events = sorted((event for event in events if event.service_date), key=_event_sort_key)
     episodes: list[list[BillingEvent]] = []
     for event in dated_events:
-        if not episodes or _days_between(episodes[-1][-1].service_date, event.service_date) > DEFAULT_EPISODE_GAP_DAYS:
+        if not episodes or _days_between(
+            episodes[-1][-1].service_date,
+            event.service_date,
+            episode_gap_days,
+        ) > episode_gap_days:
             episodes.append([event])
         else:
             episodes[-1].append(event)
@@ -228,10 +251,10 @@ def _assign_episodes(events: list[BillingEvent], rule_set: BillingRuleSet) -> No
             event.primary_episode = index == primary_index
 
 
-def _assign_sessions(events: list[BillingEvent]) -> None:
+def _assign_sessions(events: list[BillingEvent], session_gap_minutes: int) -> None:
     sessions: list[list[BillingEvent]] = []
     for event in sorted(events, key=_event_sort_key):
-        if not sessions or not _events_share_session(sessions[-1][-1], event):
+        if not sessions or not _events_share_session(sessions[-1][-1], event, session_gap_minutes):
             sessions.append([event])
         else:
             sessions[-1].append(event)
@@ -242,7 +265,11 @@ def _assign_sessions(events: list[BillingEvent]) -> None:
             event.session_id = session_id
 
 
-def _events_share_session(previous: BillingEvent, current: BillingEvent) -> bool:
+def _events_share_session(
+    previous: BillingEvent,
+    current: BillingEvent,
+    session_gap_minutes: int,
+) -> bool:
     if not previous.service_date or not current.service_date:
         return False
     if not previous.service_time or not current.service_time:
@@ -251,32 +278,46 @@ def _events_share_session(previous: BillingEvent, current: BillingEvent) -> bool
     current_datetime = _parse_datetime(current.service_date, current.service_time)
     if not previous_datetime or not current_datetime:
         return previous.service_date == current.service_date
-    return abs((current_datetime - previous_datetime).total_seconds()) <= DEFAULT_SESSION_GAP_MINUTES * 60
+    return abs((current_datetime - previous_datetime).total_seconds()) <= session_gap_minutes * 60
 
 
-def _select_event_anchor(matches: list[Evidence]) -> Evidence:
+def _select_event_anchor(matches: list[Evidence], event_settings: dict[str, object]) -> Evidence:
     dated = [item for item in matches if item.service_date]
     if not dated:
         return max(matches, key=lambda item: item.confidence)
-    if matches[0].kind.startswith("context."):
-        return min(
-            dated,
-            key=lambda item: (
-                item.service_date or "9999-12-31",
-                item.page,
-                -item.confidence,
-                item.service_time or "23:59",
-            ),
-        )
-    return min(
-        dated,
-        key=lambda item: (
-            item.service_date or "9999-12-31",
-            item.service_time or "23:59",
-            -item.confidence,
-            item.page,
-        ),
-    )
+    strategies = event_settings.get("anchor_strategies") or []
+    for strategy in strategies:
+        if not isinstance(strategy, dict):
+            continue
+        prefix = str(strategy.get("evidence_kind_prefix") or "")
+        if prefix and not matches[0].kind.startswith(prefix):
+            continue
+        fields = [str(field) for field in strategy.get("sort_fields") or []]
+        if fields:
+            return min(dated, key=lambda item: _anchor_sort_key(item, fields))
+    raise ValueError("Im aktiven Regelwerk fehlt eine passende Ereignisanker-Strategie.")
+
+
+def _anchor_sort_key(item: Evidence, fields: list[str]) -> tuple[object, ...]:
+    values: list[object] = []
+    for field in fields:
+        descending = field.endswith("_desc")
+        attribute = field.removesuffix("_desc")
+        value = getattr(item, attribute, None)
+        if attribute == "confidence":
+            number = float(value or 0)
+            values.append(-number if descending else number)
+        elif attribute == "page":
+            number = int(value or 0)
+            values.append(-number if descending else number)
+        else:
+            text = str(value) if value is not None else "9999-12-31"
+            values.append(_invert_text(text) if descending else text)
+    return tuple(values)
+
+
+def _invert_text(value: str) -> tuple[int, ...]:
+    return tuple(-ord(character) for character in value)
 
 
 def _event_id(kind: str, evidence: list[Evidence]) -> str:
@@ -300,11 +341,18 @@ def _parse_datetime(date_value: str, time_value: str) -> datetime | None:
         return None
 
 
-def _days_between(first: str | None, second: str | None) -> int:
+def _days_between(first: str | None, second: str | None, fallback_days: int) -> int:
     try:
         return abs((datetime.fromisoformat(second or "") - datetime.fromisoformat(first or "")).days)
     except ValueError:
-        return DEFAULT_EPISODE_GAP_DAYS + 1
+        return fallback_days + 1
+
+
+def _positive_setting(settings: dict[str, object], name: str) -> int:
+    value = int(settings.get(name) or 0)
+    if value <= 0:
+        raise ValueError(f"Im aktiven Regelwerk fehlt die positive Ereigniseinstellung {name!r}.")
+    return value
 
 
 def _display_date(value: str | None) -> str:
