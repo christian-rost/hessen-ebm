@@ -49,6 +49,16 @@ class EvidenceRuleDefinition:
 
 
 @dataclass(frozen=True)
+class CandidateRuleDefinition:
+    rule_id: str
+    evidence_kind: str
+    gops: tuple[str, ...]
+    valid_from: str | None = None
+    valid_to: str | None = None
+    regions: tuple[str, ...] = ("*",)
+
+
+@dataclass(frozen=True)
 class TemporalOutcomeDefinition:
     rule_id: str
     gop: str
@@ -119,6 +129,7 @@ class BillingRuleSet:
     rule_set_id: str
     version: str
     evidence_rules: tuple[EvidenceRuleDefinition, ...]
+    candidate_rules: tuple[CandidateRuleDefinition, ...]
     temporal_rules: tuple[TemporalRuleDefinition, ...]
     event_sequence_rules: tuple[EventSequenceRuleDefinition, ...]
     derived_rules: tuple[DerivedRuleDefinition, ...]
@@ -132,6 +143,7 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
         )
 
     evidence_rules = tuple(_parse_evidence_rule(item) for item in _objects(payload.get("evidence_rules")))
+    candidate_rules = tuple(_parse_candidate_rule(item) for item in _objects(payload.get("candidate_rules")))
     temporal_rules = tuple(_parse_temporal_rule(item) for item in _objects(payload.get("temporal_rules")))
     event_sequence_rules = tuple(
         _parse_event_sequence_rule(item) for item in _objects(payload.get("event_sequence_rules"))
@@ -142,6 +154,7 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
         rule_set_id=_required_text(payload, "rule_set_id"),
         version=_required_text(payload, "version"),
         evidence_rules=evidence_rules,
+        candidate_rules=candidate_rules,
         temporal_rules=temporal_rules,
         event_sequence_rules=event_sequence_rules,
         derived_rules=derived_rules,
@@ -192,6 +205,20 @@ def _parse_evidence_rule(item: dict[str, Any]) -> EvidenceRuleDefinition:
         gop=_required_gop(item, "gop"),
         title_hint=_required_text(item, "title_hint"),
         confidence=str(item.get("confidence") or "high"),
+        valid_from=_optional_text(item.get("valid_from")),
+        valid_to=_optional_text(item.get("valid_to")),
+        regions=_regions(item),
+    )
+
+
+def _parse_candidate_rule(item: dict[str, Any]) -> CandidateRuleDefinition:
+    gops = tuple(_gop(value) for value in _values(item.get("gops")))
+    if not gops:
+        raise ValueError(f"Kandidatenregel {_required_text(item, 'rule_id')} enthält keine GOPs.")
+    return CandidateRuleDefinition(
+        rule_id=_required_text(item, "rule_id"),
+        evidence_kind=_required_text(item, "evidence_kind"),
+        gops=gops,
         valid_from=_optional_text(item.get("valid_from")),
         valid_to=_optional_text(item.get("valid_to")),
         regions=_regions(item),
@@ -282,6 +309,7 @@ def _parse_derived_rule(item: dict[str, Any]) -> DerivedRuleDefinition:
 
 def _validate_unique_rule_ids(rule_set: BillingRuleSet) -> None:
     ids = [rule.rule_id for rule in rule_set.evidence_rules]
+    ids.extend(rule.rule_id for rule in rule_set.candidate_rules)
     ids.extend(rule.rule_id for rule in rule_set.temporal_rules)
     ids.extend(outcome.rule_id for rule in rule_set.temporal_rules for outcome in rule.outcomes)
     ids.extend(rule.rule_id for rule in rule_set.event_sequence_rules)

@@ -40,6 +40,7 @@ def rule_overview_payload() -> dict[str, object]:
     return {
         "rule_set": guidance["rule_set"],
         "rules": active_rules_payload(),
+        "candidate_rules": guidance["candidate_rules"],
         "temporal_rules": guidance["temporal_rules"],
         "event_sequence_rules": guidance["event_sequence_rules"],
         "derived_rules": guidance["derived_rules"],

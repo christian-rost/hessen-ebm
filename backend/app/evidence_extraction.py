@@ -4,6 +4,7 @@ import hashlib
 import re
 import unicodedata
 
+from .billing_rules import candidate_gops_for_evidence_kind
 from .models import DocumentSegment, Evidence, ExcludedEvidence, PageText, ReviewCandidate
 
 
@@ -282,7 +283,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis Konsultationsgebühr",
         "text": "Interner Leistungsbogen enthält ALL_KONGEB / Konsultationsgebühr",
         "terms": ("Konsultationspauschale",),
-        "candidate_gops": ("01436",),
         "confidence": 0.64,
     },
     {
@@ -291,7 +291,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis Ordinationsgebühr",
         "text": "Interner Leistungsbogen enthält ALL_ORDGEB / Ordinationsgebühr",
         "terms": ("Augenärztliche Grundpauschale", "Grundpauschale Augen"),
-        "candidate_gops": ("06210", "06211", "06212"),
         "confidence": 0.66,
     },
     {
@@ -300,7 +299,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis Ordinationsgebühr Notfall",
         "text": "Interner Leistungsbogen enthält ALL_ORDNOT / Ordinationsgebühr Notfall",
         "terms": ("Notfallpauschale", "Notfall", "Ordinationsgebühr", "Grundpauschale"),
-        "candidate_gops": ("01210", "01212", "01214", "01216", "01218"),
         "confidence": 0.7,
     },
     {
@@ -309,7 +307,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis Augenhintergrund",
         "text": "Interner Leistungsbogen enthält AUA_BUAHG / binokulare Untersuchung des Augenhintergrundes",
         "terms": ("Augenhintergrund", "Fundus", "Binokulare Untersuchung des Augenhintergrundes"),
-        "candidate_gops": ("06333",),
         "confidence": 0.68,
     },
     {
@@ -318,7 +315,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis Echographie Auge",
         "text": "Interner Leistungsbogen enthält AUA_ECHO / Echographie",
         "terms": ("Sonographie des Auges", "Ultraschall-Biometrie des Auges", "Ultraschall-Pachymetrie"),
-        "candidate_gops": ("33000", "33001", "33002"),
         "confidence": 0.62,
     },
     {
@@ -327,7 +323,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis elektrophysiologische Untersuchung",
         "text": "Interner Leistungsbogen enthält elektrophysiologische Augen-Diagnostik",
         "terms": ("Elektrophysiologische Untersuchung", "Elektroretinographie", "VEP"),
-        "candidate_gops": ("06312",),
         "confidence": 0.62,
     },
     {
@@ -336,7 +331,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis Fluoreszenzangiographie",
         "text": "Interner Leistungsbogen enthält AUA_FAG / Fluoreszenzangiographie",
         "terms": ("Fluoreszenzangiographie", "Angiographie Auge"),
-        "candidate_gops": ("06331",),
         "confidence": 0.62,
     },
     {
@@ -345,7 +339,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis PDT",
         "text": "Interner Leistungsbogen enthält AUA_PDT / PDT",
         "terms": ("PDT", "Photodynamische Therapie"),
-        "candidate_gops": ("06332",),
         "confidence": 0.62,
     },
     {
@@ -354,7 +347,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis Perimetrie",
         "text": "Interner Leistungsbogen enthält AUA_PERI / Perimetrie",
         "terms": ("Perimetrie", "Gesichtsfeld"),
-        "candidate_gops": ("06330",),
         "confidence": 0.62,
     },
     {
@@ -363,7 +355,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis Schielbehandlung",
         "text": "Interner Leistungsbogen enthält AUA_SCHIEL / quantitative Untersuchung des binokularen Sehens",
         "terms": ("Schielbehandlung", "Quantitative Untersuchung des binokularen Sehens"),
-        "candidate_gops": ("06320", "06321"),
         "confidence": 0.62,
     },
     {
@@ -372,7 +363,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis Tränenweg-Sondierung",
         "text": "Interner Leistungsbogen enthält TWS / TW-Sondierung",
         "terms": ("Tränenweg", "Tränenwege", "Sondierung", "Kleinchirurgischer Eingriff am Auge"),
-        "candidate_gops": ("06352",),
         "confidence": 0.58,
     },
     {
@@ -381,7 +371,6 @@ INTERNAL_SERVICE_HINTS: list[dict[str, object]] = [
         "label": "Interner Hinweis Lidheber-Operation",
         "text": "Interner Leistungsbogen enthält AUA_LIDHEB / OP der Lidsenkung mit Lidheber",
         "terms": ("Lidheber", "Lidoperation", "Kleinchirurgischer Eingriff am Auge"),
-        "candidate_gops": ("06350", "06351", "06352"),
         "confidence": 0.58,
     },
 ]
@@ -669,13 +658,6 @@ def _search_terms(*terms: str) -> dict[str, object]:
     return {"search_terms": [term for term in terms if term]}
 
 
-def _candidate_metadata(terms: tuple[str, ...], candidate_gops: tuple[str, ...]) -> dict[str, object]:
-    metadata = _search_terms(*terms)
-    if candidate_gops:
-        metadata["candidate_gops"] = list(candidate_gops)
-    return metadata
-
-
 def _has_internal_code(text: str, *codes: str) -> bool:
     folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower()
     for code in codes:
@@ -773,10 +755,7 @@ def _extract_generic_clinical_evidence(page: PageText, segment_type: str) -> lis
                 service_date,
                 service_time,
                 0.88,
-                metadata=_candidate_metadata(
-                    ("Sonografie Niere", "Abdomensonografie", "Retroperitoneum", "Hydronephrose"),
-                    ("33042",),
-                ),
+                metadata=_search_terms("Sonografie Niere", "Abdomensonografie", "Retroperitoneum", "Hydronephrose"),
             )
         )
 
@@ -990,10 +969,7 @@ def _extract_internal_service_hints(page: PageText, segment_type: str) -> list[E
                     service_date,
                     service_time,
                     float(hint["confidence"]),
-                    metadata=_candidate_metadata(
-                        tuple(str(term) for term in hint["terms"]),
-                        tuple(str(gop) for gop in hint["candidate_gops"]),
-                    ),
+                    metadata=_search_terms(*(str(term) for term in hint["terms"])),
                 )
             )
 
@@ -1035,7 +1011,7 @@ def _extract_radiology(page: PageText, segment_type: str) -> list[Evidence]:
                 service_date,
                 service_time,
                 0.94,
-                metadata=_candidate_metadata(("Aufnahmen der Hand, des Fußes", "Röntgen Hand", "Röntgen Fuß"), ("34232",)),
+                metadata=_search_terms("Aufnahmen der Hand, des Fußes", "Röntgen Hand", "Röntgen Fuß"),
             )
         )
 
@@ -1049,7 +1025,7 @@ def _extract_radiology(page: PageText, segment_type: str) -> list[Evidence]:
                 service_date,
                 service_time,
                 0.94,
-                metadata=_candidate_metadata(("Aufnahmen der Extremitäten", "Röntgen Extremität", "Röntgen Unterarm"), ("34233",)),
+                metadata=_search_terms("Aufnahmen der Extremitäten", "Röntgen Extremität", "Röntgen Unterarm"),
             )
         )
 
@@ -1063,7 +1039,7 @@ def _extract_radiology(page: PageText, segment_type: str) -> list[Evidence]:
                 service_date,
                 service_time,
                 0.94,
-                metadata=_candidate_metadata(("CT-Untersuchung der Hand, des Fußes", "CT Hand", "CT Fuß"), ("34351",)),
+                metadata=_search_terms("CT-Untersuchung der Hand, des Fußes", "CT Hand", "CT Fuß"),
             )
         )
 
@@ -1077,7 +1053,7 @@ def _extract_radiology(page: PageText, segment_type: str) -> list[Evidence]:
                 service_date,
                 service_time,
                 0.9,
-                metadata=_candidate_metadata(("CT-Untersuchung der Extremitäten", "CT Extremität"), ("34350",)),
+                metadata=_search_terms("CT-Untersuchung der Extremitäten", "CT Extremität"),
             )
         )
 
@@ -1132,6 +1108,8 @@ def _extract_labs(
 def _extract_review_candidates(page: PageText, segment_type: str) -> list[ReviewCandidate]:
     text = page.text
     compact = _compact(text)
+    service_date, _ = _service_datetime(text)
+    quarter = quarter_from_date(service_date)
     candidates: list[ReviewCandidate] = []
 
     if segment_type == "consult" and "neurologie" in text.lower():
@@ -1139,13 +1117,13 @@ def _extract_review_candidates(page: PageText, segment_type: str) -> list[Review
     if segment_type == "consult" and ("psych" in text.lower() or "psychische" in text.lower()):
         candidates.append(ReviewCandidate(evidence="Psychiatrisches Konsil", evidence_pages=[page.page], reason="Interne Konsiltypen sind nicht automatisch EBM-GOPs."))
     if "schwangerschaftstest" in compact or "schwangerschaftsnachweis" in compact:
-        candidates.append(ReviewCandidate(evidence="Schwangerschaftstest Urin", evidence_pages=[page.page], possible_gops=["32132"], reason="Katalogtreffer möglich, aber noch keine validierte Positivregel."))
+        candidates.append(ReviewCandidate(evidence="Schwangerschaftstest Urin", evidence_pages=[page.page], possible_gops=_configured_candidate_gops("lab.pregnancy_test", quarter), reason="Katalogtreffer möglich, aber noch keine validierte Positivregel."))
     if "drogen" in compact and "urin" in compact:
-        candidates.append(ReviewCandidate(evidence="Drogen-Screening Urin", evidence_pages=[page.page], possible_gops=["32292", "32307"], reason="Panel-/Einzeltestlogik und Abrechnungsfähigkeit nicht validiert."))
+        candidates.append(ReviewCandidate(evidence="Drogen-Screening Urin", evidence_pages=[page.page], possible_gops=_configured_candidate_gops("lab.drug_screen_urine", quarter), reason="Panel-/Einzeltestlogik und Abrechnungsfähigkeit nicht validiert."))
     if "urinstatus" in compact:
-        candidates.append(ReviewCandidate(evidence="Urinstatus", evidence_pages=[page.page], possible_gops=["32720"], reason="Im Goldstandard noch keine Positivregel."))
+        candidates.append(ReviewCandidate(evidence="Urinstatus", evidence_pages=[page.page], possible_gops=_configured_candidate_gops("lab.urinalysis", quarter), reason="Im Goldstandard noch keine Positivregel."))
     if any(token in compact for token in ["crp", "ck-mb", "myoglobin", "harnstoff", "gamma-gt", "ast"]):
-        candidates.append(ReviewCandidate(evidence="Erweiterte Laborwerte", evidence_pages=[page.page], possible_gops=["32065", "32069", "32071", "32074", "32092", "32128", "32450"], reason="Nicht jeder dokumentierte Laborwert wird automatisch abgerechnet."))
+        candidates.append(ReviewCandidate(evidence="Erweiterte Laborwerte", evidence_pages=[page.page], possible_gops=_configured_candidate_gops("lab.extended_panel", quarter), reason="Nicht jeder dokumentierte Laborwert wird automatisch abgerechnet."))
     if segment_type == "data_capture":
         for hint in INTERNAL_SERVICE_HINTS:
             codes = tuple(str(code) for code in hint["codes"])
@@ -1154,7 +1132,7 @@ def _extract_review_candidates(page: PageText, segment_type: str) -> list[Review
                     ReviewCandidate(
                         evidence=str(hint["label"]),
                         evidence_pages=[page.page],
-                        possible_gops=[str(gop) for gop in hint["candidate_gops"]],
+                        possible_gops=_configured_candidate_gops(str(hint["kind"]), quarter),
                         reason="Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen.",
                     )
                 )
@@ -1165,18 +1143,29 @@ def _extract_review_candidates(page: PageText, segment_type: str) -> list[Review
 def _extract_exclusions(page: PageText, segment_type: str) -> list[ExcludedEvidence]:
     text = page.text
     compact = _compact(text)
+    service_date, _ = _service_datetime(text)
+    quarter = quarter_from_date(service_date)
     excluded: list[ExcludedEvidence] = []
 
     if "ctcthws" in compact and "storniert" in compact:
-        excluded.append(ExcludedEvidence(evidence="CT HWS nativ", evidence_pages=[page.page], not_billed_gop="34311", reason="Nur storniert dokumentiert; kein durchgeführter Befund."))
+        excluded.append(ExcludedEvidence(evidence="CT HWS nativ", evidence_pages=[page.page], not_billed_gop=_first_configured_candidate_gop("radiology.ct_spine_section", quarter), reason="Nur storniert dokumentiert; kein durchgeführter Befund."))
     if "ctkopfnativ" in compact and "nativ" in compact:
-        excluded.append(ExcludedEvidence(evidence="CT-Kontrastmittelzuschlag", evidence_pages=[page.page], not_billed_gop="34345", reason="CT als nativ dokumentiert; keine Kontrastmittelgabe."))
+        excluded.append(ExcludedEvidence(evidence="CT-Kontrastmittelzuschlag", evidence_pages=[page.page], not_billed_gop=_first_configured_candidate_gop("radiology.ct_contrast", quarter), reason="CT als nativ dokumentiert; keine Kontrastmittelgabe."))
     if "probeunterfullt" in compact:
         excluded.append(ExcludedEvidence(evidence="Gerinnungsprobe", evidence_pages=[page.page], reason="Probe unterfüllt/falsches Mischungsverhältnis."))
     if "ras9048" in compact:
         excluded.append(ExcludedEvidence(evidence="Interner Radiologie-Zuschlag RAS9048", evidence_pages=[page.page], reason="Lokaler interner Code ohne freigegebenes EBM-/Hessen-GOP-Mapping."))
 
     return excluded
+
+
+def _configured_candidate_gops(evidence_kind: str, quarter: str | None = None) -> list[str]:
+    return candidate_gops_for_evidence_kind(evidence_kind, quarter=quarter)
+
+
+def _first_configured_candidate_gop(evidence_kind: str, quarter: str | None = None) -> str | None:
+    candidates = _configured_candidate_gops(evidence_kind, quarter)
+    return candidates[0] if candidates else None
 
 
 def _dedupe_evidence(items: list[Evidence]) -> list[Evidence]:

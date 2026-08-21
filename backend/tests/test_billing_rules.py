@@ -7,9 +7,6 @@ from app.billing_rules import (
     derive_additional_gops,
     evaluate_catalog_context_rules,
     evaluate_gop_rules,
-    emergency_clarification_gop,
-    emergency_consultation_gop,
-    emergency_initial_gop,
     is_special_notfall_day,
 )
 from app.billing_rule_definitions import parse_billing_rule_set
@@ -17,21 +14,21 @@ from app.billing_rule_store import _merge_runtime_core_rules
 
 
 def test_emergency_initial_gop_uses_weekday_daytime_01210():
-    decision = emergency_initial_gop("2026-04-24", "12:20")
+    decision = apply_temporal_gop_rule("01210", "2026-04-24", "12:20")
 
     assert decision.gop == "01210"
     assert decision.review_required is False
 
 
 def test_emergency_initial_gop_uses_01212_at_night_weekend_and_special_days():
-    assert emergency_initial_gop("2026-04-24", "20:00").gop == "01212"
-    assert emergency_initial_gop("2026-04-25", "12:00").gop == "01212"
-    assert emergency_initial_gop("2026-12-24", "12:00").gop == "01212"
-    assert emergency_initial_gop("2026-06-04", "12:00").gop == "01212"
+    assert apply_temporal_gop_rule("01210", "2026-04-24", "20:00").gop == "01212"
+    assert apply_temporal_gop_rule("01210", "2026-04-25", "12:00").gop == "01212"
+    assert apply_temporal_gop_rule("01210", "2026-12-24", "12:00").gop == "01212"
+    assert apply_temporal_gop_rule("01210", "2026-06-04", "12:00").gop == "01212"
 
 
 def test_missing_datetime_requires_review_for_time_dependent_emergency_gops():
-    decision = emergency_initial_gop("2026-04-24", None)
+    decision = apply_temporal_gop_rule("01210", "2026-04-24", None)
 
     assert decision.gop is None
     assert decision.review_required is True
@@ -39,17 +36,17 @@ def test_missing_datetime_requires_review_for_time_dependent_emergency_gops():
 
 
 def test_emergency_consultation_gop_uses_time_windows():
-    assert emergency_consultation_gop("2026-04-24", "12:20").gop == "01214"
-    assert emergency_consultation_gop("2026-04-24", "20:00").gop == "01216"
-    assert emergency_consultation_gop("2026-04-24", "23:00").gop == "01218"
-    assert emergency_consultation_gop("2026-04-25", "12:00").gop == "01216"
-    assert emergency_consultation_gop("2026-04-25", "20:00").gop == "01218"
+    assert apply_temporal_gop_rule("01214", "2026-04-24", "12:20").gop == "01214"
+    assert apply_temporal_gop_rule("01214", "2026-04-24", "20:00").gop == "01216"
+    assert apply_temporal_gop_rule("01214", "2026-04-24", "23:00").gop == "01218"
+    assert apply_temporal_gop_rule("01214", "2026-04-25", "12:00").gop == "01216"
+    assert apply_temporal_gop_rule("01214", "2026-04-25", "20:00").gop == "01218"
 
 
 def test_emergency_clarification_gop_uses_daytime_pair():
-    assert emergency_clarification_gop("2026-04-24", "12:20").gop == "01205"
-    assert emergency_clarification_gop("2026-04-24", "20:00").gop == "01207"
-    assert emergency_clarification_gop("2026-04-25", "12:00").gop == "01207"
+    assert apply_temporal_gop_rule("01205", "2026-04-24", "12:20").gop == "01205"
+    assert apply_temporal_gop_rule("01205", "2026-04-24", "20:00").gop == "01207"
+    assert apply_temporal_gop_rule("01205", "2026-04-25", "12:00").gop == "01207"
 
 
 def test_apply_temporal_gop_rule_corrects_wrong_emergency_pair():
@@ -137,6 +134,15 @@ def test_data_driven_rules_support_new_temporal_and_chained_gops_without_python_
                     "regions": ["*"],
                 }
             ],
+            "candidate_rules": [
+                {
+                    "rule_id": "test.candidate.v1",
+                    "evidence_kind": "test.candidate-only",
+                    "gops": ["22221", "22222"],
+                    "valid_from": "2026/Q1",
+                    "regions": ["*"],
+                }
+            ],
             "temporal_rules": [
                 {
                     "rule_id": "test.temporal.v1",
@@ -192,6 +198,9 @@ def test_data_driven_rules_support_new_temporal_and_chained_gops_without_python_
     candidates = candidate_gops_for_evidence_kind(
         "test.service", "2026/Q2", "Hessen", rule_set
     )
+    configured_candidates = candidate_gops_for_evidence_kind(
+        "test.candidate-only", "2026/Q2", "Hessen", rule_set
+    )
     temporal = apply_temporal_gop_rule(
         "11111", "2026-04-24", "23:00", "Hessen", quarter="2026/Q2", rule_set=rule_set
     )
@@ -203,6 +212,7 @@ def test_data_driven_rules_support_new_temporal_and_chained_gops_without_python_
     )
 
     assert candidates == ["11111", "11112"]
+    assert configured_candidates == ["22221", "22222"]
     assert temporal.gop == "11112"
     assert [decision.gop for decision in decisions] == ["09999", "09998"]
 
@@ -318,6 +328,14 @@ def test_runtime_rule_overlay_keeps_new_local_event_rules_until_supabase_is_reco
             "rule_set_id": "local",
             "version": "2026.2",
             "evidence_rules": [],
+            "candidate_rules": [
+                {
+                    "rule_id": "candidate.test.v1",
+                    "evidence_kind": "test.hint",
+                    "gops": ["22221"],
+                    "regions": ["*"],
+                }
+            ],
             "event_sequence_rules": [
                 {
                     "rule_id": "sequence.test.v1",
@@ -336,4 +354,5 @@ def test_runtime_rule_overlay_keeps_new_local_event_rules_until_supabase_is_reco
     merged = _merge_runtime_core_rules(local, remote)
 
     assert [rule.rule_id for rule in merged.event_sequence_rules] == ["sequence.test.v1"]
+    assert [rule.rule_id for rule in merged.candidate_rules] == ["candidate.test.v1"]
     assert merged.version == "2026.1+core-2026.2"

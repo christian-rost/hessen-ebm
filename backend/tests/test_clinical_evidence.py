@@ -1,4 +1,5 @@
 from app.document_segmentation import segment_pages
+from app.billing_rules import candidate_gops_for_evidence_kind
 from app.evidence_extraction import extract_evidence
 from app.models import PageText
 
@@ -125,9 +126,10 @@ def test_ophthalmology_data_capture_continuation_creates_all_internal_hints():
         "internal_service.aua_schiel",
         "internal_service.aua_tws",
     }.issubset(kinds)
-    assert metadata_by_kind["internal_service.ophthalmology_fundus"]["candidate_gops"] == ["06333"]
-    assert metadata_by_kind["internal_service.aua_peri"]["candidate_gops"] == ["06330"]
-    assert metadata_by_kind["internal_service.aua_pdt"]["candidate_gops"] == ["06332"]
+    assert "candidate_gops" not in metadata_by_kind["internal_service.ophthalmology_fundus"]
+    assert "Augenhintergrund" in metadata_by_kind["internal_service.ophthalmology_fundus"]["search_terms"]
+    assert candidate_gops_for_evidence_kind("internal_service.aua_peri") == ["06330"]
+    assert candidate_gops_for_evidence_kind("internal_service.aua_pdt") == ["06332"]
     assert any("06331" in item.possible_gops for item in review)
     assert excluded == []
 
@@ -217,9 +219,10 @@ def test_radiology_hand_forearm_and_wrist_ct_create_billable_evidence():
     assert len(segments) == 1
     assert segments[0].segment_type == "radiology_report"
     assert context["quarter"] == "2026/Q1"
-    assert evidence_by_kind["radiology.xray_extremities"].metadata["candidate_gops"] == ["34233"]
-    assert evidence_by_kind["radiology.xray_hand_foot"].metadata["candidate_gops"] == ["34232"]
-    assert evidence_by_kind["radiology.ct_hand_foot"].metadata["candidate_gops"] == ["34351"]
+    assert all("candidate_gops" not in item.metadata for item in evidence_by_kind.values())
+    assert candidate_gops_for_evidence_kind("radiology.xray_extremities") == ["34233"]
+    assert candidate_gops_for_evidence_kind("radiology.xray_hand_foot") == ["34232"]
+    assert candidate_gops_for_evidence_kind("radiology.ct_hand_foot") == ["34351"]
     assert evidence_by_kind["radiology.ct_hand_foot"].service_time == "15:23"
     assert review == []
     assert excluded == []
@@ -295,7 +298,8 @@ def test_maternal_renal_sonography_inherits_date_from_contiguous_report_page():
     renal = next(item for item in evidence if item.kind == "clinical.diagnostics.maternal_renal_sonography")
 
     assert renal.service_date == "2026-01-01"
-    assert renal.metadata["candidate_gops"] == ["33042"]
+    assert "candidate_gops" not in renal.metadata
+    assert candidate_gops_for_evidence_kind(renal.kind) == ["33042"]
     assert renal.metadata["service_datetime_carried_from_previous_page"] is True
 
 

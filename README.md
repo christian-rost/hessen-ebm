@@ -166,6 +166,7 @@ Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, fällt die A
 Das fachliche Regelwerk liegt unter `backend/app/billing_rule_definitions.json`. Es ist vom Python-Code getrennt und enthält:
 
 - direkte Zuordnungen von Evidenzarten zu GOPs
+- unverbindliche Kandidatenregeln für mehrdeutige Evidenz und interne Leistungskennungen
 - zeitabhängige GOP-Gruppen mit beliebig vielen Ergebnisvarianten
 - datengesteuerte Sequenzregeln für Erst- und Folgekontakte
 - abgeleitete GOPs und Zuschläge mit Voraussetzungen, Kriterien und Ausschlüssen
@@ -174,9 +175,11 @@ Das fachliche Regelwerk liegt unter `backend/app/billing_rule_definitions.json`.
 
 Der generische Evaluator unterstützt unter anderem GOP-Voraussetzungen, Evidenzarten, ICD-Präfixe, Volltextmerkmale, Alter, Datum, Uhrzeit, Wochentag, Feiertage, Region, Quartal und strukturierte Metadaten. Weitere Regeln werden als Daten ergänzt; dafür ist keine neue GOP-spezifische Python-Funktion erforderlich. Beide Abrechnungspfade verwenden dasselbe Regelwerk: die deterministische Rechnungserzeugung ebenso wie die Prüfung und Nachbearbeitung der LLM-Vorschläge.
 
+Produktiver Python-Code enthält keine konkreten GOP-Zuordnungen. Direkte Abrechnung, Kandidatenlisten, zeitliche Varianten und Zuschläge werden ausschließlich aus dem versionierten Regelwerk beziehungsweise dem Quartalskatalog geladen. Ein Architekturtest verhindert, dass konkrete GOP-Literale erneut in `backend/app/*.py` eingeführt werden.
+
 Die zeitliche Regelschicht dedupliziert nicht mehr pauschal fallweit nach GOP. Sie verwendet den Schlüssel aus GOP und Leistungsereignis. Dadurch kann beispielsweise `01786` an zwei verschiedenen Behandlungstagen zweimal vorkommen, während CTG-Start, CTG-Ende, Kurve und Verlaufsnotiz derselben Sitzung nur eine Position erzeugen. Für Kontaktsequenzen gilt zusätzlich: Pro Sequenzereignis entsteht höchstens eine Basispauschale. Eine laufende Notfallsitzung über Mitternacht erzeugt daher keine zweite `01212`; nur ein belegter weiterer Kontakt wird in die passende Folgekonsultations-GOP überführt. Katalogausschlüsse und Häufigkeitsgrenzen werden entsprechend ihrem Geltungsbereich pro Sitzung, Behandlungstag, Behandlungsfall oder Quartal geprüft.
 
-Bei `BILLING_RULES_SOURCE=auto` bleiben die aktiven Supabase-Regeln maßgeblich. Neue lokale Kernregeln werden bis zur nächsten Admin-Kompilierung ergänzend eingeblendet, wenn ihre Regel-ID in Supabase noch fehlt. `POST /api/admin/rules/compile` schreibt anschließend das vollständige Kernregelwerk einschließlich der Ereignis- und Sequenzregeln nach Supabase.
+Bei `BILLING_RULES_SOURCE=auto` bleiben die aktiven Supabase-Regeln maßgeblich. Neue lokale Kernregeln werden bis zur nächsten Admin-Kompilierung ergänzend eingeblendet, wenn ihre Regel-ID in Supabase noch fehlt. `POST /api/admin/rules/compile` schreibt anschließend das vollständige Kernregelwerk einschließlich der Kandidaten-, Ereignis- und Sequenzregeln nach Supabase.
 
 Aktuell enthält das Regelwerk unter anderem folgende direkte Evidenzzuordnungen:
 
@@ -203,7 +206,7 @@ Aktuell enthält das Regelwerk unter anderem folgende direkte Evidenzzuordnungen
 | Röntgen Schulter 2 Ebenen | `34231` |
 | Röntgen HWS 2 Ebenen | `34221` |
 
-Die Zeitvarianten der Notfall-GOPs und der Zuschlag `01226` stehen ebenfalls ausschließlich im versionierten Regelwerk. `GET /api/rules` liefert die Regelwerk-ID und -Version sowie direkte, zeitabhängige und abgeleitete Regeln.
+Die Zeitvarianten der Notfall-GOPs und der Zuschlag `01226` stehen ebenfalls ausschließlich im versionierten Regelwerk. `GET /api/rules` liefert die Regelwerk-ID und -Version sowie direkte, unverbindliche, zeitabhängige und abgeleitete Regeln.
 
 ## API
 

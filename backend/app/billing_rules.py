@@ -9,8 +9,10 @@ from typing import Any
 
 from .billing_rule_definitions import (
     BillingRuleSet,
+    CandidateRuleDefinition,
     DerivedRuleDefinition,
     EvidenceRuleDefinition,
+    EventSequenceRuleDefinition,
     TemporalRuleDefinition,
     definition_is_applicable,
 )
@@ -101,13 +103,19 @@ def candidate_gops_for_evidence_kind(
         for rule in evidence_billing_rules(quarter, region, definitions)
         if rule.evidence_kind == evidence_kind
     ]
+    configured_candidates = [
+        gop
+        for rule in definitions.candidate_rules
+        if rule.evidence_kind == evidence_kind and _definition_applies(rule, quarter, region)
+        for gop in rule.gops
+    ]
     sequence_candidates = [
         gop
         for rule in definitions.event_sequence_rules
         if evidence_kind in rule.evidence_kinds and _definition_applies(rule, quarter, region)
         for gop in (rule.initial_gop, rule.subsequent_gop)
     ]
-    candidates = list(direct) + sequence_candidates
+    candidates = list(direct) + configured_candidates + sequence_candidates
     direct_bases = {_normalize_rule_gop(gop) for gop in candidates}
     for rule in definitions.temporal_rules:
         if not _definition_applies(rule, quarter, region):
@@ -272,6 +280,14 @@ def billing_rule_guidance(rule_set: BillingRuleSet | None = None) -> dict[str, A
             ),
             "dimensions": REVIEW_RULE_DIMENSIONS,
         },
+        "candidate_rules": [
+            {
+                "rule_id": rule.rule_id,
+                "evidence_kind": rule.evidence_kind,
+                "gops": list(rule.gops),
+            }
+            for rule in definitions.candidate_rules
+        ],
         "temporal_rules": [
             {
                 "rule_id": rule.rule_id,
@@ -381,30 +397,6 @@ def derive_additional_gops(
         if not matched_in_pass:
             break
     return decisions
-
-
-def emergency_initial_gop(
-    service_date: str | None,
-    service_time: str | None,
-    region: str = "Hessen",
-) -> GopRuleDecision:
-    return apply_temporal_gop_rule("01210", service_date, service_time, region)
-
-
-def emergency_consultation_gop(
-    service_date: str | None,
-    service_time: str | None,
-    region: str = "Hessen",
-) -> GopRuleDecision:
-    return apply_temporal_gop_rule("01214", service_date, service_time, region)
-
-
-def emergency_clarification_gop(
-    service_date: str | None,
-    service_time: str | None,
-    region: str = "Hessen",
-) -> GopRuleDecision:
-    return apply_temporal_gop_rule("01205", service_date, service_time, region)
 
 
 def is_special_notfall_day(service_date: str | date, region: str = "Hessen") -> bool:
@@ -532,7 +524,7 @@ def _patient_age_from_evidence(evidence: Sequence[Mapping[str, Any]]) -> int | N
 
 
 def _definition_applies(
-    definition: TemporalRuleDefinition | DerivedRuleDefinition,
+    definition: CandidateRuleDefinition | TemporalRuleDefinition | EventSequenceRuleDefinition | DerivedRuleDefinition,
     quarter: str | None,
     region: str,
 ) -> bool:

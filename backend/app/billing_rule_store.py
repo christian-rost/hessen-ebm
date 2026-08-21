@@ -329,6 +329,7 @@ def _merge_runtime_core_rules(local: BillingRuleSet, remote: BillingRuleSet) -> 
         rule_set_id=remote.rule_set_id,
         version=f"{remote.version}+core-{local.version}" if remote.version != local.version else remote.version,
         evidence_rules=merge(remote.evidence_rules, local.evidence_rules),
+        candidate_rules=merge(remote.candidate_rules, local.candidate_rules),
         temporal_rules=merge(remote.temporal_rules, local.temporal_rules),
         event_sequence_rules=merge(remote.event_sequence_rules, local.event_sequence_rules),
         derived_rules=merge(remote.derived_rules, local.derived_rules),

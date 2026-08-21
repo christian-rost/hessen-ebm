@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "rule_set_id": "kbv-ebm-hessen-core",
-  "version": "2026.2",
+  "version": "2026.3",
   "evidence_rules": [
     {"rule_id": "context.kv_notfall_zna.01210.v1", "evidence_kind": "context.kv_notfall_zna", "gop": "01210", "title_hint": "Notfallpauschale I", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "clinical.diagnostics.ctg.01786.v1", "evidence_kind": "clinical.diagnostics.ctg", "gop": "01786", "title_hint": "Kardiotokografische Untersuchung", "valid_from": "2025/Q1", "regions": ["*"]},
@@ -27,6 +27,24 @@
     {"rule_id": "lab.blood_count.thrombocytes.32037.v1", "evidence_kind": "lab.thrombocytes", "gop": "32037A", "title_hint": "Thrombozytenzählung", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "lab.blood_count.hemoglobin.32038.v1", "evidence_kind": "lab.hemoglobin", "gop": "32038A", "title_hint": "Hämoglobin", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "lab.blood_count.hematocrit.32039.v1", "evidence_kind": "lab.hematocrit", "gop": "32039A", "title_hint": "Hämatokrit", "valid_from": "2025/Q1", "regions": ["*"]}
+  ],
+  "candidate_rules": [
+    {"rule_id": "candidate.internal.consultation_fee.v1", "evidence_kind": "internal_service.consultation_fee", "gops": ["01436"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.internal.ordination_fee.v1", "evidence_kind": "internal_service.ordination_fee", "gops": ["06210", "06211", "06212"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.internal.emergency_ordination.v1", "evidence_kind": "internal_service.emergency_ordination", "gops": ["01210", "01212", "01214", "01216", "01218"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.internal.ophthalmology_fundus.v1", "evidence_kind": "internal_service.ophthalmology_fundus", "gops": ["06333"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.internal.aua_echo.v1", "evidence_kind": "internal_service.aua_echo", "gops": ["33000", "33001", "33002"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.internal.aua_epu.v1", "evidence_kind": "internal_service.aua_epu", "gops": ["06312"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.internal.aua_fag.v1", "evidence_kind": "internal_service.aua_fag", "gops": ["06331"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.internal.aua_pdt.v1", "evidence_kind": "internal_service.aua_pdt", "gops": ["06332"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.internal.aua_peri.v1", "evidence_kind": "internal_service.aua_peri", "gops": ["06330"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.internal.aua_schiel.v1", "evidence_kind": "internal_service.aua_schiel", "gops": ["06320", "06321"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.internal.aua_tws.v1", "evidence_kind": "internal_service.aua_tws", "gops": ["06352"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.internal.aua_lidheber.v1", "evidence_kind": "internal_service.aua_lidheber", "gops": ["06350", "06351", "06352"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.review.lab.pregnancy_test.v1", "evidence_kind": "lab.pregnancy_test", "gops": ["32132"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.review.lab.drug_screen_urine.v1", "evidence_kind": "lab.drug_screen_urine", "gops": ["32292", "32307"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.review.lab.urinalysis.v1", "evidence_kind": "lab.urinalysis", "gops": ["32720"], "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "candidate.review.lab.extended_panel.v1", "evidence_kind": "lab.extended_panel", "gops": ["32065", "32069", "32071", "32074", "32092", "32128", "32450"], "valid_from": "2025/Q1", "regions": ["*"]}
   ],
   "event_sequence_rules": [
     {
