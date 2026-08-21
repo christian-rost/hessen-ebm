@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "definition_set_id": "hessen-ebm-clinical-evidence",
-  "version": "2026.5",
+  "version": "2026.6",
   "formats": {
     "fallback_segment_type": "other",
     "fallback_reason": "Kein spezifischer Dokumentmarker gefunden",
@@ -17,6 +17,14 @@
       ".{0,100}?durchgefuhrt(?:am)?(\\d{2}\\.\\d{2}\\.\\d{4})um(\\d{2}:\\d{2})",
       ".{0,100}?durchgefuhrt(?:am)?(\\d{2}\\.\\d{2}\\.\\d{4})"
     ]
+  },
+  "clause_facts": {
+    "personal_contact": {
+      "label": "persönlicher Arzt-Patienten-Kontakt",
+      "missing_note": "Katalogregel verlangt einen persönlichen Arzt-Patienten-Kontakt; dieser ist nicht sicher belegt.",
+      "metadata_flag": "personal_contact",
+      "text_any": ["arzt-patienten-kontakt"]
+    }
   },
   "selection_extraction": {
     "row_regex": "^\\s*(?:(?P<quantity>\\d+(?:[.,]\\d+)?)\\s*(?:x\\s*)?)?(?P<code>[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|[A-Z]{2,}[A-Z0-9]*)\\b\\s*(?P<label>.*)$",
@@ -587,6 +595,7 @@
       "metadata": {
         "datetime_role": "first_personal_physician_contact",
         "service_status": "occurred",
+        "personal_contact": true,
         "timeline_event_type": "first_personal_physician_contact",
         "timeline_label": "Erster persönlicher Arztkontakt",
         "dedupe_scope": "service_datetime",
@@ -610,6 +619,7 @@
       "metadata": {
         "datetime_role": "subsequent_personal_physician_contact",
         "service_status": "occurred",
+        "personal_contact": true,
         "timeline_event_type": "subsequent_personal_physician_contact",
         "timeline_label": "Weiterer persönlicher Arztkontakt",
         "dedupe_scope": "service_datetime",
@@ -641,6 +651,7 @@
       "kind": "context.specialty_ambulance_emergency",
       "label": "Fachambulanz-/Notfallkontakt",
       "confidence": 0.88,
+      "metadata": {"personal_contact": true},
       "text_mode": "fixed",
       "text": "Notfallkontakt in einer Fachambulanz dokumentiert",
       "search_terms": ["Notfallpauschale", "Notfall", "Grundpauschale"],
@@ -701,6 +712,7 @@
       "kind": "clinical.service.consultation",
       "label": "Beratung / Aufklärung",
       "confidence": 0.68,
+      "metadata": {"personal_contact": true},
       "search_terms": ["Beratung", "Aufklärung", "Gespräch", "Grundpauschale"],
       "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["beratung", "aufklarung", "aufklaerung", "gesprach", "empfehlungenerlautert"]}]}
     },
@@ -709,6 +721,7 @@
       "kind": "clinical.service.examination",
       "label": "Klinische Untersuchung / Befund",
       "confidence": 0.66,
+      "metadata": {"personal_contact": true},
       "search_terms": ["Untersuchung", "Klinischer Befund", "Grundpauschale"],
       "when": {"all": [{"segment_flag_any": ["clinical_context"]}, {"text_any": ["untersuchung", "befund", "beurteilung", "status", "palpation", "inspektion"]}]}
     },

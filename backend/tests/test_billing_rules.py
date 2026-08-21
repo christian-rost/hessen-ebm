@@ -7,7 +7,7 @@ from app.billing_rules import (
     derive_additional_gops,
     evaluate_catalog_context_rules,
     evaluate_gop_rules,
-    is_special_notfall_day,
+    is_special_calendar_day,
 )
 from app.billing_rule_definitions import parse_billing_rule_set
 from app.billing_rule_store import _merge_runtime_core_rules
@@ -124,24 +124,21 @@ def test_data_driven_rules_support_new_temporal_and_chained_gops_without_python_
             "schema_version": 1,
             "rule_set_id": "generic-test-rules",
             "version": "1.0",
-            "evidence_rules": [
+            "candidate_rules": [
                 {
                     "rule_id": "test.service.base.v1",
                     "evidence_kind": "test.service",
-                    "gop": "11111",
-                    "title_hint": "Testleistung",
+                    "gops": ["11111"],
                     "valid_from": "2026/Q1",
                     "regions": ["*"],
-                }
-            ],
-            "candidate_rules": [
+                },
                 {
                     "rule_id": "test.candidate.v1",
                     "evidence_kind": "test.candidate-only",
                     "gops": ["22221", "22222"],
                     "valid_from": "2026/Q1",
                     "regions": ["*"],
-                }
+                },
             ],
             "temporal_rules": [
                 {
@@ -224,7 +221,6 @@ def test_rule_definitions_reject_unknown_condition_operators_during_loading():
                 "schema_version": 1,
                 "rule_set_id": "invalid-test-rules",
                 "version": "1.0",
-                "evidence_rules": [],
                 "temporal_rules": [],
                 "derived_rules": [
                     {
@@ -245,7 +241,6 @@ def test_derived_rule_validity_is_filtered_by_quarter_and_region():
             "schema_version": 1,
             "rule_set_id": "validity-test-rules",
             "version": "1.0",
-            "evidence_rules": [],
             "temporal_rules": [],
             "derived_rules": [
                 {
@@ -271,7 +266,7 @@ def test_derived_rule_validity_is_filtered_by_quarter_and_region():
 
 
 def test_special_notfall_day_includes_hessen_public_holiday():
-    assert is_special_notfall_day("2026-06-04", "Hessen") is True
+    assert is_special_calendar_day("2026-06-04", "Hessen") is True
 
 
 def test_special_day_calendar_is_supplied_by_the_rule_set() -> None:
@@ -289,14 +284,13 @@ def test_special_day_calendar_is_supplied_by_the_rule_set() -> None:
                 },
                 "regions": {},
             },
-            "evidence_rules": [],
             "temporal_rules": [],
             "derived_rules": [],
         }
     )
 
-    assert is_special_notfall_day("2026-02-03", "Testregion", rule_set) is True
-    assert is_special_notfall_day("2026-02-04", "Testregion", rule_set) is False
+    assert is_special_calendar_day("2026-02-03", "Testregion", rule_set) is True
+    assert is_special_calendar_day("2026-02-04", "Testregion", rule_set) is False
 
 
 def test_catalog_context_rules_require_review_for_missing_structured_context():
@@ -346,7 +340,6 @@ def test_runtime_rule_overlay_keeps_new_local_event_rules_until_supabase_is_reco
                 "default_session_gap_minutes": 90,
                 "timeline_role_priority": {"service_event": 7},
             },
-            "evidence_rules": [],
             "temporal_rules": [],
             "derived_rules": [],
         }
@@ -362,7 +355,6 @@ def test_runtime_rule_overlay_keeps_new_local_event_rules_until_supabase_is_reco
                 "timeline_role_priority": {"initial_contact": 0, "service_event": 1},
                 "timeline_event_type_priority": {"administrative_admission": 0, "service_event": 4},
             },
-            "evidence_rules": [],
             "candidate_rules": [
                 {
                     "rule_id": "candidate.test.v1",

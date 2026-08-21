@@ -1,3 +1,5 @@
+import ast
+import re
 from pathlib import Path
 
 from app.billing_events import build_billing_events
@@ -11,10 +13,18 @@ from app.ebm_rule_compiler import CompiledCatalogRuleSet
 from app.models import Evidence, PageText
 
 
+# Jedes Modul, das Regeln oder Evidenz auswertet. Die Liste war zuvor auf die
+# Extraktion beschraenkt; dadurch konnten Evidenzarten in die Regelpruefung
+# zurueckwandern, ohne dass der Test anschlug.
 EXECUTION_MODULES = (
+    "billing_events.py",
+    "billing_rules.py",
+    "catalog_rule_validation.py",
     "clinical_rule_engine.py",
     "document_segmentation.py",
     "evidence_extraction.py",
+    "invoice_timeline.py",
+    "rule_engine.py",
     "selection_extraction.py",
 )
 FORBIDDEN_DOMAIN_LITERALS = (
@@ -172,3 +182,24 @@ def test_supabase_rule_payload_contains_versioned_clinical_definitions() -> None
     assert row["core_payload"]["clinical_definitions"]["definition_set_id"] == clinical.definition_set_id
     assert row["core_payload"]["clinical_definitions"]["version"] == clinical.version
     assert row["core_payload"]["clinical_definitions"]["selection_extraction"] == clinical.selection_extraction
+
+
+EVIDENCE_KIND_RE = re.compile(
+    r"^(context|clinical|lab|imaging|timeline|document|case|material|procedure|diagnosis)\.[a-z0-9_.]+$"
+)
+
+
+def test_execution_modules_contain_no_evidence_kind_literals() -> None:
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    violations: list[str] = []
+    for filename in EXECUTION_MODULES:
+        path = app_dir / filename
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and EVIDENCE_KIND_RE.match(node.value):
+                violations.append(f"{filename}:{node.lineno}: {node.value}")
+
+    assert violations == [], (
+        "Evidenzarten gehören in clinical_evidence_definitions.json und werden über Metadatenflags "
+        "oder clause_facts referenziert, nicht als Literal im Regelcode:\n" + "\n".join(violations)
+    )

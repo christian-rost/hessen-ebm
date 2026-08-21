@@ -243,13 +243,17 @@ def compile_billing_rules(
 @app.get("/api/catalog/search")
 def catalog_search(
     q: str = Query(..., min_length=2),
-    quarter: str = "2025/Q4",
+    quarter: str | None = Query(None, description="Leistungsquartal; ohne Angabe der neueste Katalogstand."),
     limit: int = Query(25, ge=1, le=100),
 ) -> dict[str, object]:
+    catalog = _catalog()
+    quarter = quarter or catalog.latest_quarter()
+    if not quarter:
+        raise HTTPException(status_code=409, detail="Der aktive Katalog enthält kein Quartal.")
     return {
         "query": q,
         "quarter": quarter,
-        "results": [entry.model_dump() for entry in _catalog().search(q, quarter, limit)],
+        "results": [entry.model_dump() for entry in catalog.search(q, quarter, limit)],
     }
 
 
@@ -271,9 +275,9 @@ def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Setting
     )
 
     catalog = _catalog()
-    default_quarter = case_context.get("quarter") or "2025/Q4"
+    default_quarter = case_context.get("quarter") or catalog.latest_quarter()
     region = str(case_context.get("region") or "Hessen")
-    billing_events = build_billing_events(evidence, str(default_quarter), region)
+    billing_events = build_billing_events(evidence, default_quarter, region)
     episode_selection = episode_selection_payload(billing_events)
     for episode in episode_selection["episodes"]:
         if episode["primary"]:
@@ -306,30 +310,37 @@ def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Setting
             excluded.extend(semantic_result.excluded_evidence)
             billing_derivation = semantic_result.context
         except SemanticBillingError as exc:
-            analysis_warnings.append(f"Semantische Abrechnung fehlgeschlagen, deterministische Regeln werden verwendet: {exc}")
+            analysis_warnings.append(f"Semantische Herleitung fehlgeschlagen: {exc}. Ohne sie entsteht keine Rechnungsposition; Segmente, Zeitleiste und Evidenzen bleiben vorhanden.")
             items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter, region=region)
             billing_derivation = {
-                "mode": "deterministic_rules",
+                "mode": "no_derivation",
                 "fallback_reason": str(exc),
             }
         except Exception as exc:  # pragma: no cover - safety net for external LLM integration.
-            analysis_warnings.append(f"Semantische Abrechnung ist abgestürzt, deterministische Regeln werden verwendet: {exc}")
+            analysis_warnings.append(f"Semantische Herleitung ist abgestürzt: {exc}. Ohne sie entsteht keine Rechnungsposition; Segmente, Zeitleiste und Evidenzen bleiben vorhanden.")
             items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter, region=region)
             billing_derivation = {
-                "mode": "deterministic_rules",
-                "fallback_reason": f"Unerwarteter Fehler der semantischen Abrechnung: {exc}",
+                "mode": "no_derivation",
+                "fallback_reason": f"Unerwarteter Fehler der semantischen Herleitung: {exc}",
             }
     else:
         items, summary = generate_billing_items(evidence, catalog, default_quarter=default_quarter, region=region)
-        billing_derivation = {"mode": "deterministic_rules", "fallback_reason": "Semantische Abrechnung ist deaktiviert."}
+        analysis_warnings.append(
+            "Die semantische Herleitung ist deaktiviert. Die Zuordnung von Evidenz zu GOP erfolgt "
+            "ausschließlich über sie, deshalb enthält dieser Entwurf keine Rechnungspositionen."
+        )
+        billing_derivation = {
+            "mode": "no_derivation",
+            "fallback_reason": "Semantische Herleitung ist deaktiviert.",
+        }
 
     timeline_events = build_invoice_timeline(
         billing_events,
         items,
-        str(default_quarter),
+        default_quarter,
         region,
     )
-    item_quarters = sorted({item.quarter for item in items}) or [str(default_quarter)]
+    item_quarters = sorted({item.quarter for item in items}) or [quarter for quarter in (default_quarter,) if quarter]
     regional_catalog_checks = [
         catalog.regional_catalog_check(
             [item.gop_base for item in items if item.quarter == quarter],

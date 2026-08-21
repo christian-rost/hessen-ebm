@@ -25,6 +25,7 @@ class ClinicalDefinitionSet:
     review_rules: tuple[dict[str, Any], ...]
     exclusion_rules: tuple[dict[str, Any], ...]
     selection_extraction: dict[str, Any]
+    clause_facts: dict[str, dict[str, Any]]
     formats: dict[str, Any]
 
 
@@ -43,6 +44,7 @@ def clinical_definition_set_payload(definitions: ClinicalDefinitionSet) -> dict[
         "review_rules": list(definitions.review_rules),
         "exclusion_rules": list(definitions.exclusion_rules),
         "selection_extraction": definitions.selection_extraction,
+        "clause_facts": definitions.clause_facts,
     }
 
 
@@ -86,6 +88,7 @@ def parse_clinical_definition_set(payload: dict[str, Any]) -> ClinicalDefinition
         review_rules=tuple(review_rules),
         exclusion_rules=tuple(exclusion_rules),
         selection_extraction=_optional_object(payload.get("selection_extraction"), "selection_extraction"),
+        clause_facts=_object_map(payload.get("clause_facts") or {}, "clause_facts"),
         formats=dict(payload.get("formats") or {}),
     )
 

@@ -11,7 +11,6 @@ from .billing_rule_definitions import (
     BillingRuleSet,
     CandidateRuleDefinition,
     DerivedRuleDefinition,
-    EvidenceRuleDefinition,
     EventSequenceRuleDefinition,
     TemporalRuleDefinition,
     definition_is_applicable,
@@ -78,19 +77,6 @@ class _RuleFacts:
     metadata: Mapping[str, tuple[Any, ...]]
 
 
-def evidence_billing_rules(
-    quarter: str | None = None,
-    region: str = "Hessen",
-    rule_set: BillingRuleSet | None = None,
-) -> list[EvidenceRuleDefinition]:
-    definitions = rule_set or get_runtime_billing_rule_set(quarter, region)
-    return [
-        rule
-        for rule in definitions.evidence_rules
-        if definition_is_applicable(rule.valid_from, rule.valid_to, rule.regions, quarter, region)
-    ]
-
-
 def candidate_gops_for_evidence_kind(
     evidence_kind: str,
     quarter: str | None = None,
@@ -98,11 +84,6 @@ def candidate_gops_for_evidence_kind(
     rule_set: BillingRuleSet | None = None,
 ) -> list[str]:
     definitions = rule_set or get_runtime_billing_rule_set(quarter, region)
-    direct = [
-        rule.gop
-        for rule in evidence_billing_rules(quarter, region, definitions)
-        if rule.evidence_kind == evidence_kind
-    ]
     configured_candidates = [
         gop
         for rule in definitions.candidate_rules
@@ -115,7 +96,7 @@ def candidate_gops_for_evidence_kind(
         if evidence_kind in rule.evidence_kinds and _definition_applies(rule, quarter, region)
         for gop in (rule.initial_gop, rule.subsequent_gop)
     ]
-    candidates = list(direct) + configured_candidates + sequence_candidates
+    candidates = configured_candidates + sequence_candidates
     direct_bases = {_normalize_rule_gop(gop) for gop in candidates}
     for rule in definitions.temporal_rules:
         if not _definition_applies(rule, quarter, region):
@@ -399,11 +380,16 @@ def derive_additional_gops(
     return decisions
 
 
-def is_special_notfall_day(
+def is_special_calendar_day(
     service_date: str | date,
     region: str = "Hessen",
     rule_set: BillingRuleSet | None = None,
 ) -> bool:
+    """Prueft den Tag gegen den Kalender aus `calendar_definitions` des Regelwerks.
+
+    Wochentage, feste Datumsangaben und Osterabstaende stehen in den Definitionen,
+    nicht im Code; die Funktion bleibt daher frei von Fach- und Regionalwissen.
+    """
     day = service_date if isinstance(service_date, date) else _parse_date(service_date)
     if day is None:
         return False
@@ -627,7 +613,7 @@ def _matches_condition(condition: Mapping[str, Any], facts: _RuleFacts) -> bool:
             results.append(_matches_age(operand, facts.patient_age))
         elif operator == "special_day":
             day = _parse_date(facts.service_date)
-            results.append(day is not None and is_special_notfall_day(day, facts.region) is bool(operand))
+            results.append(day is not None and is_special_calendar_day(day, facts.region) is bool(operand))
         elif operator == "weekday_any":
             day = _parse_date(facts.service_date)
             weekdays = {int(value) for value in _value_list(operand)}

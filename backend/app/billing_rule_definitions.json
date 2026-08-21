@@ -1,7 +1,18 @@
 {
   "schema_version": 1,
   "rule_set_id": "kbv-ebm-hessen-core",
-  "version": "2026.6",
+  "version": "2027.1",
+  "clause_policy": {
+    "advisory_clause_types": [
+      "quantity_unit",
+      "minimum_duration",
+      "duration_increment",
+      "authorization",
+      "service_location",
+      "catalog_reference"
+    ],
+    "ignored_clause_types": ["reporting"]
+  },
   "semantic_policy": {
     "auto_accept_support_levels": ["validated_rule", "validated_rule_variant", "derived_rule", "explicit_candidate", "regional_catalog"],
     "proposal_rejection_patterns": [
@@ -50,36 +61,6 @@
       }
     }
   },
-  "evidence_rules": [
-    {"rule_id": "context.kv_notfall_zna.01210.v1", "evidence_kind": "context.kv_notfall_zna", "gop": "01210", "title_hint": "Notfallpauschale I", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "clinical.diagnostics.ctg.01786.v1", "evidence_kind": "clinical.diagnostics.ctg", "gop": "01786", "title_hint": "Kardiotokografische Untersuchung", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "clinical.diagnostics.abdominal_sonography.33042.v1", "evidence_kind": "clinical.diagnostics.abdominal_sonography", "gop": "33042", "title_hint": "Sonografie des Abdomens und Retroperitoneums", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "clinical.ophthalmology_fundus.06333.v1", "evidence_kind": "clinical.ophthalmology_fundus", "gop": "06333", "title_hint": "Binokulare Untersuchung des Augenhintergrundes", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "clinical.diagnostics.ophthalmic_sonography.33000.v1", "evidence_kind": "clinical.diagnostics.ophthalmic_sonography", "gop": "33000", "title_hint": "Sonografie des Auges", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "radiology.ct_head_native.34310.v1", "evidence_kind": "radiology.ct_head_native", "gop": "34310", "title_hint": "CT-Untersuchung des Neurocraniums", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "radiology.ct_thorax.34330.v1", "evidence_kind": "radiology.ct_thorax", "gop": "34330", "title_hint": "CT-Untersuchung des Thorax", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "radiology.xray_shoulder_2_planes.34231.v1", "evidence_kind": "radiology.xray_shoulder_2_planes", "gop": "34231", "title_hint": "Aufnahmen der Schulter/des Schultergürtels", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "radiology.xray_spine_hws_2_planes.34221.v1", "evidence_kind": "radiology.xray_spine_hws_2_planes", "gop": "34221", "title_hint": "Aufnahmen von Teilen der Wirbelsäule", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "radiology.xray_thorax_2_planes.34241.v1", "evidence_kind": "radiology.xray_thorax_2_planes", "gop": "34241", "title_hint": "Röntgen Thorax/Lunge 2 Ebenen", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "radiology.xray_hand_foot.34232.v1", "evidence_kind": "radiology.xray_hand_foot", "gop": "34232", "title_hint": "Aufnahmen der Hand, des Fußes", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "radiology.xray_extremities.34233.v1", "evidence_kind": "radiology.xray_extremities", "gop": "34233", "title_hint": "Aufnahmen der Extremitäten", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "radiology.ct_spine_section.34311.v1", "evidence_kind": "radiology.ct_spine_section", "gop": "34311", "title_hint": "CT Wirbelsäulenabschnitt", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "radiology.ct_extremities.34350.v1", "evidence_kind": "radiology.ct_extremities", "gop": "34350", "title_hint": "CT-Untersuchung der Extremitäten außer Hand/Fuß", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "radiology.ct_hand_foot.34351.v1", "evidence_kind": "radiology.ct_hand_foot", "gop": "34351", "title_hint": "CT-Untersuchung der Hand, des Fußes", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "radiology.ct_contrast.34345.v1", "evidence_kind": "radiology.ct_contrast", "gop": "34345", "title_hint": "CT-Kontrastmittelzuschlag", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.quick.32113.v1", "evidence_kind": "lab.quick", "gop": "32113", "title_hint": "Quick-Wert, Plasma", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.blood_gas_analysis.32247.v1", "evidence_kind": "lab.blood_gas_analysis", "gop": "32247", "title_hint": "Bestimmung der Blutgase und des Säure-Basen-Status", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.creatinine.32066.v1", "evidence_kind": "lab.creatinine", "gop": "32066", "title_hint": "Kreatinin", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.sodium.32083.v1", "evidence_kind": "lab.sodium", "gop": "32083", "title_hint": "Natrium", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.potassium.32081.v1", "evidence_kind": "lab.potassium", "gop": "32081", "title_hint": "Kalium", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.glucose.32025.v1", "evidence_kind": "lab.glucose", "gop": "32025", "title_hint": "Glucose", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.alt_gpt.32070.v1", "evidence_kind": "lab.alt_gpt", "gop": "32070", "title_hint": "GPT / ALT", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.blood_count.erythrocytes.32035.v1", "evidence_kind": "lab.erythrocytes", "gop": "32035A", "title_hint": "Erythrozytenzählung", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.blood_count.leukocytes.32036.v1", "evidence_kind": "lab.leukocytes", "gop": "32036A", "title_hint": "Leukozytenzählung", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.blood_count.thrombocytes.32037.v1", "evidence_kind": "lab.thrombocytes", "gop": "32037A", "title_hint": "Thrombozytenzählung", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.blood_count.hemoglobin.32038.v1", "evidence_kind": "lab.hemoglobin", "gop": "32038A", "title_hint": "Hämoglobin", "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "lab.blood_count.hematocrit.32039.v1", "evidence_kind": "lab.hematocrit", "gop": "32039A", "title_hint": "Hämatokrit", "valid_from": "2025/Q1", "regions": ["*"]}
-  ],
   "candidate_rules": [
     {"rule_id": "candidate.internal.consultation_fee.v1", "evidence_kind": "internal_service.consultation_fee", "gops": ["01436"], "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "candidate.internal.ordination_fee.v1", "evidence_kind": "internal_service.ordination_fee", "gops": ["06210", "06211", "06212"], "valid_from": "2025/Q1", "regions": ["*"]},

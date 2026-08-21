@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -34,18 +34,6 @@ SUPPORTED_CONDITION_OPERATORS = {
     "quarter_between",
     "metadata",
 }
-
-
-@dataclass(frozen=True)
-class EvidenceRuleDefinition:
-    rule_id: str
-    evidence_kind: str
-    gop: str
-    title_hint: str
-    confidence: str = "high"
-    valid_from: str | None = None
-    valid_to: str | None = None
-    regions: tuple[str, ...] = ("*",)
 
 
 @dataclass(frozen=True)
@@ -128,7 +116,6 @@ class BillingRuleSet:
     schema_version: int
     rule_set_id: str
     version: str
-    evidence_rules: tuple[EvidenceRuleDefinition, ...]
     candidate_rules: tuple[CandidateRuleDefinition, ...]
     temporal_rules: tuple[TemporalRuleDefinition, ...]
     event_sequence_rules: tuple[EventSequenceRuleDefinition, ...]
@@ -136,6 +123,7 @@ class BillingRuleSet:
     event_settings: dict[str, Any]
     calendar_definitions: dict[str, Any]
     semantic_policy: dict[str, Any]
+    clause_policy: dict[str, Any] = field(default_factory=dict)
 
 
 def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
@@ -145,7 +133,6 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
             f"Nicht unterstützte Regelschema-Version {schema_version}; erwartet wird {SUPPORTED_SCHEMA_VERSION}."
         )
 
-    evidence_rules = tuple(_parse_evidence_rule(item) for item in _objects(payload.get("evidence_rules")))
     candidate_rules = tuple(_parse_candidate_rule(item) for item in _objects(payload.get("candidate_rules")))
     temporal_rules = tuple(_parse_temporal_rule(item) for item in _objects(payload.get("temporal_rules")))
     event_sequence_rules = tuple(
@@ -156,7 +143,6 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
         schema_version=schema_version,
         rule_set_id=_required_text(payload, "rule_set_id"),
         version=_required_text(payload, "version"),
-        evidence_rules=evidence_rules,
         candidate_rules=candidate_rules,
         temporal_rules=temporal_rules,
         event_sequence_rules=event_sequence_rules,
@@ -164,6 +150,7 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
         event_settings=dict(payload.get("event_settings") or {}),
         calendar_definitions=dict(payload.get("calendar_definitions") or {}),
         semantic_policy=dict(payload.get("semantic_policy") or {}),
+        clause_policy=dict(payload.get("clause_policy") or {}),
     )
     _validate_unique_rule_ids(rule_set)
     return rule_set
@@ -202,19 +189,6 @@ def definition_is_applicable(
     lower = _quarter_index(valid_from) if valid_from else None
     upper = _quarter_index(valid_to) if valid_to else None
     return (lower is None or current >= lower) and (upper is None or current <= upper)
-
-
-def _parse_evidence_rule(item: dict[str, Any]) -> EvidenceRuleDefinition:
-    return EvidenceRuleDefinition(
-        rule_id=_required_text(item, "rule_id"),
-        evidence_kind=_required_text(item, "evidence_kind"),
-        gop=_required_gop(item, "gop"),
-        title_hint=_required_text(item, "title_hint"),
-        confidence=str(item.get("confidence") or "high"),
-        valid_from=_optional_text(item.get("valid_from")),
-        valid_to=_optional_text(item.get("valid_to")),
-        regions=_regions(item),
-    )
 
 
 def _parse_candidate_rule(item: dict[str, Any]) -> CandidateRuleDefinition:
@@ -314,8 +288,7 @@ def _parse_derived_rule(item: dict[str, Any]) -> DerivedRuleDefinition:
 
 
 def _validate_unique_rule_ids(rule_set: BillingRuleSet) -> None:
-    ids = [rule.rule_id for rule in rule_set.evidence_rules]
-    ids.extend(rule.rule_id for rule in rule_set.candidate_rules)
+    ids = [rule.rule_id for rule in rule_set.candidate_rules]
     ids.extend(rule.rule_id for rule in rule_set.temporal_rules)
     ids.extend(outcome.rule_id for rule in rule_set.temporal_rules for outcome in rule.outcomes)
     ids.extend(rule.rule_id for rule in rule_set.event_sequence_rules)

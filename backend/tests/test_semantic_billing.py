@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +11,16 @@ from app.semantic_billing import generate_semantic_billing_items
 class FakeCatalog(CatalogRepository):
     def __init__(self):
         super().__init__(Path("/not-used.sqlite"))
+
+    # Modelliert das Retrieval: welche Evidenzformulierung welche Katalogeintraege
+    # findet. Ersetzt die fruehere Allowlist im Regelwerk.
+    SEARCH_HINTS = {
+        "context kv notfall zna": ("01210", "01212", "01214", "01216", "01218", "01226"),
+        "lab creatinine": ("32066",),
+        "clinical diagnostics ctg": ("01786",),
+        "clinical ophthalmology fundus": ("06333",),
+        "clinical diagnostics ophthalmic sonography": ("33000",),
+    }
 
     def lookup(self, gop: str, quarter: str, region: str = "Hessen"):
         values = {
@@ -50,7 +61,13 @@ class FakeCatalog(CatalogRepository):
         return None
 
     def search(self, query: str, quarter: str, limit: int = 25):
-        return []
+        normalized = re.sub(r"[^0-9a-zA-Z]+", " ", query).strip().lower()
+        gops: list[str] = []
+        for hint, hint_gops in self.SEARCH_HINTS.items():
+            if hint in normalized or normalized in hint:
+                gops.extend(gop for gop in hint_gops if gop not in gops)
+        entries = [entry for gop in gops if (entry := self.lookup(gop, quarter))]
+        return entries[:limit]
 
 
 class RuleTextCatalog(FakeCatalog):
@@ -63,12 +80,15 @@ class RuleTextCatalog(FakeCatalog):
 
 
 class NoisyOphthalmologyCatalog(FakeCatalog):
+    """Retrieval, das neben den passenden Treffern allgemeine Pauschalen mitliefert."""
+
     def search(self, query: str, quarter: str, limit: int = 25):
-        return [
-            entry
-            for gop in ("06212", "01436", "06310")
-            if (entry := self.lookup(gop, quarter)) is not None
-        ]
+        entries = list(super().search(query, quarter, limit))
+        known = {entry.gop_base for entry in entries}
+        for gop in ("06212", "01436", "06310"):
+            if gop not in known and (entry := self.lookup(gop, quarter)) is not None:
+                entries.append(entry)
+        return entries[:limit]
 
 
 class SearchCatalog(FakeCatalog):
@@ -428,12 +448,14 @@ def test_semantic_billing_does_not_accept_gop_outside_candidate_pool():
         llm_client=fake_llm,
     )
 
-    assert [item.gop_original for item in result.items] == ["01212"]
+    # Ohne Allowlist gibt es kein deterministisches Auffangnetz: schlaegt das LLM
+    # nur eine nicht existente GOP vor, entsteht keine Position.
+    assert result.items == []
     assert result.review_candidates[0].possible_gops == ["99999"]
     assert "Katalog-Kandidatenpool" in result.review_candidates[0].reason
 
 
-def test_semantic_billing_keeps_only_rule_backed_items_for_ophthalmology_case():
+def test_semantic_billing_rejects_self_declared_unmet_requirements():
     evidence = [
         ev("context.kv_notfall_zna", page=5, service_date="2026-04-24", service_time="12:20"),
         ev("clinical.ophthalmology_fundus", page=6, service_date="2026-04-24", service_time="11:28"),
@@ -497,12 +519,14 @@ def test_semantic_billing_keeps_only_rule_backed_items_for_ophthalmology_case():
         llm_client=fake_llm,
     )
 
-    assert [item.gop_original for item in result.items] == ["01210", "06333", "33000"]
-    assert {gop for item in result.review_candidates for gop in item.possible_gops} == {
-        "01436",
-        "06212",
-        "06310",
-    }
+    # 06310 faellt heraus, weil die LLM-Begruendung die Voraussetzung selbst als
+    # nicht erfuellt beschreibt. 06212 und 01436 bleiben: der Stubkatalog kennt
+    # keine Klauseln, und ueber die Herkunft eines Kandidaten wird nicht mehr
+    # entschieden. Im Echtbetrieb schliessen sich 06212 und 01436 gegenseitig aus.
+    accepted = [item.gop_original for item in result.items]
+    assert "06310" not in accepted
+    assert {"01210", "06333", "33000"}.issubset(set(accepted))
+    assert {gop for item in result.review_candidates for gop in item.possible_gops} == {"06310"}
 
 
 def test_semantic_billing_marks_general_catalog_rule_review_when_time_is_missing():

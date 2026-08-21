@@ -2,13 +2,38 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from dataclasses import dataclass
 from datetime import time
 from typing import Any, Mapping, Sequence
 
-from .billing_rule_store import load_compiled_catalog_rules
+from .billing_rule_definitions import BillingRuleSet
+from .billing_rule_store import (
+    get_runtime_billing_rule_set,
+    get_runtime_clinical_definition_set,
+    load_compiled_catalog_rules,
+)
+from .clinical_definitions import ClinicalDefinitionSet
 from .catalog import CatalogRepository, normalize_gop
 from .ebm_rule_compiler import compile_catalog_quarter
 from .models import BillingItem, Evidence
+
+
+@dataclass(frozen=True)
+class ClauseVerdict:
+    """Ergebnis einer Katalogklausel.
+
+    `violation` heisst: die Klausel war maschinell entscheidbar und ist verletzt;
+    die GOP darf nicht automatisch abgerechnet werden. `advisory` heisst: die
+    Klausel konnte nicht entschieden werden und bleibt als Pruefhinweis an der
+    Position haengen.
+    """
+
+    severity: str
+    note: str
+
+
+VIOLATION = "violation"
+ADVISORY = "advisory"
 
 
 LONGITUDINAL_FREQUENCY_SCOPES = {
@@ -28,6 +53,8 @@ def apply_catalog_rule_validation(
     catalog: CatalogRepository,
     quarter: str,
     region: str,
+    clinical_definitions: ClinicalDefinitionSet | None = None,
+    rule_set: BillingRuleSet | None = None,
 ) -> dict[str, Any]:
     gop_bases = tuple(sorted({item.gop_base for item in items}))
     rows = load_compiled_catalog_rules(quarter, region, gop_bases)
@@ -56,7 +83,7 @@ def apply_catalog_rule_validation(
         ]
         source = "sqlite_compiler"
 
-    facts = _evidence_facts(evidence)
+    facts = _evidence_facts(evidence, clinical_definitions or get_runtime_clinical_definition_set(quarter, region))
     by_gop: dict[str, list[dict[str, Any]]] = {gop: [] for gop in gop_bases}
     for row in rows:
         row_gop = str(row.get("gop_base") or "")
@@ -67,8 +94,15 @@ def apply_catalog_rule_validation(
             if _scope_applies(row.get("scope"), gop):
                 by_gop.setdefault(gop, []).append(row)
 
+    clause_policy = (rule_set or get_runtime_billing_rule_set(quarter, region)).clause_policy
+    ignored = _ignored_clause_types(clause_policy)
     evaluated_clauses = 0
     review_notes = 0
+    # Pro Position sammeln, ob eine entscheidbare Klausel verletzt ist. Das ist das
+    # Abrechnungstor: nur Positionen ohne Verletzung duerfen automatisch entstehen.
+    verdicts: dict[int, dict[str, list[str]]] = {
+        id(item): {"violations": [], "advisories": []} for item in items
+    }
     for item in items:
         for row in by_gop.get(item.gop_base, []):
             if not _definition_applicable(row, facts):
@@ -79,23 +113,40 @@ def apply_catalog_rule_validation(
             for clause in clauses:
                 if not isinstance(clause, Mapping):
                     continue
+                if str(clause.get("clause_type") or "") in ignored:
+                    continue
                 evaluated_clauses += 1
                 scope = str(clause.get("scope") or "treatment_case")
                 existing_counts = _counts_for_scope(items, item, scope)
-                note = _evaluate_clause(clause, item, existing_counts, facts)
-                if note:
-                    rule_notes.append(note)
+                verdict = _evaluate_clause(clause, item, existing_counts, facts, clause_policy)
+                if not verdict:
+                    continue
+                rule_notes.append(verdict.note)
+                bucket = "violations" if verdict.severity == VIOLATION else "advisories"
+                if verdict.note not in verdicts[id(item)][bucket]:
+                    verdicts[id(item)][bucket].append(verdict.note)
             if rule_notes:
                 new_notes = [note for note in rule_notes if note not in item.validation_notes]
                 review_notes += len(new_notes)
-                if item.validation_status != "catalog_missing":
-                    item.validation_status = "review"
                 item.validation_notes.extend(new_notes)
                 rule_id = str(row.get("rule_id") or "")
                 if rule_id and rule_id not in item.rule_id:
                     item.rule_id = f"{item.rule_id}+{rule_id}"
+        if item.validation_status == "catalog_missing":
+            continue
+        item.validation_status = "review" if verdicts[id(item)]["violations"] else item.validation_status
 
     return {
+        "item_verdicts": [
+            {
+                "gop_original": item.gop_original,
+                "service_event_id": item.service_event_id,
+                "violations": verdicts[id(item)]["violations"],
+                "advisories": verdicts[id(item)]["advisories"],
+                "billable": not verdicts[id(item)]["violations"],
+            }
+            for item in items
+        ],
         "source": source,
         "quarter": quarter,
         "region": region,
@@ -111,7 +162,8 @@ def _evaluate_clause(
     item: BillingItem,
     existing_counts: Counter[str],
     facts: dict[str, Any],
-) -> str | None:
+    clause_policy: Mapping[str, Any] | None = None,
+) -> ClauseVerdict | None:
     clause_type = str(clause.get("clause_type") or "")
     parameters = clause.get("parameters") if isinstance(clause.get("parameters"), Mapping) else {}
     source_text = str(clause.get("source_text") or "Katalogbedingung")
@@ -121,7 +173,10 @@ def _evaluate_clause(
         excluded = {_gop_base(value) for value in _values(parameters.get("gops"))}
         conflicts = sorted((set(existing_counts) - {item.gop_base}).intersection(excluded))
         if conflicts:
-            return f"Abrechnungsausschluss ({_scope_label(scope)}): nicht zusammen mit {', '.join(conflicts)}."
+            return ClauseVerdict(
+                VIOLATION,
+                f"Abrechnungsausschluss ({_scope_label(scope)}): nicht zusammen mit {', '.join(conflicts)}.",
+            )
         return None
 
     if clause_type == "requires_gop":
@@ -129,61 +184,76 @@ def _evaluate_clause(
         mode = str(parameters.get("mode") or "all")
         satisfied = bool(required.intersection(existing_counts)) if mode == "any" else required.issubset(existing_counts)
         if not satisfied:
-            return f"GOP-Voraussetzung fehlt: {', '.join(sorted(required))}."
+            return ClauseVerdict(VIOLATION, f"GOP-Voraussetzung fehlt: {', '.join(sorted(required))}.")
         return None
 
     if clause_type == "frequency_limit":
         maximum = int(parameters.get("maximum") or 0)
         if maximum and existing_counts[item.gop_base] > maximum:
-            return (
+            return ClauseVerdict(
+                VIOLATION,
                 f"Häufigkeitsgrenze überschritten ({_scope_label(scope)}): maximal {maximum}, "
-                f"vorhanden {existing_counts[item.gop_base]}."
+                f"vorhanden {existing_counts[item.gop_base]}.",
             )
         if scope in LONGITUDINAL_FREQUENCY_SCOPES:
-            return (
+            # Faelle ausserhalb dieses Dokuments sind hier nicht sichtbar.
+            return ClauseVerdict(
+                ADVISORY,
                 f"Häufigkeitsgrenze ({_scope_label(scope)}) muss zusätzlich gegen die "
-                "patientenbezogene Abrechnungshistorie geprüft werden."
+                "patientenbezogene Abrechnungshistorie geprüft werden.",
             )
         return None
 
     if clause_type == "requires_icd":
         if not facts["diagnoses"]:
-            return "Katalogregel verlangt eine ICD-10-GM-Diagnose; keine gesicherte Diagnose wurde erkannt."
+            return ClauseVerdict(
+                VIOLATION,
+                "Katalogregel verlangt eine ICD-10-GM-Diagnose; keine gesicherte Diagnose wurde erkannt.",
+            )
         return None
 
-    if clause_type == "requires_personal_contact":
-        if not facts["personal_contact"]:
-            return "Katalogregel verlangt einen persönlichen Arzt-Patienten-Kontakt; dieser ist nicht sicher belegt."
-        return None
+    if clause_type.startswith("requires_"):
+        fact_name = clause_type[len("requires_") :]
+        fact_definition = (facts.get("fact_definitions") or {}).get(fact_name)
+        if fact_definition is not None:
+            if (facts.get("flags") or {}).get(fact_name):
+                return None
+            note = str(fact_definition.get("missing_note") or "").strip()
+            label = str(fact_definition.get("label") or fact_name)
+            return ClauseVerdict(
+                VIOLATION,
+                note or f"Katalogregel verlangt {label}; dies ist nicht sicher belegt.",
+            )
 
     if clause_type == "age_limit":
         age = facts["patient_age"]
         if age is None:
-            return f"Altersbedingung muss geprüft werden: {source_text}"
+            return ClauseVerdict(ADVISORY, f"Altersbedingung muss geprüft werden: {source_text}")
         minimum = parameters.get("min_age")
         maximum = parameters.get("max_age")
         if minimum is not None and age < int(minimum):
-            return f"Altersbedingung nicht erfüllt: Mindestalter {minimum}, erkanntes Alter {age}."
+            return ClauseVerdict(
+                VIOLATION, f"Altersbedingung nicht erfüllt: Mindestalter {minimum}, erkanntes Alter {age}."
+            )
         if maximum is not None and age > int(maximum):
-            return f"Altersbedingung nicht erfüllt: Höchstalter {maximum}, erkanntes Alter {age}."
+            return ClauseVerdict(
+                VIOLATION, f"Altersbedingung nicht erfüllt: Höchstalter {maximum}, erkanntes Alter {age}."
+            )
         return None
 
     if clause_type == "time_window":
         if not item.service_time:
-            return f"Zeitbedingung kann ohne Leistungsuhrzeit nicht geprüft werden: {source_text}"
+            return ClauseVerdict(
+                ADVISORY, f"Zeitbedingung kann ohne Leistungsuhrzeit nicht geprüft werden: {source_text}"
+            )
         if not _inside_time_window(item.service_time, parameters):
-            return f"Leistungsuhrzeit liegt außerhalb der Katalogbedingung: {source_text}"
+            return ClauseVerdict(
+                VIOLATION, f"Leistungsuhrzeit liegt außerhalb der Katalogbedingung: {source_text}"
+            )
         return None
 
-    if clause_type in {
-        "quantity_unit",
-        "minimum_duration",
-        "duration_increment",
-        "authorization",
-        "service_location",
-        "catalog_reference",
-    }:
-        return f"Manuelle Prüfung der Katalogbedingung erforderlich: {source_text}"
+    if clause_type in _advisory_clause_types(clause_policy):
+        return ClauseVerdict(ADVISORY, f"Manuelle Prüfung der Katalogbedingung erforderlich: {source_text}")
 
     return None
 
@@ -207,7 +277,7 @@ def _counts_for_scope(items: list[BillingItem], current: BillingItem, scope: str
     return Counter(item.gop_base for item in relevant for _ in range(max(1, item.quantity)))
 
 
-def _evidence_facts(evidence: Sequence[Evidence]) -> dict[str, Any]:
+def _evidence_facts(evidence: Sequence[Evidence], definitions: ClinicalDefinitionSet) -> dict[str, Any]:
     text = " ".join(f"{item.label} {item.text} {item.value or ''}" for item in evidence)
     diagnoses = set(re.findall(r"\b[A-Z]\d{2}(?:\.\d{1,2})?\b", text.upper()))
     for item in evidence:
@@ -216,16 +286,37 @@ def _evidence_facts(evidence: Sequence[Evidence]) -> dict[str, Any]:
             value = metadata.get(key)
             if isinstance(value, str) and re.fullmatch(r"[A-Z]\d{2}(?:\.\d{1,2})?", value.upper()):
                 diagnoses.add(value.upper())
-    age = _patient_age(evidence)
-    folded = text.casefold()
-    contact_kinds = {
-        "context.kv_notfall_zna",
-        "context.specialty_ambulance_emergency",
-        "clinical.service.examination",
-        "clinical.service.consultation",
+    fact_definitions = definitions.clause_facts
+    return {
+        "diagnoses": sorted(diagnoses),
+        "patient_age": _patient_age(evidence),
+        "fact_definitions": fact_definitions,
+        "flags": {
+            name: _clause_fact_holds(definition, evidence, text.casefold())
+            for name, definition in fact_definitions.items()
+        },
     }
-    personal_contact = any(item.kind in contact_kinds for item in evidence) or "arzt-patienten-kontakt" in folded
-    return {"diagnoses": sorted(diagnoses), "patient_age": age, "personal_contact": personal_contact}
+
+
+def _clause_fact_holds(definition: Mapping[str, Any], evidence: Sequence[Evidence], folded_text: str) -> bool:
+    """Prueft einen in `clinical_evidence_definitions.json` deklarierten Fakt.
+
+    Ein Fakt gilt, wenn eine Evidenz das konfigurierte Metadatenflag traegt, ihre
+    Evidenzart gelistet ist oder einer der konfigurierten Textmarker vorkommt.
+    Fachbegriffe und Evidenzarten stehen damit ausschliesslich in den Definitionen.
+    """
+    flag = str(definition.get("metadata_flag") or "").strip()
+    if flag:
+        for item in evidence:
+            metadata = item.metadata if isinstance(item.metadata, dict) else {}
+            if bool(metadata.get(flag)):
+                return True
+
+    kinds = {str(value) for value in _values(definition.get("evidence_kinds"))}
+    if kinds and any(item.kind in kinds for item in evidence):
+        return True
+
+    return any(str(value).casefold() in folded_text for value in _values(definition.get("text_any")))
 
 
 def _patient_age(evidence: Sequence[Evidence]) -> int | None:
@@ -319,3 +410,11 @@ def _definition_applicable(row: Mapping[str, Any], facts: Mapping[str, Any]) -> 
         if maximum is not None and int(age) > int(maximum):
             return False
     return True
+
+
+def _advisory_clause_types(clause_policy: Mapping[str, Any] | None) -> set[str]:
+    return {str(value) for value in (clause_policy or {}).get("advisory_clause_types") or []}
+
+
+def _ignored_clause_types(clause_policy: Mapping[str, Any] | None) -> set[str]:
+    return {str(value) for value in (clause_policy or {}).get("ignored_clause_types") or []}

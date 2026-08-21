@@ -330,9 +330,11 @@ def test_radiology_hand_forearm_and_wrist_ct_create_billable_evidence():
     assert segments[0].segment_type == "radiology_report"
     assert context["quarter"] == "2026/Q1"
     assert all("candidate_gops" not in item.metadata for item in evidence_by_kind.values())
-    assert candidate_gops_for_evidence_kind("radiology.xray_extremities") == ["34233"]
-    assert candidate_gops_for_evidence_kind("radiology.xray_hand_foot") == ["34232"]
-    assert candidate_gops_for_evidence_kind("radiology.ct_hand_foot") == ["34351"]
+    # Die GOP kommt nicht mehr aus einer konfigurierten Zuordnung, sondern aus der
+    # Katalogsuche. Das Regelwerk kennt fuer diese Evidenzart keine Kandidaten.
+    assert candidate_gops_for_evidence_kind("radiology.xray_extremities") == []
+    assert candidate_gops_for_evidence_kind("radiology.xray_hand_foot") == []
+    assert candidate_gops_for_evidence_kind("radiology.ct_hand_foot") == []
     assert evidence_by_kind["radiology.ct_hand_foot"].service_time == "15:23"
     assert review == []
     assert excluded == []
@@ -409,7 +411,7 @@ def test_abdominal_sonography_inherits_date_from_contiguous_report_page():
 
     assert renal.service_date == "2026-01-01"
     assert "candidate_gops" not in renal.metadata
-    assert candidate_gops_for_evidence_kind(renal.kind) == ["33042"]
+    assert candidate_gops_for_evidence_kind(renal.kind) == []
     assert renal.metadata["service_datetime_carried_from_previous_page"] is True
 
 

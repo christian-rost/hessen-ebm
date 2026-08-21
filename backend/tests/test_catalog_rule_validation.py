@@ -1,7 +1,15 @@
 from collections import Counter
 
-from app.catalog_rule_validation import _counts_for_scope, _evaluate_clause
-from app.models import BillingItem
+from app.catalog_rule_validation import ADVISORY, VIOLATION, _counts_for_scope, _evaluate_clause, _evidence_facts
+from app.billing_rule_definitions import load_billing_rule_set
+from app.clinical_definitions import (
+    ClinicalDefinitionSet,
+    clinical_definition_set_payload,
+    load_clinical_definition_set,
+    parse_clinical_definition_set,
+)
+from app.models import BillingItem, Evidence
+from app.semantic_billing import _split_items_by_catalog_verdict
 
 
 def item(gop: str, day: str, session: str, line: int) -> BillingItem:
@@ -41,7 +49,130 @@ def test_longitudinal_frequency_requires_patient_history_check() -> None:
         "source_text": "einmal im Krankheitsfall",
     }
 
-    note = _evaluate_clause(clause, current, Counter({"99999": 1}), {})
+    verdict = _evaluate_clause(clause, current, Counter({"99999": 1}), {})
 
-    assert note is not None
-    assert "patientenbezogene Abrechnungshistorie" in note
+    assert verdict is not None
+    # Faelle ausserhalb des Dokuments sind unentscheidbar, also kein Abrechnungsstopp.
+    assert verdict.severity == ADVISORY
+    assert "patientenbezogene Abrechnungshistorie" in verdict.note
+
+
+def evidence(kind: str, text: str = "", metadata: dict | None = None) -> Evidence:
+    return Evidence(
+        evidence_id=f"ev-{kind}",
+        kind=kind,
+        label=kind,
+        page=1,
+        text=text,
+        metadata=metadata or {},
+    )
+
+
+def definitions_with_clause_fact(fact: dict) -> ClinicalDefinitionSet:
+    payload = clinical_definition_set_payload(load_clinical_definition_set())
+    payload["clause_facts"] = fact
+    return parse_clinical_definition_set(payload)
+
+
+def test_personal_contact_fact_comes_from_evidence_metadata_not_python() -> None:
+    definitions = load_clinical_definition_set()
+    flagged = [
+        rule["kind"]
+        for rule in definitions.evidence_rules
+        if (rule.get("metadata") or {}).get("personal_contact")
+    ]
+    assert flagged, "Kein Evidenzrule traegt das Flag personal_contact"
+
+    facts = _evidence_facts([evidence(flagged[0], metadata={"personal_contact": True})], definitions)
+    assert facts["flags"]["personal_contact"] is True
+
+    missing = _evidence_facts([evidence("lab.result.sodium")], definitions)
+    assert missing["flags"]["personal_contact"] is False
+
+
+def test_requires_clause_is_resolved_against_configured_clause_facts() -> None:
+    definitions = load_clinical_definition_set()
+    clause = {"clause_type": "requires_personal_contact", "source_text": "persoenlicher Arzt-Patienten-Kontakt"}
+    current = item("99999", "2026-01-03", "session-1", 1)
+
+    satisfied = _evidence_facts([evidence("lab.result.sodium", text="Arzt-Patienten-Kontakt dokumentiert")], definitions)
+    assert _evaluate_clause(clause, current, Counter(), satisfied) is None
+
+    unsatisfied = _evidence_facts([evidence("lab.result.sodium")], definitions)
+    verdict = _evaluate_clause(clause, current, Counter(), unsatisfied)
+    assert verdict is not None
+    assert verdict.severity == VIOLATION
+    assert "Arzt-Patienten-Kontakt" in verdict.note
+
+
+def test_new_requires_clause_needs_no_python_change() -> None:
+    definitions = definitions_with_clause_fact(
+        {
+            "written_report": {
+                "label": "schriftlicher Befundbericht",
+                "missing_note": "Katalogregel verlangt einen schriftlichen Befundbericht.",
+                "evidence_kinds": ["configured.report"],
+            }
+        }
+    )
+    clause = {"clause_type": "requires_written_report", "source_text": "schriftlicher Bericht"}
+    current = item("99999", "2026-01-03", "session-1", 1)
+
+    satisfied = _evidence_facts([evidence("configured.report")], definitions)
+    assert _evaluate_clause(clause, current, Counter(), satisfied) is None
+
+    unsatisfied = _evidence_facts([evidence("configured.other")], definitions)
+    verdict = _evaluate_clause(clause, current, Counter(), unsatisfied)
+    assert verdict is not None
+    assert verdict.severity == VIOLATION
+    assert verdict.note == "Katalogregel verlangt einen schriftlichen Befundbericht."
+
+
+
+def test_unknown_requires_clause_stays_silent() -> None:
+    definitions = definitions_with_clause_fact({})
+    clause = {"clause_type": "requires_something_undefined", "source_text": "unbekannt"}
+    current = item("99999", "2026-01-03", "session-1", 1)
+
+    facts = _evidence_facts([evidence("configured.other")], definitions)
+    assert _evaluate_clause(clause, current, Counter(), facts) is None
+
+
+def test_catalog_verdict_blocks_only_decidable_violations() -> None:
+    """Das Abrechnungstor: Verletzungen stoppen, Unentscheidbares nur vermerken."""
+    billable = item("34241", "2026-01-03", "session-1", 1)
+    blocked = item("01210", "2026-01-03", "session-1", 2)
+    validation = [
+        {
+            "item_verdicts": [
+                {
+                    "gop_original": "34241",
+                    "service_event_id": billable.service_event_id,
+                    "violations": [],
+                    "advisories": ["Manuelle Prüfung der Katalogbedingung erforderlich: Videosprechstunde"],
+                    "billable": True,
+                },
+                {
+                    "gop_original": "01210",
+                    "service_event_id": blocked.service_event_id,
+                    "violations": ["Abrechnungsausschluss (in derselben Sitzung): nicht zusammen mit 01214."],
+                    "advisories": [],
+                    "billable": False,
+                },
+            ]
+        }
+    ]
+
+    kept, review = _split_items_by_catalog_verdict([billable, blocked], validation)
+
+    assert [entry.gop_original for entry in kept] == ["34241"]
+    assert kept[0].line == 1
+    assert len(review) == 1
+    assert review[0].possible_gops == ["01210"]
+    assert "Abrechnungsausschluss" in review[0].reason
+
+
+def test_ignored_clause_types_do_not_reach_the_gate() -> None:
+    """Berichtspflicht ist Verwaltungsangabe, keine Abrechnungsbedingung."""
+    policy = load_billing_rule_set().clause_policy
+    assert "reporting" in (policy.get("ignored_clause_types") or [])

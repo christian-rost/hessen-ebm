@@ -239,11 +239,13 @@ def _assign_episodes(
         else:
             episodes.append([event])
 
-    billable_kinds = {rule.evidence_kind for rule in rule_set.evidence_rules}
+    # Frueher wurde nach "wie viele Ereignisse sind abrechenbar" sortiert. Mit dem
+    # Wegfall der Allowlist ist das vor der Katalogpruefung nicht mehr bekannt;
+    # massgeblich sind jetzt Umfang und Belegdichte des Behandlungsabschnitts.
     ranked = sorted(
         enumerate(episodes),
         key=lambda value: (
-            sum(event.kind in billable_kinds for event in value[1]),
+            len(value[1]),
             len({page for event in value[1] for page in event.evidence_pages}),
             -value[0],
         ),

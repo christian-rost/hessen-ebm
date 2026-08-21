@@ -9,7 +9,6 @@ from .billing_rules import (
     DerivedGopDecision,
     billing_rule_guidance,
     derive_additional_gops,
-    evidence_billing_rules,
     evaluate_catalog_context_rules,
     resolve_evidence_rule_gop,
 )
@@ -24,31 +23,31 @@ from .catalog_rule_validation import apply_catalog_rule_validation
 from .evidence_extraction import quarter_from_date
 from .models import BillingItem, Evidence, InvoiceSummary
 
-def active_rules_payload() -> list[dict[str, str]]:
-    return [
-        {
-            "rule_id": rule.rule_id,
-            "evidence_kind": rule.evidence_kind,
-            "gop_original": rule.gop,
-            "title_hint": rule.title_hint,
-            "valid_from": rule.valid_from or "",
-            "valid_to": rule.valid_to or "",
-            "regions": ",".join(rule.regions),
-        }
-        for rule in evidence_billing_rules()
-    ]
-
-
 def rule_overview_payload() -> dict[str, object]:
     guidance = billing_rule_guidance()
     return {
         "rule_set": guidance["rule_set"],
-        "rules": active_rules_payload(),
         "candidate_rules": guidance["candidate_rules"],
         "temporal_rules": guidance["temporal_rules"],
         "event_sequence_rules": guidance["event_sequence_rules"],
         "derived_rules": guidance["derived_rules"],
     }
+
+
+def _resolve_quarter(
+    derived_quarter: str | None,
+    default_quarter: str | None,
+    catalog: CatalogRepository,
+) -> str | None:
+    """Leistungsquartal bestimmen, ohne ein Quartal im Code festzuschreiben.
+
+    Reihenfolge: aus dem Leistungsdatum abgeleitet, dann Fallkontext, zuletzt der
+    neueste Katalogstand des aktiven Katalogs. Lässt sich kein Quartal bestimmen,
+    wird `None` zurückgegeben. `None` bedeutet fuer die Regelgueltigkeit
+    "keine Quartalseinschraenkung"; ein leerer String wuerde dagegen jede
+    quartalsgebundene Regel stillschweigend abschalten.
+    """
+    return derived_quarter or default_quarter or catalog.latest_quarter()
 
 
 def generate_billing_items(
@@ -57,103 +56,17 @@ def generate_billing_items(
     default_quarter: str | None,
     region: str = "Hessen",
 ) -> tuple[list[BillingItem], InvoiceSummary]:
+    """Deterministische Nachbearbeitung ohne semantische Zuordnung.
+
+    Die Zuordnung Evidenz -> GOP entsteht ausschliesslich semantisch gegen den
+    Quartalskatalog. Ohne diesen Schritt gibt es keine Startpositionen, also
+    liefert diese Funktion eine leere Rechnung. Zuschlags-, Zeit- und
+    Katalogregeln greifen weiterhin, sobald Positionen vorhanden sind.
+    """
     events = build_billing_events(evidence, default_quarter, region)
     billing_evidence = primary_episode_evidence(events)
     items: list[BillingItem] = []
     used_event_gops: set[tuple[str, str]] = set()
-
-    for rule in evidence_billing_rules(default_quarter, region):
-        for event in events_for_evidence_kind(events, rule.evidence_kind):
-            selected = _select_best_evidence(event.evidence)
-            fallback_gop = event.sequence_gop or rule.gop
-            event_quarter = quarter_from_date(event.service_date) or default_quarter or "2025/Q4"
-            rule_decision = resolve_evidence_rule_gop(
-                rule.evidence_kind,
-                fallback_gop,
-                event.service_date,
-                event.service_time,
-                region,
-                quarter=event_quarter,
-            )
-            gop_original = canonical_gop(rule_decision.gop or fallback_gop)
-            gop_base, gop_suffix = normalize_gop(gop_original)
-            event_gop_key = (gop_base, event.event_id)
-            if event_gop_key in used_event_gops:
-                continue
-            used_event_gops.add(event_gop_key)
-
-            entry = catalog.lookup(gop_original, event_quarter, region=region)
-            validation_notes = list(rule_decision.notes)
-            validation_status = "review" if rule_decision.review_required else "valid"
-            sequence_suffix = f"+{event.sequence_rule_id}" if event.sequence_rule_id else ""
-            rule_id = f"{rule.rule_id}{sequence_suffix}+{rule_decision.rule_id}"
-
-            if not entry:
-                validation_status = "catalog_missing"
-                validation_notes.append(f"GOP {gop_base} wurde im Katalog {event_quarter} nicht gefunden.")
-                title = rule.title_hint
-                points = None
-                amount = None
-                source = "UNKNOWN"
-                source_label = None
-                catalog_id = None
-                catalog_data_stand = None
-            else:
-                catalog_decision = evaluate_catalog_context_rules(
-                    BillingRuleContext(
-                        gop=gop_original,
-                        service_date=event.service_date,
-                        service_time=event.service_time,
-                        region=region,
-                        evidence_kind=rule.evidence_kind,
-                        evidence_text=" ".join(item.text for item in event.evidence),
-                        evidence_metadata=selected.metadata,
-                        catalog_rule_texts=entry.rule_texts,
-                    )
-                )
-                validation_notes.extend(catalog_decision.notes)
-                if catalog_decision.review_required:
-                    validation_status = "review"
-                if catalog_decision.rule_id != "catalog.context.noop.v1":
-                    rule_id = f"{rule_id}+{catalog_decision.rule_id}"
-                title = entry.title
-                points = entry.points
-                amount = entry.euro
-                source = entry.source
-                source_label = entry.catalog_label
-                catalog_id = entry.catalog_id
-                catalog_data_stand = entry.data_stand
-
-            items.append(
-                BillingItem(
-                    line=len(items) + 1,
-                    gop_original=gop_original,
-                    gop_base=gop_base,
-                    gop_suffix=gop_suffix,
-                    title=title,
-                    catalog_source=source,
-                    catalog_source_label=source_label,
-                    catalog_id=catalog_id,
-                    catalog_data_stand=catalog_data_stand,
-                    quarter=event_quarter,
-                    service_date=event.service_date,
-                    service_time=event.service_time,
-                    service_event_id=event.event_id,
-                    service_session_id=event.session_id,
-                    treatment_episode_id=event.episode_id,
-                    temporal_role=event.temporal_role,
-                    temporal_reason=event.temporal_reason,
-                    quantity=1,
-                    points=points,
-                    amount_eur=amount,
-                    rule_id=rule_id,
-                    confidence="medium" if rule_decision.review_required else rule.confidence,
-                    evidence_ids=event.evidence_ids,
-                    evidence_pages=event.evidence_pages,
-                    validation_status=validation_status,  # type: ignore[arg-type]
-                    validation_notes=validation_notes,
-                )
-            )
 
     append_derived_billing_items(items, billing_evidence, catalog, default_quarter, region)
     _apply_catalog_rules_by_quarter(items, billing_evidence, catalog, region)
@@ -220,20 +133,21 @@ def append_derived_billing_items(
         dedupe_key = (gop_base, event_key or f"date:{base_item.service_date if base_item else 'unknown'}")
         if dedupe_key in used_event_gops:
             continue
-        quarter = (
-            (base_item.quarter if base_item else None)
-            or default_quarter
-            or _quarter_from_evidence(evidence)
-            or "2025/Q4"
+        quarter = _resolve_quarter(
+            (base_item.quarter if base_item else None),
+            default_quarter or _quarter_from_evidence(evidence),
+            catalog,
         )
-        entry = catalog.lookup(gop_original, quarter, region=region)
+        entry = catalog.lookup(gop_original, quarter or "", region=region)
         validation_notes = list(decision.notes)
         validation_status = "review" if decision.review_required else "valid"
         rule_id = decision.rule_id
 
         if not entry:
             validation_status = "catalog_missing"
-            validation_notes.append(f"GOP {gop_base} wurde im Katalog {quarter} nicht gefunden.")
+            validation_notes.append(
+                f"GOP {gop_base} wurde im Katalog {quarter or 'ohne bestimmbares Quartal'} nicht gefunden."
+            )
             title = decision.title_hint or gop_original
             points = None
             amount = None
@@ -278,7 +192,7 @@ def append_derived_billing_items(
             catalog_source_label=source_label,
             catalog_id=catalog_id,
             catalog_data_stand=catalog_data_stand,
-            quarter=quarter,
+            quarter=quarter or "",
             service_date=base_item.service_date if base_item else None,
             service_time=base_item.service_time if base_item else None,
             service_event_id=event_key,
