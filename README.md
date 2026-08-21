@@ -154,7 +154,7 @@ Das Coolify-Compose bindet keinen festen Host-Port. Das ist Absicht: Coolify rou
 Der normale Ableitungspfad ist semantisch:
 
 1. Aus dem PDF werden abrechnungsrelevante Evidenzen extrahiert.
-2. Evidenzen derselben Sitzung werden zu Leistungsereignissen gebündelt. Ereignisse an verschiedenen Tagen bleiben getrennt.
+2. Evidenzen derselben Sitzung werden zu Leistungsereignissen gebündelt. Ein Datumswechsel um Mitternacht trennt eine laufende Sitzung nicht, solange der definierte zeitliche Abstand nicht überschritten wird.
 3. Zeitlich deutlich getrennte Behandlungsabschnitte werden als Episoden erkannt; nur der fachlich stärkste Abschnitt fließt in den Entwurf ein, weitere Abschnitte erscheinen im Review.
 4. Der Server sucht passende EBM-/Hessen-GOP-Kandidaten im aktiven Quartalskatalog.
 5. Mistral Chat erhält nur die Evidenzen des primären Abschnitts und die Kandidaten und muss ein JSON mit `items`, `review_candidates` und `excluded_evidence` liefern.
@@ -174,7 +174,7 @@ Das fachliche Regelwerk liegt unter `backend/app/billing_rule_definitions.json`.
 
 Der generische Evaluator unterstützt unter anderem GOP-Voraussetzungen, Evidenzarten, ICD-Präfixe, Volltextmerkmale, Alter, Datum, Uhrzeit, Wochentag, Feiertage, Region, Quartal und strukturierte Metadaten. Weitere Regeln werden als Daten ergänzt; dafür ist keine neue GOP-spezifische Python-Funktion erforderlich. Beide Abrechnungspfade verwenden dasselbe Regelwerk: die deterministische Rechnungserzeugung ebenso wie die Prüfung und Nachbearbeitung der LLM-Vorschläge.
 
-Die zeitliche Regelschicht dedupliziert nicht mehr fallweit nach GOP. Sie verwendet den Schlüssel aus GOP und Leistungsereignis. Dadurch kann beispielsweise `01786` an zwei verschiedenen Behandlungstagen zweimal vorkommen, während CTG-Start, CTG-Ende, Kurve und Verlaufsnotiz derselben Sitzung nur eine Position erzeugen. Katalogausschlüsse und Häufigkeitsgrenzen werden entsprechend ihrem Geltungsbereich pro Sitzung, Behandlungstag, Behandlungsfall oder Quartal geprüft.
+Die zeitliche Regelschicht dedupliziert nicht mehr pauschal fallweit nach GOP. Sie verwendet den Schlüssel aus GOP und Leistungsereignis. Dadurch kann beispielsweise `01786` an zwei verschiedenen Behandlungstagen zweimal vorkommen, während CTG-Start, CTG-Ende, Kurve und Verlaufsnotiz derselben Sitzung nur eine Position erzeugen. Für Kontaktsequenzen gilt zusätzlich: Pro Sequenzereignis entsteht höchstens eine Basispauschale. Eine laufende Notfallsitzung über Mitternacht erzeugt daher keine zweite `01212`; nur ein belegter weiterer Kontakt wird in die passende Folgekonsultations-GOP überführt. Katalogausschlüsse und Häufigkeitsgrenzen werden entsprechend ihrem Geltungsbereich pro Sitzung, Behandlungstag, Behandlungsfall oder Quartal geprüft.
 
 Bei `BILLING_RULES_SOURCE=auto` bleiben die aktiven Supabase-Regeln maßgeblich. Neue lokale Kernregeln werden bis zur nächsten Admin-Kompilierung ergänzend eingeblendet, wenn ihre Regel-ID in Supabase noch fehlt. `POST /api/admin/rules/compile` schreibt anschließend das vollständige Kernregelwerk einschließlich der Ereignis- und Sequenzregeln nach Supabase.
 

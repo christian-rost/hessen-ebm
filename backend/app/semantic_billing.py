@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Union
 
 from .billing_rules import (
@@ -25,6 +26,8 @@ from .billing_events import (
     finalize_billing_timeline,
     primary_episode_evidence,
 )
+from .billing_rule_definitions import BillingRuleSet, definition_is_applicable
+from .billing_rule_store import get_runtime_billing_rule_set
 from .catalog import CatalogRepository, canonical_gop, normalize_gop
 from .catalog_rule_validation import apply_catalog_rule_validation
 from .config import Settings
@@ -280,6 +283,9 @@ def _build_messages(
         "Nutze ausschließlich GOPs aus catalog_candidates. Erfinde keine GOPs. "
         "Bilde getrennte Positionen für getrennte Leistungsereignisse. Dieselbe GOP darf an verschiedenen "
         "Leistungstagen erneut vorkommen; mehrere technische Dokumente derselben Sitzung sind dagegen nur ein Ereignis. "
+        "Ein Datumswechsel um Mitternacht beendet eine laufende Sitzung nicht automatisch. Eine Erst- oder "
+        "Grundpauschale darf innerhalb einer Kontaktsequenz nur einmal vorgeschlagen werden; nur ein belegter weiterer "
+        "Kontakt kann eine zeitabhängige Folgekonsultationspauschale auslösen. "
         "Bei zeitabhängigen Positionen sind Leistungsdatum, Uhrzeit, Wochentag, Feiertag sowie Erst- oder Folgekontakt zu beachten. "
         "Wenn eine Leistung nur angefordert, storniert, intern dokumentiert oder unsicher ist, nimm sie nicht als item auf, "
         "sondern als review_candidate oder excluded_evidence. "
@@ -415,7 +421,9 @@ def _billing_items_from_payload(
     review: list[ReviewCandidate] = []
     used_event_gops: set[tuple[str, str]] = set()
 
-    for proposal in _as_list(payload.get("items")):
+    used_sequence_events: set[tuple[str, str]] = set()
+
+    for proposal in _sorted_item_proposals(payload.get("items"), evidence_by_id):
         raw_gop = str(proposal.get("gop") or "").strip().upper()
         gop = canonical_gop(raw_gop)
         if not gop:
@@ -439,9 +447,33 @@ def _billing_items_from_payload(
         service_date = _clean_optional_str(proposal.get("service_date")) or (selected.service_date if selected else None)
         service_time = _clean_optional_str(proposal.get("service_time")) or (selected.service_time if selected else None)
         event = _select_billing_event(events, evidence_ids, service_date, service_time)
+        sequence_event = _select_sequence_event_for_proposal(
+            events,
+            gop,
+            event,
+            service_date,
+            service_time,
+            quarter,
+            region,
+        )
+        if sequence_event:
+            evidence_ids = list(dict.fromkeys(evidence_ids + sequence_event.evidence_ids))
+            selected = _select_evidence_for_item(evidence_ids, evidence_by_id)
+            if event and event.session_id == sequence_event.session_id:
+                service_date, service_time = _earliest_service_datetime(
+                    service_date,
+                    service_time,
+                    sequence_event.service_date,
+                    sequence_event.service_time,
+                )
+            else:
+                service_date = sequence_event.service_date or service_date
+                service_time = sequence_event.service_time or service_time
+            event = sequence_event
         if event:
-            service_date = event.service_date or service_date
-            service_time = event.service_time or service_time
+            if not sequence_event:
+                service_date = event.service_date or service_date
+                service_time = event.service_time or service_time
             if event.sequence_gop:
                 gop = canonical_gop(event.sequence_gop)
         item_quarter = quarter_from_date(service_date) or quarter
@@ -488,6 +520,24 @@ def _billing_items_from_payload(
             )
             continue
         event_key = event.event_id if event else f"{service_date or 'unknown'}T{service_time or 'unknown'}"
+        sequence_key = (
+            (event.sequence_rule_id, event.event_id)
+            if event and event.sequence_rule_id
+            else None
+        )
+        if sequence_key and sequence_key in used_sequence_events:
+            review.append(
+                ReviewCandidate(
+                    evidence=f"Doppelter Vorschlag einer Kontaktpauschale ({gop})",
+                    evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                    possible_gops=[canonical_gop(gop)],
+                    reason=(
+                        "Für dasselbe zeitliche Kontakt- und Sequenzereignis wurde bereits eine "
+                        "Basisposition übernommen."
+                    ),
+                )
+            )
+            continue
         dedupe_key = (gop_base, event_key)
         if dedupe_key in used_event_gops:
             review.append(
@@ -500,6 +550,8 @@ def _billing_items_from_payload(
             )
             continue
         used_event_gops.add(dedupe_key)
+        if sequence_key:
+            used_sequence_events.add(sequence_key)
 
         entry = _lookup_candidate_entry(catalog, gop, item_quarter, region, candidate)
         if not entry:
@@ -618,6 +670,120 @@ def _select_billing_event(
         ),
         reverse=True,
     )[0]
+
+
+def _select_sequence_event_for_proposal(
+    events: list[BillingEvent],
+    gop: str,
+    reference_event: BillingEvent | None,
+    service_date: str | None,
+    service_time: str | None,
+    quarter: str,
+    region: str,
+) -> BillingEvent | None:
+    definitions = get_runtime_billing_rule_set(quarter, region)
+    gop_base, _ = normalize_gop(gop)
+    for rule in definitions.event_sequence_rules:
+        if not definition_is_applicable(rule.valid_from, rule.valid_to, rule.regions, quarter, region):
+            continue
+        if gop_base not in _sequence_gop_family(rule.rule_id, definitions):
+            continue
+        matching = [
+            event
+            for event in events
+            if event.primary_episode and event.sequence_rule_id == rule.rule_id
+        ]
+        if not matching:
+            continue
+        if reference_event in matching:
+            return reference_event
+        if reference_event and reference_event.session_id:
+            same_session = [event for event in matching if event.session_id == reference_event.session_id]
+            if same_session:
+                return min(same_session, key=_sequence_event_sort_key)
+        requested = _parse_service_datetime(service_date, service_time)
+        if requested:
+            timed = [
+                (abs((event_time - requested).total_seconds()), event)
+                for event in matching
+                if (event_time := _parse_service_datetime(event.service_date, event.service_time))
+            ]
+            if timed:
+                distance, nearest = min(timed, key=lambda value: value[0])
+                if distance <= rule.session_gap_minutes * 60:
+                    return nearest
+        if len(matching) == 1 and not service_date:
+            return matching[0]
+    return None
+
+
+def _sequence_gop_family(rule_id: str, definitions: BillingRuleSet) -> set[str]:
+    sequence_rule = next(rule for rule in definitions.event_sequence_rules if rule.rule_id == rule_id)
+    family = {normalize_gop(sequence_rule.initial_gop)[0], normalize_gop(sequence_rule.subsequent_gop)[0]}
+    changed = True
+    while changed:
+        changed = False
+        for temporal_rule in definitions.temporal_rules:
+            temporal_gops = {normalize_gop(value)[0] for value in temporal_rule.gops}
+            if not family.intersection(temporal_gops):
+                continue
+            expanded = temporal_gops | {normalize_gop(outcome.gop)[0] for outcome in temporal_rule.outcomes}
+            if not expanded.issubset(family):
+                family.update(expanded)
+                changed = True
+    return family
+
+
+def _sorted_item_proposals(value: Any, evidence_by_id: dict[str, Evidence]) -> list[dict[str, Any]]:
+    proposals = _as_list(value)
+
+    def sort_key(indexed: tuple[int, dict[str, Any]]) -> tuple[str, str, int]:
+        index, proposal = indexed
+        evidence_ids = _valid_evidence_ids(proposal.get("evidence_ids"), evidence_by_id)
+        evidence_times = sorted(
+            (
+                item.service_date,
+                item.service_time or "23:59",
+            )
+            for evidence_id in evidence_ids
+            if (item := evidence_by_id[evidence_id]).service_date
+        )
+        fallback_date, fallback_time = evidence_times[0] if evidence_times else ("9999-12-31", "23:59")
+        return (
+            _clean_optional_str(proposal.get("service_date")) or fallback_date,
+            _clean_optional_str(proposal.get("service_time")) or fallback_time,
+            index,
+        )
+
+    return [proposal for _index, proposal in sorted(enumerate(proposals), key=sort_key)]
+
+
+def _earliest_service_datetime(
+    first_date: str | None,
+    first_time: str | None,
+    second_date: str | None,
+    second_time: str | None,
+) -> tuple[str | None, str | None]:
+    first = _parse_service_datetime(first_date, first_time)
+    second = _parse_service_datetime(second_date, second_time)
+    if first and second:
+        return (first_date, first_time) if first <= second else (second_date, second_time)
+    if first:
+        return first_date, first_time
+    return second_date, second_time
+
+
+def _parse_service_datetime(date_value: str | None, time_value: str | None) -> datetime | None:
+    if not date_value or not time_value:
+        return None
+    try:
+        return datetime.fromisoformat(f"{date_value}T{time_value}")
+    except ValueError:
+        return None
+
+
+def _sequence_event_sort_key(event: BillingEvent) -> tuple[str, str, str]:
+    return event.service_date or "9999-12-31", event.service_time or "23:59", event.event_id
 
 
 def _lookup_candidate_entry(

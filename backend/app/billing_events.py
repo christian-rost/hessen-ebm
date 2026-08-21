@@ -154,16 +154,14 @@ def _cluster_evidence(matches: list[Evidence], gap_minutes: int) -> list[list[Ev
 
 def _same_session(cluster: list[Evidence], item: Evidence, gap_minutes: int) -> bool:
     anchor = _select_event_anchor(cluster)
-    if anchor.service_date != item.service_date:
-        return False
-    if not anchor.service_date:
+    if not anchor.service_date or not item.service_date:
         return True
     if not anchor.service_time or not item.service_time:
-        return True
+        return anchor.service_date == item.service_date
     anchor_datetime = _parse_datetime(anchor.service_date, anchor.service_time)
     item_datetime = _parse_datetime(item.service_date, item.service_time)
     if not anchor_datetime or not item_datetime:
-        return True
+        return anchor.service_date == item.service_date
     return abs((item_datetime - anchor_datetime).total_seconds()) <= gap_minutes * 60
 
 
@@ -245,16 +243,14 @@ def _assign_sessions(events: list[BillingEvent]) -> None:
 
 
 def _events_share_session(previous: BillingEvent, current: BillingEvent) -> bool:
-    if previous.service_date != current.service_date:
-        return False
-    if not previous.service_date:
+    if not previous.service_date or not current.service_date:
         return False
     if not previous.service_time or not current.service_time:
-        return True
+        return previous.service_date == current.service_date
     previous_datetime = _parse_datetime(previous.service_date, previous.service_time)
     current_datetime = _parse_datetime(current.service_date, current.service_time)
     if not previous_datetime or not current_datetime:
-        return True
+        return previous.service_date == current.service_date
     return abs((current_datetime - previous_datetime).total_seconds()) <= DEFAULT_SESSION_GAP_MINUTES * 60
 
 

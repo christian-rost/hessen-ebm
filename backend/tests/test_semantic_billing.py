@@ -584,3 +584,64 @@ def test_semantic_billing_changes_later_emergency_event_to_consultation_family()
     assert [item.temporal_role for item in result.items] == ["initial_contact", "follow_up_contact"]
     assert result.items[1].temporal_reason
     assert result.items[1].temporal_reason.startswith("Weiterer chronologisch erkannter Kontakt")
+
+
+def test_semantic_billing_deduplicates_one_notfall_session_across_midnight():
+    evidence = [
+        Evidence(
+            evidence_id="ev-clinical-before-midnight",
+            kind="clinical.service.examination",
+            label="Klinische Untersuchung",
+            page=1,
+            service_date="2026-01-29",
+            service_time="23:40",
+            text="Klinische Untersuchung im laufenden Notfallkontakt.",
+        ),
+        Evidence(
+            evidence_id="ev-notfall-after-midnight",
+            kind="context.kv_notfall_zna",
+            label="Notfallbehandlung",
+            page=2,
+            service_date="2026-01-30",
+            service_time="00:39",
+            text="Dokumentation derselben Notfallbehandlung.",
+        ),
+    ]
+
+    def fake_llm(_messages, _settings):
+        return {
+            "items": [
+                {
+                    "gop": "01212",
+                    "evidence_ids": ["ev-notfall-after-midnight"],
+                    "service_date": "2026-01-30",
+                    "service_time": "00:39",
+                    "confidence": "high",
+                    "reason": "Notfallkontakt nach Mitternacht.",
+                },
+                {
+                    "gop": "01212",
+                    "evidence_ids": ["ev-clinical-before-midnight"],
+                    "service_date": "2026-01-29",
+                    "service_time": "23:40",
+                    "confidence": "high",
+                    "reason": "Beginn des Notfallkontakts vor Mitternacht.",
+                },
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence,
+        FakeCatalog(),
+        default_quarter="2026/Q1",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    assert [item.gop_original for item in result.items] == ["01212"]
+    assert result.items[0].service_date == "2026-01-29"
+    assert result.items[0].service_time == "23:40"
+    assert result.items[0].temporal_role == "initial_contact"
+    assert any("dasselbe zeitliche Kontakt" in item.reason for item in result.review_candidates)

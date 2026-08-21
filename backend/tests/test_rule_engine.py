@@ -104,6 +104,37 @@ def test_kv_notfall_zna_daytime_uses_01210():
     assert summary.amount_total_eur == 14.87
 
 
+def test_notfall_contact_crossing_midnight_is_one_initial_pauschale():
+    evidence = [
+        Evidence(
+            evidence_id="ev-notfall-before-midnight",
+            kind="context.kv_notfall_zna",
+            label="Notfallaufnahme",
+            page=1,
+            service_date="2026-01-29",
+            service_time="23:40",
+            text="Vorstellung in der Notfallambulanz.",
+        ),
+        Evidence(
+            evidence_id="ev-notfall-after-midnight",
+            kind="context.kv_notfall_zna",
+            label="Notfallbehandlung",
+            page=2,
+            service_date="2026-01-30",
+            service_time="00:39",
+            text="Fortsetzung derselben Notfallbehandlung.",
+        ),
+    ]
+
+    items, summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
+
+    assert [item.gop_original for item in items] == ["01212"]
+    assert items[0].service_date == "2026-01-29"
+    assert items[0].service_time == "23:40"
+    assert items[0].temporal_role == "initial_contact"
+    assert summary.points_total == 195
+
+
 def test_kv_notfall_zna_night_with_dementia_derives_01226_generically():
     evidence = [
         ev("context.kv_notfall_zna", service_date="2026-02-25", service_time="01:13"),
