@@ -56,7 +56,6 @@ def apply_catalog_rule_validation(
             if _scope_applies(row.get("scope"), gop):
                 by_gop.setdefault(gop, []).append(row)
 
-    existing_counts = Counter(item.gop_base for item in items for _ in range(max(1, item.quantity)))
     evaluated_clauses = 0
     review_notes = 0
     for item in items:
@@ -70,6 +69,8 @@ def apply_catalog_rule_validation(
                 if not isinstance(clause, Mapping):
                     continue
                 evaluated_clauses += 1
+                scope = str(clause.get("scope") or "treatment_case")
+                existing_counts = _counts_for_scope(items, item, scope)
                 note = _evaluate_clause(clause, item, existing_counts, facts)
                 if note:
                     rule_notes.append(note)
@@ -168,6 +169,25 @@ def _evaluate_clause(
         return f"Manuelle Prüfung der Katalogbedingung erforderlich: {source_text}"
 
     return None
+
+
+def _counts_for_scope(items: list[BillingItem], current: BillingItem, scope: str) -> Counter[str]:
+    if scope == "same_session":
+        if current.service_session_id:
+            relevant = [item for item in items if item.service_session_id == current.service_session_id]
+        else:
+            relevant = [
+                item
+                for item in items
+                if item.service_date == current.service_date and item.service_time == current.service_time
+            ]
+    elif scope == "treatment_day":
+        relevant = [item for item in items if item.service_date == current.service_date]
+    elif scope == "quarter":
+        relevant = [item for item in items if item.quarter == current.quarter]
+    else:
+        relevant = items
+    return Counter(item.gop_base for item in relevant for _ in range(max(1, item.quantity)))
 
 
 def _evidence_facts(evidence: Sequence[Evidence]) -> dict[str, Any]:

@@ -231,7 +231,8 @@ def get_runtime_billing_rule_set(quarter: str | None = None, region: str = "Hess
         payload = row.get("core_payload")
         if not isinstance(payload, dict):
             raise ValueError("Das aktive Supabase-Regelwerk enthält kein gültiges core_payload.")
-        result = parse_billing_rule_set(payload)
+        remote = parse_billing_rule_set(payload)
+        result = _merge_runtime_core_rules(local, remote)
         _last_status.update(
             {
                 "source": "supabase",
@@ -240,6 +241,7 @@ def get_runtime_billing_rule_set(quarter: str | None = None, region: str = "Hess
                     "quarter": row.get("quarter"),
                     "region": row.get("region"),
                     "version": row.get("version"),
+                    "core_rule_version": result.version,
                     "compiled_at": row.get("compiled_at"),
                     "summary": row.get("summary") if isinstance(row.get("summary"), dict) else {},
                 },
@@ -315,6 +317,22 @@ def rule_store_status() -> dict[str, Any]:
 def clear_rule_store_cache() -> None:
     get_runtime_billing_rule_set.cache_clear()
     load_compiled_catalog_rules.cache_clear()
+
+
+def _merge_runtime_core_rules(local: BillingRuleSet, remote: BillingRuleSet) -> BillingRuleSet:
+    def merge(remote_rules: tuple[Any, ...], local_rules: tuple[Any, ...]) -> tuple[Any, ...]:
+        by_id = {rule.rule_id: rule for rule in remote_rules}
+        return tuple(remote_rules) + tuple(rule for rule in local_rules if rule.rule_id not in by_id)
+
+    return BillingRuleSet(
+        schema_version=remote.schema_version,
+        rule_set_id=remote.rule_set_id,
+        version=f"{remote.version}+core-{local.version}" if remote.version != local.version else remote.version,
+        evidence_rules=merge(remote.evidence_rules, local.evidence_rules),
+        temporal_rules=merge(remote.temporal_rules, local.temporal_rules),
+        event_sequence_rules=merge(remote.event_sequence_rules, local.event_sequence_rules),
+        derived_rules=merge(remote.derived_rules, local.derived_rules),
+    )
 
 
 def _active_rule_set_row(client: Any, quarter: str | None, region: str) -> dict[str, Any] | None:

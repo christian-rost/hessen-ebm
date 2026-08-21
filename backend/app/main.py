@@ -13,6 +13,7 @@ from .admin_jobs import JobAlreadyRunningError, JobNotFoundError, get_job, runni
 from .admin_rule_compilation import compile_and_migrate_catalog_rules
 from .analysis_jobs import AnalysisJobNotFoundError, get_analysis_job, start_analysis_job
 from .catalog import CatalogRepository
+from .billing_events import build_billing_events, episode_selection_payload
 from .billing_rule_store import get_runtime_billing_rule_set, rule_store_status
 from .config import Settings, get_settings
 from .database import supabase_status
@@ -20,7 +21,7 @@ from .document_segmentation import segment_pages
 from .evidence_extraction import extract_evidence
 from .invoice_export import load_analysis, save_upload, sha256_file, store_analysis
 from .invoice_store import delete_invoice, list_invoices, load_invoice, save_invoice
-from .models import AnalysisResult
+from .models import AnalysisResult, ReviewCandidate
 from .pdf_text import extract_pages
 from .rule_engine import generate_billing_items, rule_overview_payload
 from .semantic_billing import SemanticBillingError, generate_semantic_billing_items
@@ -266,6 +267,22 @@ def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Setting
     catalog = _catalog()
     default_quarter = case_context.get("quarter") or "2025/Q4"
     region = str(case_context.get("region") or "Hessen")
+    billing_events = build_billing_events(evidence, str(default_quarter), region)
+    episode_selection = episode_selection_payload(billing_events)
+    for episode in episode_selection["episodes"]:
+        if episode["primary"]:
+            continue
+        review_candidates.append(
+            ReviewCandidate(
+                evidence="Separater Behandlungsabschnitt",
+                evidence_pages=episode["evidence_pages"],
+                reason=(
+                    f"Der Zeitraum {episode['start_date'] or '?'} bis {episode['end_date'] or '?'} liegt mehr als "
+                    f"{episode_selection['episode_gap_days']} Tage vom primären Abrechnungsabschnitt entfernt und wurde "
+                    "nicht in diesen Rechnungsentwurf übernommen."
+                ),
+            )
+        )
     analysis_warnings = list(warnings)
     billing_derivation: dict[str, object]
     if settings.enable_semantic_billing:
@@ -313,6 +330,7 @@ def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Setting
     catalog_context = catalog.status()
     catalog_context["analysis_warnings"] = analysis_warnings
     catalog_context["case_context"] = case_context
+    catalog_context["episode_selection"] = episode_selection
     catalog_context["billing_derivation"] = billing_derivation
     catalog_context["regional_catalog_checks"] = regional_catalog_checks
 

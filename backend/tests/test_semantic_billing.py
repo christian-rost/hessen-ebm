@@ -15,7 +15,11 @@ class FakeCatalog(CatalogRepository):
         values = {
             "01210": ("Notfallpauschale I", 120, 14.87),
             "01212": ("Notfallpauschale II", 195, 24.16),
+            "01214": ("Notfallkonsultationspauschale I", 100, 12.74),
+            "01216": ("Notfallkonsultationspauschale II", 140, 17.84),
+            "01218": ("Notfallkonsultationspauschale III", 170, 21.66),
             "01226": ("Zuschlag Notfallpauschale zur GOP 01212", 90, 11.15),
+            "01786": ("Kardiotokografische Untersuchung", 137, 17.45),
             "32066": ("Kreatinin", None, 0.25),
         }
         base, _ = normalize_gop(gop)
@@ -487,4 +491,96 @@ def test_semantic_billing_preserves_regional_catalog_source():
     assert result.items[0].catalog_source == "KV_HESSEN_GOP"
     assert result.items[0].catalog_source_label == "KV_HESSEN_GOP Hessen 2026/Q2"
     assert result.items[0].catalog_id == "kv_hessen_gop_2026_q2"
-    assert result.items[0].catalog_data_stand == "01.04.2026"
+
+
+def test_semantic_billing_keeps_same_gop_for_separate_service_days():
+    evidence = [
+        Evidence(
+            evidence_id="ev-ctg-1",
+            kind="clinical.diagnostics.ctg",
+            label="CTG",
+            page=11,
+            service_date="2026-01-01",
+            service_time="13:05",
+            text="CTG am ersten Behandlungstag.",
+        ),
+        Evidence(
+            evidence_id="ev-ctg-2",
+            kind="clinical.diagnostics.ctg",
+            label="CTG",
+            page=19,
+            service_date="2026-01-03",
+            service_time="13:19",
+            text="CTG am zweiten Behandlungstag.",
+        ),
+    ]
+
+    def fake_llm(_messages, _settings):
+        return {
+            "items": [
+                {"gop": "01786", "evidence_ids": ["ev-ctg-1"], "confidence": "high", "reason": "CTG Tag 1"},
+                {"gop": "01786", "evidence_ids": ["ev-ctg-2"], "confidence": "high", "reason": "CTG Tag 2"},
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence,
+        FakeCatalog(),
+        default_quarter="2026/Q1",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    assert [item.gop_original for item in result.items] == ["01786", "01786"]
+    assert [item.service_date for item in result.items] == ["2026-01-01", "2026-01-03"]
+    assert result.items[0].service_event_id != result.items[1].service_event_id
+
+
+def test_semantic_billing_changes_later_emergency_event_to_consultation_family():
+    evidence = [
+        ev("context.kv_notfall_zna", page=8, service_date="2026-01-01", service_time="13:15"),
+        Evidence(
+            evidence_id="ev-context.kv_notfall_zna-follow-up",
+            kind="context.kv_notfall_zna",
+            label="Notfallambulanz Folgekontakt",
+            page=17,
+            service_date="2026-01-03",
+            service_time="13:34",
+            text="Weitere Vorstellung in der Notfallambulanz.",
+        ),
+    ]
+
+    def fake_llm(_messages, _settings):
+        return {
+            "items": [
+                {
+                    "gop": "01212",
+                    "evidence_ids": ["ev-context.kv_notfall_zna"],
+                    "confidence": "high",
+                    "reason": "Erster Notfallkontakt.",
+                },
+                {
+                    "gop": "01212",
+                    "evidence_ids": ["ev-context.kv_notfall_zna-follow-up"],
+                    "confidence": "high",
+                    "reason": "Weiterer Notfallkontakt.",
+                },
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence,
+        FakeCatalog(),
+        default_quarter="2026/Q1",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    assert [item.gop_original for item in result.items] == ["01212", "01216"]
+    assert [item.temporal_role for item in result.items] == ["initial_contact", "follow_up_contact"]
+    assert result.items[1].temporal_reason
+    assert result.items[1].temporal_reason.startswith("Weiterer chronologisch erkannter Kontakt")

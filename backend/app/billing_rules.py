@@ -101,8 +101,14 @@ def candidate_gops_for_evidence_kind(
         for rule in evidence_billing_rules(quarter, region, definitions)
         if rule.evidence_kind == evidence_kind
     ]
-    candidates = list(direct)
-    direct_bases = {_normalize_rule_gop(gop) for gop in direct}
+    sequence_candidates = [
+        gop
+        for rule in definitions.event_sequence_rules
+        if evidence_kind in rule.evidence_kinds and _definition_applies(rule, quarter, region)
+        for gop in (rule.initial_gop, rule.subsequent_gop)
+    ]
+    candidates = list(direct) + sequence_candidates
+    direct_bases = {_normalize_rule_gop(gop) for gop in candidates}
     for rule in definitions.temporal_rules:
         if not _definition_applies(rule, quarter, region):
             continue
@@ -274,6 +280,17 @@ def billing_rule_guidance(rule_set: BillingRuleSet | None = None) -> dict[str, A
                 "outcomes": [{"gop": outcome.gop, "note": outcome.note} for outcome in rule.outcomes],
             }
             for rule in definitions.temporal_rules
+        ],
+        "event_sequence_rules": [
+            {
+                "rule_id": rule.rule_id,
+                "name": rule.name,
+                "evidence_kinds": list(rule.evidence_kinds),
+                "initial_gop": rule.initial_gop,
+                "subsequent_gop": rule.subsequent_gop,
+                "session_gap_minutes": rule.session_gap_minutes,
+            }
+            for rule in definitions.event_sequence_rules
         ],
         "derived_rules": [
             {

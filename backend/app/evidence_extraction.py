@@ -417,6 +417,25 @@ def _first_service_date(text: str) -> str | None:
             continue
         if any(token in before_key[-30:] for token in ("gebdat", "geburtsdatum", "geboren", "gebam")):
             continue
+        recent = before_key[-60:]
+        if any(
+            token in recent
+            for token in (
+                "zustandnach",
+                "z.n.",
+                "znveam",
+                "entbindungperveam",
+                "optermin",
+                "operationstermin",
+                "terminwurde",
+                "terminfurden",
+                "geplantfur",
+                "vereinbartfur",
+                "geburtstermin",
+                "letzteperiode",
+            )
+        ):
+            continue
         return _date_to_iso(match.group(1))
     return None
 
@@ -508,6 +527,9 @@ def extract_evidence(
         "diagnosis": None,
     }
     last_lab_datetime: tuple[str | None, str | None] = (None, None)
+    last_clinical_datetime: tuple[str | None, str | None] = (None, None)
+    last_clinical_segment: str | None = None
+    last_clinical_page: int | None = None
 
     for page in pages:
         segment_type = segment_type_by_page.get(page.page, "other")
@@ -519,7 +541,12 @@ def extract_evidence(
                 last_lab_datetime = explicit_lab_datetime
 
         if segment_type in CLINICAL_CONTEXT_SEGMENTS:
-            if ("kv-abrechnung" in compact and "notfall" in compact) or "aufnahmezna" in compact:
+            if (
+                ("kv-abrechnung" in compact and "notfall" in compact)
+                or "aufnahmezna" in compact
+                or "notfallambulanz" in compact
+                or "vorstellungnotfk" in compact
+            ):
                 service_date, service_time = _service_datetime(text)
                 case_context["treatment_start"] = case_context["treatment_start"] or _join_datetime(service_date, service_time)
                 evidence.append(
@@ -564,6 +591,17 @@ def extract_evidence(
 
         if page.page in relevant_pages:
             generic_evidence = _extract_generic_clinical_evidence(page, segment_type)
+            is_continuation = last_clinical_page == page.page - 1 and segment_type != "other"
+            if is_continuation and last_clinical_datetime[0]:
+                for item in generic_evidence:
+                    if not item.service_date:
+                        item.service_date, item.service_time = last_clinical_datetime
+                        item.metadata = {**item.metadata, "service_datetime_carried_from_previous_page": True}
+            dated_evidence = next((item for item in generic_evidence if item.service_date), None)
+            if dated_evidence:
+                last_clinical_datetime = (dated_evidence.service_date, dated_evidence.service_time)
+            last_clinical_segment = segment_type
+            last_clinical_page = page.page
             evidence.extend(generic_evidence)
             for item in generic_evidence:
                 if item.service_date:
@@ -695,7 +733,7 @@ def _extract_generic_clinical_evidence(page: PageText, segment_type: str) -> lis
             )
 
     for kind, label, markers, terms, confidence in SERVICE_EVIDENCE:
-        if any(marker in compact for marker in markers):
+        if any(marker in compact for marker in markers) and not _service_is_only_planned(kind, compact):
             found.append(
                 _ev(
                     kind,
@@ -708,6 +746,39 @@ def _extract_generic_clinical_evidence(page: PageText, segment_type: str) -> lis
                     metadata=_search_terms(*terms),
                 )
             )
+
+    renal_finding = any(
+        marker in compact
+        for marker in (
+            "hydronephrose",
+            "harnstau",
+            "hstii",
+            "niererechts",
+            "nierenrechts",
+            "mutterlicheniere",
+            "muetterlicheniere",
+        )
+    )
+    sonography_context = any(
+        marker in compact
+        for marker in ("sonographie", "ultraschall", "sono", "echographie", "fetalebiometrie", "bpd")
+    )
+    if renal_finding and sonography_context:
+        found.append(
+            _ev(
+                "clinical.diagnostics.maternal_renal_sonography",
+                "Sonografie der mütterlichen Nieren / des Retroperitoneums",
+                page.page,
+                text,
+                service_date,
+                service_time,
+                0.88,
+                metadata=_candidate_metadata(
+                    ("Sonografie Niere", "Abdomensonografie", "Retroperitoneum", "Hydronephrose"),
+                    ("33042",),
+                ),
+            )
+        )
 
     if not found and segment_type not in {"laboratory_result", "radiology_report", "ecg", "ctg"}:
         found.append(
@@ -724,6 +795,17 @@ def _extract_generic_clinical_evidence(page: PageText, segment_type: str) -> lis
         )
 
     return found
+
+
+def _service_is_only_planned(kind: str, compact: str) -> bool:
+    if kind == "clinical.diagnostics.ctg":
+        planned = any(marker in compact for marker in ("alle2tagectg", "ctgalle2tage", "ctgempfohlen"))
+        performed = any(
+            marker in compact
+            for marker in ("ctgaufnahmebegonnen", "ctgaufnahmebeendet", "ctgstreifen", "ctgbeurteilung", "aufnahmectgja")
+        )
+        return planned and not performed
+    return False
 
 
 def _extract_specialty_ambulance(page: PageText, segment_type: str) -> list[Evidence]:

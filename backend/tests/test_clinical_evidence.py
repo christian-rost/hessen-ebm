@@ -272,6 +272,33 @@ def test_obstetric_gynecology_pages_create_generic_semantic_evidence():
     assert excluded == []
 
 
+def test_maternal_renal_sonography_inherits_date_from_contiguous_report_page():
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Klinik für Gynäkologie und Geburtshilfe Verlaufskontrolle am 01.01.2026. "
+                "Einlingsschwangerschaft, fetale Biometrie und Sonografie."
+            ),
+        ),
+        PageText(
+            page=2,
+            text=(
+                "Klinik für Gynäkologie und Geburtshilfe, Fortsetzung Sonografie. "
+                "Mütterliche Nieren: rechts Hydronephrose Grad II, links unauffällig."
+            ),
+        ),
+    ]
+
+    segments = segment_pages(pages)
+    evidence, _review, _excluded, _context = extract_evidence(pages, segments)
+    renal = next(item for item in evidence if item.kind == "clinical.diagnostics.maternal_renal_sonography")
+
+    assert renal.service_date == "2026-01-01"
+    assert renal.metadata["candidate_gops"] == ["33042"]
+    assert renal.metadata["service_datetime_carried_from_previous_page"] is True
+
+
 def test_major_ebm_domains_are_segmented_as_billing_relevant():
     pages = [
         PageText(page=1, text="Kardiologie Echokardiographie und Herzkatheter Befund am 04.01.2026"),

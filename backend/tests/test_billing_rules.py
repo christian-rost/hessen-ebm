@@ -13,6 +13,7 @@ from app.billing_rules import (
     is_special_notfall_day,
 )
 from app.billing_rule_definitions import parse_billing_rule_set
+from app.billing_rule_store import _merge_runtime_core_rules
 
 
 def test_emergency_initial_gop_uses_weekday_daytime_01210():
@@ -298,3 +299,41 @@ def test_generic_gop_rule_evaluation_combines_correction_and_catalog_review():
     assert "time.notfall.initial.01212.v1" in decision.rule_id
     assert "catalog.context.review.v1" in decision.rule_id
     assert any("Häufigkeitsbegrenzung" in note for note in decision.notes)
+
+
+def test_runtime_rule_overlay_keeps_new_local_event_rules_until_supabase_is_recompiled():
+    remote = parse_billing_rule_set(
+        {
+            "schema_version": 1,
+            "rule_set_id": "remote",
+            "version": "2026.1",
+            "evidence_rules": [],
+            "temporal_rules": [],
+            "derived_rules": [],
+        }
+    )
+    local = parse_billing_rule_set(
+        {
+            "schema_version": 1,
+            "rule_set_id": "local",
+            "version": "2026.2",
+            "evidence_rules": [],
+            "event_sequence_rules": [
+                {
+                    "rule_id": "sequence.test.v1",
+                    "name": "Testsequenz",
+                    "evidence_kinds": ["test.contact"],
+                    "initial_gop": "11111",
+                    "subsequent_gop": "11112",
+                    "regions": ["*"],
+                }
+            ],
+            "temporal_rules": [],
+            "derived_rules": [],
+        }
+    )
+
+    merged = _merge_runtime_core_rules(local, remote)
+
+    assert [rule.rule_id for rule in merged.event_sequence_rules] == ["sequence.test.v1"]
+    assert merged.version == "2026.1+core-2026.2"

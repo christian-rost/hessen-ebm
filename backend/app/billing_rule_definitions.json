@@ -1,9 +1,11 @@
 {
   "schema_version": 1,
   "rule_set_id": "kbv-ebm-hessen-core",
-  "version": "2026.1",
+  "version": "2026.2",
   "evidence_rules": [
     {"rule_id": "context.kv_notfall_zna.01210.v1", "evidence_kind": "context.kv_notfall_zna", "gop": "01210", "title_hint": "Notfallpauschale I", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "clinical.diagnostics.ctg.01786.v1", "evidence_kind": "clinical.diagnostics.ctg", "gop": "01786", "title_hint": "Kardiotokografische Untersuchung", "valid_from": "2025/Q1", "regions": ["*"]},
+    {"rule_id": "clinical.diagnostics.maternal_renal_sonography.33042.v1", "evidence_kind": "clinical.diagnostics.maternal_renal_sonography", "gop": "33042", "title_hint": "Sonografie des Abdomens und Retroperitoneums", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "radiology.ct_head_native.34310.v1", "evidence_kind": "radiology.ct_head_native", "gop": "34310", "title_hint": "CT-Untersuchung des Neurocraniums", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "radiology.xray_shoulder_2_planes.34231.v1", "evidence_kind": "radiology.xray_shoulder_2_planes", "gop": "34231", "title_hint": "Aufnahmen der Schulter/des Schultergürtels", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "radiology.xray_spine_hws_2_planes.34221.v1", "evidence_kind": "radiology.xray_spine_hws_2_planes", "gop": "34221", "title_hint": "Aufnahmen von Teilen der Wirbelsäule", "valid_from": "2025/Q1", "regions": ["*"]},
@@ -25,6 +27,20 @@
     {"rule_id": "lab.blood_count.thrombocytes.32037.v1", "evidence_kind": "lab.thrombocytes", "gop": "32037A", "title_hint": "Thrombozytenzählung", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "lab.blood_count.hemoglobin.32038.v1", "evidence_kind": "lab.hemoglobin", "gop": "32038A", "title_hint": "Hämoglobin", "valid_from": "2025/Q1", "regions": ["*"]},
     {"rule_id": "lab.blood_count.hematocrit.32039.v1", "evidence_kind": "lab.hematocrit", "gop": "32039A", "title_hint": "Hämatokrit", "valid_from": "2025/Q1", "regions": ["*"]}
+  ],
+  "event_sequence_rules": [
+    {
+      "rule_id": "sequence.notfall.contact.v1",
+      "name": "Notfallkontakte im Behandlungsfall",
+      "evidence_kinds": ["context.kv_notfall_zna"],
+      "initial_gop": "01210",
+      "subsequent_gop": "01214",
+      "session_gap_minutes": 90,
+      "initial_role": "initial_contact",
+      "subsequent_role": "follow_up_contact",
+      "valid_from": "2025/Q1",
+      "regions": ["*"]
+    }
   ],
   "temporal_rules": [
     {

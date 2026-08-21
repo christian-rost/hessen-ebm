@@ -783,6 +783,50 @@ td code,
   max-width: 280px;
 }
 
+.reason-cell strong,
+.reason-cell span,
+.timeline-cell strong,
+.timeline-cell span {
+  display: block;
+}
+
+.reason-cell strong {
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.reason-cell span {
+  margin-top: 0.24rem;
+}
+
+.reason-cell .review-count {
+  color: #8a5b00;
+  font-weight: 600;
+}
+
+.timeline-cell {
+  min-width: 170px;
+}
+
+.timeline-cell strong {
+  color: var(--text);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.timeline-role {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  margin-top: 0.22rem;
+}
+
+.timeline-role.initial_contact,
+.timeline-role.follow_up_contact {
+  color: var(--brand-green-dark);
+  font-weight: 700;
+}
+
 .source-cell {
   min-width: 180px;
 }

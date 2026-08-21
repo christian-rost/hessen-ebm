@@ -17,6 +17,14 @@ from .billing_rules import (
     evidence_billing_rules,
     evaluate_catalog_context_rules,
 )
+from .billing_events import (
+    BillingEvent,
+    build_billing_events,
+    episode_selection_payload,
+    events_for_evidence_ids,
+    finalize_billing_timeline,
+    primary_episode_evidence,
+)
 from .catalog import CatalogRepository, canonical_gop, normalize_gop
 from .catalog_rule_validation import apply_catalog_rule_validation
 from .config import Settings
@@ -55,19 +63,31 @@ def generate_semantic_billing_items(
         raise SemanticBillingError("MISTRAL_API_KEY ist nicht konfiguriert.")
 
     quarter = default_quarter or _quarter_from_evidence(evidence) or "2025/Q4"
-    candidates = _collect_catalog_candidates(evidence, catalog, quarter, region)
+    events = build_billing_events(evidence, quarter, region)
+    billing_evidence = primary_episode_evidence(events)
+    candidates = _collect_catalog_candidates(billing_evidence, catalog, quarter, region)
     if not candidates:
         raise SemanticBillingError(f"Für das Quartal {quarter} wurden keine Katalogkandidaten gefunden.")
 
-    messages = _build_messages(evidence, candidates, quarter, region)
+    messages = _build_messages(billing_evidence, candidates, quarter, region)
     raw_payload = llm_client(messages, settings) if llm_client else _call_mistral_chat_json(messages, settings)
     payload = _coerce_json_payload(raw_payload)
 
-    items, item_review = _billing_items_from_payload(payload, evidence, candidates, catalog, quarter, region)
-    append_derived_billing_items(items, evidence, catalog, quarter, region)
-    catalog_rule_validation = apply_catalog_rule_validation(items, evidence, catalog, quarter, region)
-    review = item_review + _review_from_payload(payload, evidence)
-    excluded = _excluded_from_payload(payload, evidence)
+    items, item_review = _billing_items_from_payload(payload, billing_evidence, events, candidates, catalog, quarter, region)
+    append_derived_billing_items(items, billing_evidence, catalog, quarter, region)
+    catalog_rule_validation = [
+        apply_catalog_rule_validation(
+            [item for item in items if item.quarter == item_quarter],
+            billing_evidence,
+            catalog,
+            item_quarter,
+            region,
+        )
+        for item_quarter in sorted({item.quarter for item in items})
+    ]
+    finalize_billing_timeline(items)
+    review = item_review + _review_from_payload(payload, billing_evidence)
+    excluded = _excluded_from_payload(payload, billing_evidence)
     summary = InvoiceSummary(
         line_count=len(items),
         points_total=sum((item.points or 0) * item.quantity for item in items),
@@ -87,6 +107,8 @@ def generate_semantic_billing_items(
             "quarter": quarter,
             "region": region,
             "catalog_candidate_count": len(candidates),
+            "billing_event_count": len(events),
+            "episode_selection": episode_selection_payload(events),
             "catalog_rule_validation": catalog_rule_validation,
         },
     )
@@ -256,6 +278,9 @@ def _build_messages(
         "Du bist ein vorsichtiger medizinischer Abrechnungsassistent für EBM und regionale Hessen-GOP. "
         "Leite aus klinischer Evidenz abrechenbare GOP-Positionen ab. "
         "Nutze ausschließlich GOPs aus catalog_candidates. Erfinde keine GOPs. "
+        "Bilde getrennte Positionen für getrennte Leistungsereignisse. Dieselbe GOP darf an verschiedenen "
+        "Leistungstagen erneut vorkommen; mehrere technische Dokumente derselben Sitzung sind dagegen nur ein Ereignis. "
+        "Bei zeitabhängigen Positionen sind Leistungsdatum, Uhrzeit, Wochentag, Feiertag sowie Erst- oder Folgekontakt zu beachten. "
         "Wenn eine Leistung nur angefordert, storniert, intern dokumentiert oder unsicher ist, nimm sie nicht als item auf, "
         "sondern als review_candidate oder excluded_evidence. "
         "Antworte ausschließlich als JSON-Objekt."
@@ -374,6 +399,7 @@ def _json_from_text(text: str) -> dict[str, Any]:
 def _billing_items_from_payload(
     payload: dict[str, Any],
     evidence: list[Evidence],
+    events: list[BillingEvent],
     candidates: list[dict[str, Any]],
     catalog: CatalogRepository,
     quarter: str,
@@ -387,7 +413,7 @@ def _billing_items_from_payload(
 
     items: list[BillingItem] = []
     review: list[ReviewCandidate] = []
-    used_bases: set[str] = set()
+    used_event_gops: set[tuple[str, str]] = set()
 
     for proposal in _as_list(payload.get("items")):
         raw_gop = str(proposal.get("gop") or "").strip().upper()
@@ -399,16 +425,33 @@ def _billing_items_from_payload(
         evidence_ids = _valid_evidence_ids(proposal.get("evidence_ids"), evidence_by_id)
         if not evidence_ids and candidate:
             evidence_ids = [item for item in candidate.get("evidence_ids", []) if item in evidence_by_id]
+        if not candidate:
+            review.append(
+                ReviewCandidate(
+                    evidence=f"LLM-Vorschlag GOP {gop}",
+                    evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                    possible_gops=[canonical_gop(gop)],
+                    reason="GOP war nicht im bereitgestellten Katalog-Kandidatenpool und wurde nicht automatisch übernommen.",
+                )
+            )
+            continue
         selected = _select_evidence_for_item(evidence_ids, evidence_by_id)
         service_date = _clean_optional_str(proposal.get("service_date")) or (selected.service_date if selected else None)
         service_time = _clean_optional_str(proposal.get("service_time")) or (selected.service_time if selected else None)
+        event = _select_billing_event(events, evidence_ids, service_date, service_time)
+        if event:
+            service_date = event.service_date or service_date
+            service_time = event.service_time or service_time
+            if event.sequence_gop:
+                gop = canonical_gop(event.sequence_gop)
+        item_quarter = quarter_from_date(service_date) or quarter
 
         temporal_decision = apply_temporal_gop_rule(
             gop,
             service_date,
             service_time,
             region,
-            quarter=quarter,
+            quarter=item_quarter,
         )
         validation_notes = list(temporal_decision.notes)
         if temporal_decision.gop and temporal_decision.gop != gop:
@@ -444,22 +487,24 @@ def _billing_items_from_payload(
                 )
             )
             continue
-        if gop_base in used_bases:
+        event_key = event.event_id if event else f"{service_date or 'unknown'}T{service_time or 'unknown'}"
+        dedupe_key = (gop_base, event_key)
+        if dedupe_key in used_event_gops:
             review.append(
                 ReviewCandidate(
                     evidence=f"Doppelter LLM-Vorschlag GOP {gop}",
                     evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
                     possible_gops=[canonical_gop(gop)],
-                    reason="GOP-Basis wurde bereits als Rechnungsposition übernommen.",
+                    reason="GOP-Basis wurde für dasselbe Leistungsereignis bereits als Rechnungsposition übernommen.",
                 )
             )
             continue
-        used_bases.add(gop_base)
+        used_event_gops.add(dedupe_key)
 
-        entry = _lookup_candidate_entry(catalog, gop, quarter, region, candidate)
+        entry = _lookup_candidate_entry(catalog, gop, item_quarter, region, candidate)
         if not entry:
             validation_status = "catalog_missing"
-            validation_notes.append(f"GOP {gop_base} wurde im Katalog {quarter} nicht gefunden.")
+            validation_notes.append(f"GOP {gop_base} wurde im Katalog {item_quarter} nicht gefunden.")
             title = candidate["title"]
             points = None
             amount = None
@@ -501,6 +546,7 @@ def _billing_items_from_payload(
         if confidence not in {"high", "medium", "low"}:
             confidence = "medium"
         temporal_rule_suffix = f"+{temporal_decision.rule_id}" if temporal_decision.rule_id.startswith("time.") else ""
+        sequence_rule_suffix = f"+{event.sequence_rule_id}" if event and event.sequence_rule_id else ""
         catalog_rule_suffix = (
             f"+{catalog_decision.rule_id}" if catalog_decision.rule_id != "catalog.context.noop.v1" else ""
         )
@@ -516,13 +562,20 @@ def _billing_items_from_payload(
                 catalog_source_label=source_label,
                 catalog_id=catalog_id,
                 catalog_data_stand=catalog_data_stand,
-                quarter=quarter,
+                quarter=item_quarter,
                 service_date=service_date,
                 service_time=service_time,
+                service_event_id=event.event_id if event else None,
+                service_session_id=event.session_id if event else None,
+                treatment_episode_id=event.episode_id if event else None,
+                temporal_role=event.temporal_role if event else "service_event",
+                temporal_reason=event.temporal_reason if event else None,
                 quantity=quantity,
                 points=points,
                 amount_eur=amount,
-                rule_id=f"semantic_llm.{gop_base}.v1{temporal_rule_suffix}{catalog_rule_suffix}",
+                rule_id=(
+                    f"semantic_llm.{gop_base}.v1{sequence_rule_suffix}{temporal_rule_suffix}{catalog_rule_suffix}"
+                ),
                 confidence=confidence,
                 evidence_ids=evidence_ids,
                 evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
@@ -535,6 +588,36 @@ def _billing_items_from_payload(
         )
 
     return items, review
+
+
+def _select_billing_event(
+    events: list[BillingEvent],
+    evidence_ids: list[str],
+    service_date: str | None,
+    service_time: str | None,
+) -> BillingEvent | None:
+    matches = events_for_evidence_ids(events, evidence_ids)
+    if service_date:
+        dated = [event for event in matches if event.service_date == service_date]
+        if dated:
+            matches = dated
+    if service_time:
+        timed = [event for event in matches if event.service_time == service_time]
+        if timed:
+            matches = timed
+    if not matches:
+        return None
+    return sorted(
+        matches,
+        key=lambda event: (
+            1 if event.sequence_gop else 0,
+            1 if event.service_date else 0,
+            event.service_date or "",
+            event.service_time or "",
+            len(event.evidence),
+        ),
+        reverse=True,
+    )[0]
 
 
 def _lookup_candidate_entry(

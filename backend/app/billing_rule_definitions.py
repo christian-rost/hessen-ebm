@@ -69,6 +69,21 @@ class TemporalRuleDefinition:
 
 
 @dataclass(frozen=True)
+class EventSequenceRuleDefinition:
+    rule_id: str
+    name: str
+    evidence_kinds: tuple[str, ...]
+    initial_gop: str
+    subsequent_gop: str
+    session_gap_minutes: int = 90
+    initial_role: str = "initial_contact"
+    subsequent_role: str = "follow_up_contact"
+    valid_from: str | None = None
+    valid_to: str | None = None
+    regions: tuple[str, ...] = ("*",)
+
+
+@dataclass(frozen=True)
 class CriterionDefinition:
     label: str
     when: dict[str, Any]
@@ -105,6 +120,7 @@ class BillingRuleSet:
     version: str
     evidence_rules: tuple[EvidenceRuleDefinition, ...]
     temporal_rules: tuple[TemporalRuleDefinition, ...]
+    event_sequence_rules: tuple[EventSequenceRuleDefinition, ...]
     derived_rules: tuple[DerivedRuleDefinition, ...]
 
 
@@ -117,6 +133,9 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
 
     evidence_rules = tuple(_parse_evidence_rule(item) for item in _objects(payload.get("evidence_rules")))
     temporal_rules = tuple(_parse_temporal_rule(item) for item in _objects(payload.get("temporal_rules")))
+    event_sequence_rules = tuple(
+        _parse_event_sequence_rule(item) for item in _objects(payload.get("event_sequence_rules"))
+    )
     derived_rules = tuple(_parse_derived_rule(item) for item in _objects(payload.get("derived_rules")))
     rule_set = BillingRuleSet(
         schema_version=schema_version,
@@ -124,6 +143,7 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
         version=_required_text(payload, "version"),
         evidence_rules=evidence_rules,
         temporal_rules=temporal_rules,
+        event_sequence_rules=event_sequence_rules,
         derived_rules=derived_rules,
     )
     _validate_unique_rule_ids(rule_set)
@@ -205,6 +225,28 @@ def _parse_temporal_rule(item: dict[str, Any]) -> TemporalRuleDefinition:
     )
 
 
+def _parse_event_sequence_rule(item: dict[str, Any]) -> EventSequenceRuleDefinition:
+    evidence_kinds = tuple(str(value).strip() for value in _values(item.get("evidence_kinds")) if str(value).strip())
+    if not evidence_kinds:
+        raise ValueError(f"Ereignisregel {_required_text(item, 'rule_id')} enthält keine Evidenzarten.")
+    session_gap_minutes = int(item.get("session_gap_minutes") or 90)
+    if session_gap_minutes < 1:
+        raise ValueError("Der Sitzungsabstand einer Ereignisregel muss mindestens eine Minute betragen.")
+    return EventSequenceRuleDefinition(
+        rule_id=_required_text(item, "rule_id"),
+        name=_required_text(item, "name"),
+        evidence_kinds=evidence_kinds,
+        initial_gop=_required_gop(item, "initial_gop"),
+        subsequent_gop=_required_gop(item, "subsequent_gop"),
+        session_gap_minutes=session_gap_minutes,
+        initial_role=str(item.get("initial_role") or "initial_contact"),
+        subsequent_role=str(item.get("subsequent_role") or "follow_up_contact"),
+        valid_from=_optional_text(item.get("valid_from")),
+        valid_to=_optional_text(item.get("valid_to")),
+        regions=_regions(item),
+    )
+
+
 def _parse_derived_rule(item: dict[str, Any]) -> DerivedRuleDefinition:
     return DerivedRuleDefinition(
         rule_id=_required_text(item, "rule_id"),
@@ -242,6 +284,7 @@ def _validate_unique_rule_ids(rule_set: BillingRuleSet) -> None:
     ids = [rule.rule_id for rule in rule_set.evidence_rules]
     ids.extend(rule.rule_id for rule in rule_set.temporal_rules)
     ids.extend(outcome.rule_id for rule in rule_set.temporal_rules for outcome in rule.outcomes)
+    ids.extend(rule.rule_id for rule in rule_set.event_sequence_rules)
     ids.extend(rule.rule_id for rule in rule_set.derived_rules)
     duplicates = sorted({rule_id for rule_id in ids if ids.count(rule_id) > 1})
     if duplicates:

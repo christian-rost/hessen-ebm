@@ -21,6 +21,34 @@ function formatDateTime(value) {
   }).format(date);
 }
 
+function formatServiceMoment(serviceDate, serviceTime) {
+  if (!serviceDate) return "Zeitpunkt nicht erkannt";
+  const [year, month, day] = serviceDate.split("-");
+  const dateLabel = year && month && day ? `${day}.${month}.${year}` : serviceDate;
+  return serviceTime ? `${dateLabel}, ${serviceTime} Uhr` : dateLabel;
+}
+
+function temporalRoleLabel(role) {
+  if (role === "initial_contact") return "Erstkontakt";
+  if (role === "follow_up_contact") return "Folgekontakt";
+  return "Leistungsereignis";
+}
+
+function temporalNotes(item) {
+  return (item.validation_notes || []).filter((note) => (
+    note.startsWith("Zeitregel ")
+    || note.startsWith("Notfallpauschale ")
+    || note.startsWith("Konsultation im Notfall")
+  ));
+}
+
+function primaryDerivation(item) {
+  if (item.semantic_reason) return item.semantic_reason;
+  if (item.temporal_reason) return item.temporal_reason;
+  const pages = (item.evidence_pages || []).join(", ");
+  return pages ? `Regelbasiert aus klinischer Evidenz auf Seiten ${pages}.` : "Regelbasierte Herleitung.";
+}
+
 function jobStatusLabel(status) {
   if (status === "queued") return "wartet";
   if (status === "running") return "läuft";
@@ -950,7 +978,7 @@ function ResultPanel({ result, onDownload }) {
             <tr>
               <th>GOP</th>
               <th>Leistung</th>
-              <th>Datum</th>
+              <th>Zeitlicher Ablauf</th>
               <th>Quelle</th>
               <th>Herleitung</th>
               <th>Punkte</th>
@@ -959,16 +987,32 @@ function ResultPanel({ result, onDownload }) {
           </thead>
           <tbody>
             {result.items.map((item) => (
-              <tr key={`${item.line}-${item.gop_original}`}>
+              <tr key={`${item.line}-${item.gop_original}-${item.service_event_id || "ohne-ereignis"}`}>
                 <td><code>{item.gop_original}</code></td>
                 <td>{item.title}</td>
-                <td>{item.service_date || "-"}</td>
+                <td className="timeline-cell">
+                  <strong>{item.temporal_sequence ? `${item.temporal_sequence}. ` : ""}{formatServiceMoment(item.service_date, item.service_time)}</strong>
+                  <span className={`timeline-role ${item.temporal_role || "service_event"}`}>
+                    {temporalRoleLabel(item.temporal_role)}
+                  </span>
+                </td>
                 <td className="source-cell">
                   <strong>{item.catalog_source_label || item.catalog_source}</strong>
                   {item.catalog_id && <span>{item.catalog_id}</span>}
                   {item.catalog_data_stand && <span>Stand {item.catalog_data_stand}</span>}
                 </td>
-                <td className="reason-cell">{item.semantic_reason || item.rule_id}</td>
+                <td className="reason-cell">
+                  <strong>{primaryDerivation(item)}</strong>
+                  {item.semantic_reason && item.temporal_reason && <span>{item.temporal_reason}</span>}
+                  {temporalNotes(item).map((note, index) => (
+                    <span key={`${item.line}-note-${index}`}>{note}</span>
+                  ))}
+                  {item.validation_status === "review" && (
+                    <span className="review-count">
+                      Weitere Katalogbedingungen im Review: {(item.validation_notes || []).length - temporalNotes(item).length}
+                    </span>
+                  )}
+                </td>
                 <td>{item.points ?? "-"}</td>
                 <td>{formatEuro(item.amount_eur)}</td>
               </tr>

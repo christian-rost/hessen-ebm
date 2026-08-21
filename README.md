@@ -154,10 +154,12 @@ Das Coolify-Compose bindet keinen festen Host-Port. Das ist Absicht: Coolify rou
 Der normale Ableitungspfad ist semantisch:
 
 1. Aus dem PDF werden abrechnungsrelevante Evidenzen extrahiert.
-2. Der Server sucht passende EBM-/Hessen-GOP-Kandidaten im aktiven Quartalskatalog.
-3. Mistral Chat erhält nur diese Evidenzen und Kandidaten und muss ein JSON mit `items`, `review_candidates` und `excluded_evidence` liefern.
-4. Der Server übernimmt nur GOPs, die im bereitgestellten Kandidatenpool enthalten sind und im aktiven Katalog validiert werden können.
-5. Jede Rechnungsposition enthält `derivation_source`, `semantic_reason` und die verwendeten Katalogkandidaten.
+2. Evidenzen derselben Sitzung werden zu Leistungsereignissen gebündelt. Ereignisse an verschiedenen Tagen bleiben getrennt.
+3. Zeitlich deutlich getrennte Behandlungsabschnitte werden als Episoden erkannt; nur der fachlich stärkste Abschnitt fließt in den Entwurf ein, weitere Abschnitte erscheinen im Review.
+4. Der Server sucht passende EBM-/Hessen-GOP-Kandidaten im aktiven Quartalskatalog.
+5. Mistral Chat erhält nur die Evidenzen des primären Abschnitts und die Kandidaten und muss ein JSON mit `items`, `review_candidates` und `excluded_evidence` liefern.
+6. Der Server übernimmt nur GOPs, die im bereitgestellten Kandidatenpool enthalten sind und im aktiven Katalog validiert werden können.
+7. Jede Rechnungsposition enthält `derivation_source`, `semantic_reason`, Leistungsereignis, Sitzung und zeitliche Einordnung.
 
 Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, fällt die Analyse auf die deterministische Regel-Engine zurück und schreibt den Grund in `catalog_context.analysis_warnings`.
 
@@ -165,17 +167,24 @@ Das fachliche Regelwerk liegt unter `backend/app/billing_rule_definitions.json`.
 
 - direkte Zuordnungen von Evidenzarten zu GOPs
 - zeitabhängige GOP-Gruppen mit beliebig vielen Ergebnisvarianten
+- datengesteuerte Sequenzregeln für Erst- und Folgekontakte
 - abgeleitete GOPs und Zuschläge mit Voraussetzungen, Kriterien und Ausschlüssen
 - Gültigkeitszeiträume nach Quartal sowie regionale Gültigkeit
 - Einfügebeziehungen für abgeleitete Rechnungspositionen
 
 Der generische Evaluator unterstützt unter anderem GOP-Voraussetzungen, Evidenzarten, ICD-Präfixe, Volltextmerkmale, Alter, Datum, Uhrzeit, Wochentag, Feiertage, Region, Quartal und strukturierte Metadaten. Weitere Regeln werden als Daten ergänzt; dafür ist keine neue GOP-spezifische Python-Funktion erforderlich. Beide Abrechnungspfade verwenden dasselbe Regelwerk: die deterministische Rechnungserzeugung ebenso wie die Prüfung und Nachbearbeitung der LLM-Vorschläge.
 
+Die zeitliche Regelschicht dedupliziert nicht mehr fallweit nach GOP. Sie verwendet den Schlüssel aus GOP und Leistungsereignis. Dadurch kann beispielsweise `01786` an zwei verschiedenen Behandlungstagen zweimal vorkommen, während CTG-Start, CTG-Ende, Kurve und Verlaufsnotiz derselben Sitzung nur eine Position erzeugen. Katalogausschlüsse und Häufigkeitsgrenzen werden entsprechend ihrem Geltungsbereich pro Sitzung, Behandlungstag, Behandlungsfall oder Quartal geprüft.
+
+Bei `BILLING_RULES_SOURCE=auto` bleiben die aktiven Supabase-Regeln maßgeblich. Neue lokale Kernregeln werden bis zur nächsten Admin-Kompilierung ergänzend eingeblendet, wenn ihre Regel-ID in Supabase noch fehlt. `POST /api/admin/rules/compile` schreibt anschließend das vollständige Kernregelwerk einschließlich der Ereignis- und Sequenzregeln nach Supabase.
+
 Aktuell enthält das Regelwerk unter anderem folgende direkte Evidenzzuordnungen:
 
 | Evidenz | GOP |
 | --- | --- |
 | KV-Notfall/ZNA | `01210` |
+| CTG / Kardiotokografie | `01786` |
+| Sonografie der mütterlichen Nieren / des Retroperitoneums | `33042` |
 | Quick | `32113` |
 | Kreatinin | `32066` |
 | Natrium | `32083` |

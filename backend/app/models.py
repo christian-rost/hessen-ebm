@@ -66,6 +66,12 @@ class BillingItem(BaseModel):
     quarter: str
     service_date: str | None = None
     service_time: str | None = None
+    service_event_id: str | None = None
+    service_session_id: str | None = None
+    treatment_episode_id: str | None = None
+    temporal_sequence: int | None = None
+    temporal_role: str = "service_event"
+    temporal_reason: str | None = None
     quantity: int = 1
     points: int | None = None
     amount_eur: float | None = None
