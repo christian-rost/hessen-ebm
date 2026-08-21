@@ -36,10 +36,23 @@ def _diagnosis(case_context: dict[str, Any]) -> str | None:
     return None
 
 
+def _sanitize_supabase_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, dict):
+        return {
+            (key.replace("\x00", "") if isinstance(key, str) else key): _sanitize_supabase_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_supabase_value(item) for item in value]
+    return value
+
+
 def build_invoice_row(result: AnalysisResult) -> dict[str, Any]:
     case_context = _case_context(result)
     now = _now_iso()
-    return {
+    return _sanitize_supabase_value({
         "analysis_id": result.analysis_id,
         "updated_at": now,
         "source_filename": result.source_filename,
@@ -56,7 +69,7 @@ def build_invoice_row(result: AnalysisResult) -> dict[str, Any]:
         "human_review_required": result.summary.human_review_required,
         "payload": result.model_dump(),
         "storage_backend": "supabase",
-    }
+    })
 
 
 def build_invoice_item_rows(result: AnalysisResult) -> list[dict[str, Any]]:
@@ -64,7 +77,7 @@ def build_invoice_item_rows(result: AnalysisResult) -> list[dict[str, Any]]:
 
 
 def _invoice_item_row(analysis_id: str, item: BillingItem) -> dict[str, Any]:
-    return {
+    return _sanitize_supabase_value({
         "analysis_id": analysis_id,
         "line": item.line,
         "gop_original": item.gop_original,
@@ -91,7 +104,7 @@ def _invoice_item_row(analysis_id: str, item: BillingItem) -> dict[str, Any]:
         "semantic_reason": item.semantic_reason,
         "semantic_catalog_candidates": item.semantic_catalog_candidates,
         "payload": item.model_dump(),
-    }
+    })
 
 
 def save_invoice(result: AnalysisResult) -> dict[str, object]:

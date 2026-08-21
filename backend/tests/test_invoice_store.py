@@ -1,3 +1,5 @@
+import json
+
 from app.invoice_export import store_analysis
 from app.invoice_store import build_invoice_item_rows, build_invoice_row, delete_local_invoice, list_local_invoices
 from app.models import AnalysisResult, BillingItem, InvoiceSummary
@@ -99,6 +101,28 @@ def test_build_invoice_item_rows_store_positions_separately():
             "payload": rows[0]["payload"],
         }
     ]
+
+
+def test_supabase_rows_remove_null_characters_recursively():
+    result = analysis_result()
+    result.source_filename = "fall\x00.pdf"
+    result.catalog_context["case_context"]["diagnosis"] = "H43\x00.1"
+    result.catalog_context["ocr"] = {
+        "raw\x00key": "Text vor\x00Text nach",
+        "nested": ["Wert\x00", {"text": "\x00Befund"}],
+    }
+    result.items[0].semantic_reason = "Dokumentierte\x00 Untersuchung."
+
+    invoice_row = build_invoice_row(result)
+    item_rows = build_invoice_item_rows(result)
+
+    serialized = json.dumps({"invoice": invoice_row, "items": item_rows}, ensure_ascii=False)
+    assert "\x00" not in serialized
+    assert invoice_row["source_filename"] == "fall.pdf"
+    assert invoice_row["diagnosis"] == "H43.1"
+    assert invoice_row["payload"]["catalog_context"]["ocr"]["rawkey"] == "Text vorText nach"
+    assert item_rows[0]["semantic_reason"] == "Dokumentierte Untersuchung."
+    assert item_rows[0]["payload"]["semantic_reason"] == "Dokumentierte Untersuchung."
 
 
 def test_list_local_invoices_keeps_json_fallback_available(tmp_path):
