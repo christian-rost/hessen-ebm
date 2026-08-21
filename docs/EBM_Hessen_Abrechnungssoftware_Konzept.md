@@ -323,6 +323,16 @@ extractor_version
 
 `clinical_evidence.segment_id` ist wichtig: Evidenz darf nur aus Segmenten entstehen, die als relevant oder kontextrelevant markiert sind. So wird verhindert, dass administrative Seiten, Aufgabenlisten oder interne technische Angaben versehentlich GOPs erzeugen.
 
+### Auswahllisten und Leistungsbögen
+
+Eine Liste möglicher Leistungen ist noch keine Leistungsdokumentation. Jede erkannte Zeile wird deshalb als strukturierter Auswahleintrag mit Code, Bezeichnung, Menge, Zustand, Konfidenz, Quelle und optionaler Position auf der PDF-Seite gespeichert. Der Zustand ist `checked`, `unchecked` oder `ambiguous`.
+
+- `checked`: darf eine nachgelagerte Evidenzregel auslösen
+- `unchecked`: wird nicht als erbrachte Leistung verwendet
+- `ambiguous`: wird nicht automatisch übernommen und muss geprüft werden
+
+Die Erkennung kombiniert Mistral-OCR-Markierungen mit PDF-Vektorgeometrie. Baumsteuerungen wie Auf-/Zuklappen werden über die Zuordnung zur vollständigen Leistungszeile von Auswahlkästchen getrennt. Zeilenmuster, Markierungszeichen, Geometrietoleranzen und Review-Texte sind versionierte Konfiguration. Der Python-Code kennt weder konkrete interne Leistungscodes noch daraus abgeleitete GOPs.
+
 ## Regel- und Kandidatenlogik
 
 ### Pipeline

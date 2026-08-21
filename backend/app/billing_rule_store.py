@@ -288,7 +288,16 @@ def get_runtime_clinical_definition_set(
         payload = core_payload.get("clinical_definitions") if isinstance(core_payload, dict) else None
         if not isinstance(payload, dict):
             return local
-        return parse_clinical_definition_set(payload)
+        remote = parse_clinical_definition_set(payload)
+        if remote.version != local.version:
+            _last_status["clinical_definitions_fallback"] = {
+                "reason": "Versionsabweichung",
+                "local_version": local.version,
+                "supabase_version": remote.version,
+            }
+            return local
+        _last_status.pop("clinical_definitions_fallback", None)
+        return remote
     except Exception as exc:
         _last_status["clinical_definitions_error"] = str(exc)
         return local

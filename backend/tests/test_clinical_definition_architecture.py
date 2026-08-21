@@ -15,6 +15,7 @@ EXECUTION_MODULES = (
     "clinical_rule_engine.py",
     "document_segmentation.py",
     "evidence_extraction.py",
+    "selection_extraction.py",
 )
 FORBIDDEN_DOMAIN_LITERALS = (
     "all_ord",
@@ -170,3 +171,4 @@ def test_supabase_rule_payload_contains_versioned_clinical_definitions() -> None
 
     assert row["core_payload"]["clinical_definitions"]["definition_set_id"] == clinical.definition_set_id
     assert row["core_payload"]["clinical_definitions"]["version"] == clinical.version
+    assert row["core_payload"]["clinical_definitions"]["selection_extraction"] == clinical.selection_extraction

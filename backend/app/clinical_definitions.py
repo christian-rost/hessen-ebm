@@ -24,6 +24,7 @@ class ClinicalDefinitionSet:
     evidence_rules: tuple[dict[str, Any], ...]
     review_rules: tuple[dict[str, Any], ...]
     exclusion_rules: tuple[dict[str, Any], ...]
+    selection_extraction: dict[str, Any]
     formats: dict[str, Any]
 
 
@@ -41,6 +42,7 @@ def clinical_definition_set_payload(definitions: ClinicalDefinitionSet) -> dict[
         "evidence_rules": list(definitions.evidence_rules),
         "review_rules": list(definitions.review_rules),
         "exclusion_rules": list(definitions.exclusion_rules),
+        "selection_extraction": definitions.selection_extraction,
     }
 
 
@@ -83,6 +85,7 @@ def parse_clinical_definition_set(payload: dict[str, Any]) -> ClinicalDefinition
         evidence_rules=tuple(evidence_rules),
         review_rules=tuple(review_rules),
         exclusion_rules=tuple(exclusion_rules),
+        selection_extraction=_optional_object(payload.get("selection_extraction"), "selection_extraction"),
         formats=dict(payload.get("formats") or {}),
     )
 
@@ -140,6 +143,14 @@ def _object_list(value: Any, field: str) -> list[dict[str, Any]]:
     if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
         raise ValueError(f"{field} muss eine Liste von JSON-Objekten sein.")
     return [dict(item) for item in value]
+
+
+def _optional_object(value: Any, field: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{field} muss ein JSON-Objekt sein.")
+    return dict(value)
 
 
 def _required_text(item: dict[str, Any], field: str) -> str:

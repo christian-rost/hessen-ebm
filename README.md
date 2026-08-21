@@ -83,6 +83,10 @@ Der Compiler übernimmt jeden KBV-Detailtext und jeden regionalen Regeltext. Ein
 
 Auch Dokumentklassifikation, klinische Begriffe, interne Leistungscodes, Zeitrollen, Evidenz-, Review- und Ausschlussregeln sind datengetrieben. Sie liegen im Startbestand `backend/app/clinical_evidence_definitions.json` und werden beim Kompilieren im `core_payload` desselben aktiven Supabase-Regelsatzes übernommen. Die ausführenden Python-Module enthalten keine fach- oder GOP-spezifischen Kandidatenlisten.
 
+Auswahllisten in Leistungsbögen werden zeilenbezogen verarbeitet. Das Backend verbindet den Leistungscode mit dem Zustand des zugehörigen Kästchens. Bei textbasierten PDFs werden Rechtecke und diagonale Markierungen direkt aus den PDF-Vektoren gelesen; Mistral-OCR-Markdown wird zusätzlich auf konfigurierbare Checkbox-Zeichen geprüft. Nur `checked` erzeugt Evidenz. `unchecked` wird ignoriert, `ambiguous` führt zu einem Review-Eintrag. Die Zeilen-, Marker- und Geometrieparameter stehen ebenfalls in `clinical_evidence_definitions.json`; neue Listenformate oder Codes benötigen keine Python-Verzweigung.
+
+Weicht die klinische Definitionsversion eines aktiven Supabase-Regelsatzes von der mit dem Backend ausgelieferten Version ab, verwendet das Backend bis zur nächsten Regelmigration die aktuelle lokale Definition und weist den Fallback im Regelstatus aus. So kann ein alter Supabase-Snapshot neue Extraktionslogik nicht unbemerkt zurücksetzen.
+
 Produktiver Ablauf:
 
 1. `001_hessen_ebm_invoices.sql` und `002_hessen_ebm_billing_rules.sql` einmal im Supabase SQL Editor ausführen.

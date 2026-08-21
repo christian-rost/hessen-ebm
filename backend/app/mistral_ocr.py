@@ -3,10 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from .config import Settings
-from .models import PageText
+from .models import PageText, SelectionEntry
+from .selection_extraction import extract_selection_entries_from_text, merge_selection_entries
 
 
-def extract_pages_with_mistral(path: Path, settings: Settings) -> list[PageText]:
+def extract_pages_with_mistral(
+    path: Path,
+    settings: Settings,
+    *,
+    selection_configuration: dict[str, object] | None = None,
+    selection_entries_by_page: dict[int, list[SelectionEntry]] | None = None,
+) -> list[PageText]:
     """Run Mistral OCR when credentials are configured.
 
     The implementation uses the Mistral file-upload plus signed-url flow. If the
@@ -45,7 +52,19 @@ def extract_pages_with_mistral(path: Path, settings: Settings) -> list[PageText]
     pages: list[PageText] = []
     for index, page in enumerate(getattr(ocr_result, "pages", []), start=1):
         text = getattr(page, "markdown", None) or getattr(page, "text", "") or ""
-        pages.append(PageText(page=index, text=text, provider="mistral_ocr"))
+        text_entries = extract_selection_entries_from_text(text, selection_configuration or {})
+        entries = merge_selection_entries(
+            selection_entries_by_page.get(index, []) if selection_entries_by_page else [],
+            text_entries,
+        )
+        pages.append(
+            PageText(
+                page=index,
+                text=text,
+                provider="mistral_ocr",
+                selection_entries=entries,
+            )
+        )
 
     if not pages:
         raise RuntimeError("Mistral OCR hat keine Seiten zurückgegeben.")

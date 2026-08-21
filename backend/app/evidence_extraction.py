@@ -11,6 +11,7 @@ from .clinical_rule_engine import (
     MatchContext,
     capture_value,
     condition_matches,
+    matching_selection_entries,
     normalize_text,
     render_value,
 )
@@ -49,6 +50,7 @@ def extract_evidence(
             segment_type=segment_type,
             segment_flags=flags,
             datetimes=datetimes,
+            selection_entries=page.selection_entries,
         )
         facts = {
             "page": page.page,
@@ -96,6 +98,7 @@ def extract_evidence(
 
         service_date, _ = datetimes.get(str(rule_set.formats.get("review_datetime_role") or "service"), (None, None))
         review.extend(_apply_review_rules(rule_set, page, match_context, service_date))
+        review.extend(_selection_reviews(rule_set, page))
         excluded.extend(_apply_exclusion_rules(rule_set, page, match_context, service_date))
 
     if not case_context["treatment_start"]:
@@ -148,7 +151,18 @@ def _apply_evidence_rule(
     value = capture_value(capture, context) if isinstance(capture, dict) else None
     if capture and not value:
         return None
-    return _build_evidence(rule, page, context, datetimes, datetime_state, definitions, {**facts, "value": value or ""})
+    selection_matches = matching_selection_entries(rule["when"], context)
+    selection_entry = selection_matches[0] if selection_matches else None
+    variables = {
+        **facts,
+        "value": value or "",
+        "selection_code": selection_entry.code if selection_entry else "",
+        "selection_label": selection_entry.label if selection_entry and selection_entry.label else "",
+        "selection_quantity": selection_entry.quantity if selection_entry and selection_entry.quantity is not None else "",
+    }
+    if selection_entry:
+        variables["selection_entry"] = selection_entry
+    return _build_evidence(rule, page, context, datetimes, datetime_state, definitions, variables)
 
 
 def _build_evidence(
@@ -173,6 +187,9 @@ def _build_evidence(
             rendered[field] = render_value(rule[field], variables)
     text_value = page.text if rendered.get("text_mode", "source") == "source" else str(rendered.get("text") or "")
     metadata = dict(rendered.get("metadata") or {})
+    selection_entry = variables.get("selection_entry")
+    if selection_entry is not None:
+        metadata["selection_entry"] = selection_entry.model_dump()
     search_terms = rendered.get("search_terms") or []
     if search_terms:
         metadata["search_terms"] = list(search_terms)
@@ -362,6 +379,34 @@ def _apply_review_rules(
             )
         )
     return result
+
+
+def _selection_reviews(
+    definitions: ClinicalDefinitionSet,
+    page: PageText,
+) -> list[ReviewCandidate]:
+    review_definition = definitions.selection_extraction.get("ambiguous_review") or {}
+    if not isinstance(review_definition, dict):
+        return []
+    evidence_template = str(review_definition.get("evidence") or "Unklar markierter Listeneintrag: {code} {label}")
+    reason = str(
+        review_definition.get("reason")
+        or "Der Auswahlzustand des Listeneintrags konnte nicht sicher erkannt werden."
+    )
+    return [
+        ReviewCandidate(
+            evidence=str(
+                render_value(
+                    evidence_template,
+                    {"code": entry.code, "label": entry.label or ""},
+                )
+            ).strip(),
+            evidence_pages=[page.page],
+            reason=reason,
+        )
+        for entry in page.selection_entries
+        if entry.state == "ambiguous"
+    ]
 
 
 def _review_from_evidence(definition: dict[str, Any], evidence: Evidence) -> ReviewCandidate:

@@ -5,10 +5,21 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+class SelectionEntry(BaseModel):
+    code: str
+    label: str | None = None
+    quantity: float | None = None
+    state: Literal["checked", "unchecked", "ambiguous"]
+    confidence: float
+    source: Literal["pdf_vector", "ocr_text", "merged"]
+    bbox: tuple[float, float, float, float] | None = None
+
+
 class PageText(BaseModel):
     page: int
     text: str
     provider: str = "pdfplumber"
+    selection_entries: list[SelectionEntry] = Field(default_factory=list)
 
 
 class DocumentSegment(BaseModel):

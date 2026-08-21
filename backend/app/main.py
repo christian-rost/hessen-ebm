@@ -14,7 +14,7 @@ from .admin_rule_compilation import compile_and_migrate_catalog_rules
 from .analysis_jobs import AnalysisJobNotFoundError, get_analysis_job, start_analysis_job
 from .catalog import CatalogRepository
 from .billing_events import build_billing_events, episode_selection_payload
-from .billing_rule_store import get_runtime_billing_rule_set, rule_store_status
+from .billing_rule_store import get_runtime_billing_rule_set, get_runtime_clinical_definition_set, rule_store_status
 from .config import Settings, get_settings
 from .database import supabase_status
 from .document_segmentation import segment_pages
@@ -260,9 +260,14 @@ def rules() -> dict[str, object]:
 def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Settings) -> AnalysisResult:
     analysis_dir = settings.storage_dir / "analyses"
 
-    pages, warnings = extract_pages(uploaded_path, settings)
-    segments = segment_pages(pages)
-    evidence, review_candidates, excluded, case_context = extract_evidence(pages, segments)
+    clinical_definitions = get_runtime_clinical_definition_set()
+    pages, warnings = extract_pages(uploaded_path, settings, clinical_definitions)
+    segments = segment_pages(pages, clinical_definitions)
+    evidence, review_candidates, excluded, case_context = extract_evidence(
+        pages,
+        segments,
+        clinical_definitions,
+    )
 
     catalog = _catalog()
     default_quarter = case_context.get("quarter") or "2025/Q4"

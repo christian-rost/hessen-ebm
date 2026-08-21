@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "definition_set_id": "hessen-ebm-clinical-evidence",
-  "version": "2026.2",
+  "version": "2026.3",
   "formats": {
     "fallback_segment_type": "other",
     "fallback_reason": "Kein spezifischer Dokumentmarker gefunden",
@@ -17,6 +17,46 @@
       ".{0,100}?durchgefuhrt(?:am)?(\\d{2}\\.\\d{2}\\.\\d{4})um(\\d{2}:\\d{2})",
       ".{0,100}?durchgefuhrt(?:am)?(\\d{2}\\.\\d{2}\\.\\d{4})"
     ]
+  },
+  "selection_extraction": {
+    "row_regex": "^\\s*(?:(?P<quantity>\\d+(?:[.,]\\d+)?)\\s*(?:x\\s*)?)?(?P<code>[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|[A-Z]{2,}[A-Z0-9]*)\\b\\s*(?P<label>.*)$",
+    "standalone_code_regex": "_",
+    "list_context_terms": ["Leistungsbogen", "Durchgeführte Leistungen", "Durchgefuehrte Leistungen", "Leistungsauswahl"],
+    "unmarked_rows_state": "ambiguous",
+    "unmarked_rows_confidence": 0.45,
+    "text_markers": [
+      {
+        "state": "checked",
+        "regex": "^\\s*(?:[-*]\\s*)?(?:\\[[xX✓]\\]|[☒☑🗹]|[□☐]\\s*[xX×])\\s*",
+        "confidence": 0.9
+      },
+      {
+        "state": "unchecked",
+        "regex": "^\\s*(?:[-*]\\s*)?(?:\\[\\s*\\]|[☐□])\\s*",
+        "confidence": 0.88
+      },
+      {
+        "state": "ambiguous",
+        "regex": "^\\s*(?:[-*]\\s*)?[◩◪◫◧◨]\\s*",
+        "confidence": 0.55
+      }
+    ],
+    "pdf_vector": {
+      "minimum_size": 4.0,
+      "maximum_size": 18.0,
+      "aspect_ratio_tolerance": 0.3,
+      "diagonal_span_ratio": 0.55,
+      "row_vertical_tolerance": 8.0,
+      "row_text_start_gap": 2.0,
+      "column_tolerance": 2.0,
+      "minimum_rows_in_column": 2,
+      "checked_confidence": 0.99,
+      "unchecked_confidence": 0.98
+    },
+    "ambiguous_review": {
+      "evidence": "Unklar markierter Listeneintrag: {code} {label}",
+      "reason": "Der Auswahlzustand des Listeneintrags konnte nicht sicher erkannt werden; die Leistung wird nicht automatisch übernommen."
+    }
   },
   "segment_types": {
     "case_context": {"label": "Fallkontext / ZNA", "flags": ["billing_relevant", "clinical_context", "review_context"]},
@@ -647,7 +687,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält Konsultationsgebühr",
       "search_terms": ["Konsultationspauschale"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["ALL_KONGEB"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["ALL_KONGEB"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {
@@ -658,7 +698,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält Ordinationsgebühr",
       "search_terms": ["Augenärztliche Grundpauschale", "Grundpauschale Augen"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["ALL_ORDGEB"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["ALL_ORDGEB"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {
@@ -669,7 +709,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält Ordinationsgebühr Notfall",
       "search_terms": ["Notfallpauschale", "Notfall", "Ordinationsgebühr", "Grundpauschale"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["ALL_ORDNOT"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["ALL_ORDNOT"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {
@@ -680,7 +720,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält binokulare Untersuchung des Augenhintergrundes",
       "search_terms": ["Augenhintergrund", "Fundus", "Binokulare Untersuchung des Augenhintergrundes"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_BUAHG"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["AUA_BUAHG"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {
@@ -691,7 +731,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält Echographie",
       "search_terms": ["Sonographie des Auges", "Ultraschall-Biometrie des Auges", "Ultraschall-Pachymetrie"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_ECHO"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["AUA_ECHO"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {
@@ -702,7 +742,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält elektrophysiologische Augen-Diagnostik",
       "search_terms": ["Elektrophysiologische Untersuchung", "Elektroretinographie", "VEP"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_EPU", "ERG", "VEP"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["AUA_EPU", "ERG", "VEP"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {
@@ -713,7 +753,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält Fluoreszenzangiographie",
       "search_terms": ["Fluoreszenzangiographie", "Angiographie Auge"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_FAG"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["AUA_FAG"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {
@@ -724,7 +764,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält PDT",
       "search_terms": ["PDT", "Photodynamische Therapie"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_PDT"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["AUA_PDT"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {
@@ -735,7 +775,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält Perimetrie",
       "search_terms": ["Perimetrie", "Gesichtsfeld"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_PERI"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["AUA_PERI"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {
@@ -746,7 +786,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält quantitative Untersuchung des binokularen Sehens",
       "search_terms": ["Schielbehandlung", "Quantitative Untersuchung des binokularen Sehens"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_SCHIEL"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["AUA_SCHIEL"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {
@@ -757,7 +797,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält Tränenweg-Sondierung",
       "search_terms": ["Tränenweg", "Tränenwege", "Sondierung", "Kleinchirurgischer Eingriff am Auge"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["TWS"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["TWS"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {
@@ -768,7 +808,7 @@
       "text_mode": "fixed",
       "text": "Interner Leistungsbogen enthält Lidheber-Operation",
       "search_terms": ["Lidheber", "Lidoperation", "Kleinchirurgischer Eingriff am Auge"],
-      "when": {"all": [{"segment_any": ["data_capture"]}, {"internal_code_any": ["AUA_LIDHEB"]}]},
+      "when": {"all": [{"segment_any": ["data_capture"]}, {"selection_code_any": {"states": ["checked"], "values": ["AUA_LIDHEB"]}}]},
       "also_review": {"reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."}
     },
     {

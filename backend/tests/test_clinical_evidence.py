@@ -1,7 +1,18 @@
 from app.document_segmentation import segment_pages
 from app.billing_rules import candidate_gops_for_evidence_kind
+from app.clinical_definitions import load_clinical_definition_set
 from app.evidence_extraction import extract_evidence
 from app.models import PageText
+from app.selection_extraction import extract_selection_entries_from_text
+
+
+def _page_with_selections(page: int, text: str) -> PageText:
+    definitions = load_clinical_definition_set()
+    return PageText(
+        page=page,
+        text=text,
+        selection_entries=extract_selection_entries_from_text(text, definitions.selection_extraction),
+    )
 
 
 def test_ophthalmology_ambulance_pages_create_clinical_evidence():
@@ -25,13 +36,13 @@ def test_ophthalmology_ambulance_pages_create_clinical_evidence():
                 "Befundet am 05.10.2025 16:25"
             ),
         ),
-        PageText(
+        _page_with_selections(
             page=3,
             text=(
                 "Datenerfassung Durchgefuehrte Leistungen "
                 "1.Leistung am05.10.2025 um 19:37 Dauer min. Bereitschaftsdienst "
-                "1.00ALL_ORDNOT Ordinationsgebuehr (Notfall) "
-                "1.00AUA_BUAHG Binokulare Untersuchung des Augenhintergrundes"
+                "\n☒ 1.00ALL_ORDNOT Ordinationsgebuehr (Notfall) "
+                "\n☒ 1.00AUA_BUAHG Binokulare Untersuchung des Augenhintergrundes"
             ),
         ),
         PageText(
@@ -73,32 +84,32 @@ def test_ophthalmology_data_capture_continuation_creates_all_internal_hints():
                 "Patienten-Identifikationsarmband bei Notfallbehandlung"
             ),
         ),
-        PageText(
+        _page_with_selections(
             page=2,
             text=(
                 "Musterklinik Datenerfassung Durchgefuehrte Leistungen "
                 "1.Leistung am24.04.2026 um 12:20 Dauer min. Bereitschaftsdienst "
                 "Leistungsbogen(9080902 Institutsambul. Augenklinik) "
-                "1.00ALL_KONGEB Konsultationsgebuehr "
-                "1.00ALL_ORDGEB Ordinationsgebuehr "
-                "1.00ALL_ORDNOT Ordinationsgebuehr(Notfall) "
-                "1.00AUA_BUAHG Binokulare Untersuchung des Augenhintergrundes "
-                "1.00AUA_ECHO Echographie "
-                "1.00AUA_EPU Elektrophysiologische Untersuchung "
-                "1.00AUA_FAG Fluoreszenzangiographie "
-                "1.00AUA_LIDHEB"
+                "\n☒ 1.00ALL_KONGEB Konsultationsgebuehr "
+                "\n☒ 1.00ALL_ORDGEB Ordinationsgebuehr "
+                "\n☒ 1.00ALL_ORDNOT Ordinationsgebuehr(Notfall) "
+                "\n☒ 1.00AUA_BUAHG Binokulare Untersuchung des Augenhintergrundes "
+                "\n☒ 1.00AUA_ECHO Echographie "
+                "\n☒ 1.00AUA_EPU Elektrophysiologische Untersuchung "
+                "\n☒ 1.00AUA_FAG Fluoreszenzangiographie "
+                "\n☒ 1.00AUA_LIDHEB"
             ),
         ),
-        PageText(
+        _page_with_selections(
             page=3,
             text=(
                 "Durchgefuehrte Leistungen OP der Lidsenkung mit Lidheber "
-                "1.00AUA_PDT PDT "
-                "1.00AUA_PERI Perimetrie "
-                "1.00AUA_SCHIEL Quant. Untersuchung des binokularen Sehens "
-                "1.00ERG ERG "
-                "1.00TWS TW-Sondierung "
-                "1.00VEP VEP "
+                "\n☒ 1.00AUA_PDT PDT "
+                "\n☒ 1.00AUA_PERI Perimetrie "
+                "\n☒ 1.00AUA_SCHIEL Quant. Untersuchung des binokularen Sehens "
+                "\n☒ 1.00ERG ERG "
+                "\n☒ 1.00TWS TW-Sondierung "
+                "\n☒ 1.00VEP VEP "
                 "Privatliquidation Selbstzahler/Notfaelle Augenambulanz&EBM Prozeduren"
             ),
         ),
