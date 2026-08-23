@@ -18,6 +18,7 @@ services:
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       MISTRAL_OCR_MODEL: ${MISTRAL_OCR_MODEL:-mistral-ocr-latest}
       MISTRAL_LLM_MODEL: ${MISTRAL_LLM_MODEL:-mistral-large-latest}
+      MISTRAL_LLM_MAX_TOKENS: ${MISTRAL_LLM_MAX_TOKENS:-8000}
     volumes:
       - backend-storage:/app/storage
       - catalog-data:/app/catalog
