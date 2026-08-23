@@ -44,6 +44,15 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def _row_gop(row: sqlite3.Row) -> str:
+    """GOP einer Ergebniszeile. EBM-Zeilen fuehren `gop`, regionale `gop_code`."""
+    keys = row.keys()
+    for name in ("gop", "gop_code", "gop_base"):
+        if name in keys and row[name]:
+            return str(row[name])
+    return ""
+
+
 def _clean_rule_texts(*values: Any) -> list[str]:
     texts: list[str] = []
     for value in values:
@@ -105,6 +114,7 @@ def build_fts_query(query: str) -> str | None:
 class CatalogRepository:
     def __init__(self, db_path: Path):
         self.db_path = db_path
+        self._section_cache: dict[str, list[str]] = {}
 
     @property
     def available(self) -> bool:
@@ -176,6 +186,55 @@ class CatalogRepository:
             ).fetchone()
         return str(row["quarter"]) if row and row["quarter"] else None
 
+    def section_paths(self, quarter: str) -> dict[str, list[str]]:
+        """Abschnittspfad je GOP fuer ein Quartal.
+
+        Der EBM ist ein gegliedertes Normwerk: Der Abschnitt, in dem eine GOP steht,
+        sagt, fuer welchen Versorgungszusammenhang sie gilt - eine Notfallpauschale
+        steht unter "Versorgung im Notfall und im organisierten Notfalldienst", eine
+        Betreuungsleistung unter "Mutterschaftsvorsorge". Diese Zuordnung liegt im
+        Baum und wurde bisher nicht mitgefuehrt.
+
+        Der Baum eines Quartals umfasst wenige tausend Knoten und wird einmal je
+        Quartal aufgebaut, nicht je Abfrage.
+        """
+        cached = self._section_cache.get(quarter)
+        if cached is not None:
+            return cached
+        paths: dict[str, list[str]] = {}
+        if self.available:
+            with self._connect() as conn:
+                columns = self._columns(conn, "nodes") if "nodes" in self._tables(conn) else set()
+                if {"row_key", "parent_row_key", "label"}.issubset(columns):
+                    rows = {
+                        row["row_key"]: row
+                        for row in conn.execute(
+                            "select row_key, parent_row_key, label, is_leaf from nodes where quarter = ?",
+                            (quarter,),
+                        )
+                    }
+                    for row in rows.values():
+                        label = str(row["label"] or "")
+                        gop = label.split(" ", 1)[0].strip().upper()
+                        if not re.fullmatch(r"\d{5}[A-Z0-9*]*", gop):
+                            continue
+                        chain: list[str] = []
+                        parent = row["parent_row_key"]
+                        seen: set[str] = set()
+                        while parent in rows and parent not in seen:
+                            seen.add(parent)
+                            chain.append(str(rows[parent]["label"] or ""))
+                            parent = rows[parent]["parent_row_key"]
+                        paths.setdefault(gop, list(reversed(chain)))
+        self._section_cache[quarter] = paths
+        return paths
+
+    def section_path(self, gop: str, quarter: str) -> list[str]:
+        paths = self.section_paths(quarter)
+        canonical = canonical_gop(gop)
+        base, _ = normalize_gop(canonical)
+        return paths.get(canonical) or paths.get(base) or []
+
     def lookup_ebm(self, gop: str, quarter: str) -> CatalogEntry | None:
         if not self.available:
             return None
@@ -215,6 +274,7 @@ class CatalogRepository:
             euro=_to_float(row["euro"]),
             description=rule_texts[0] if rule_texts else None,
             rule_texts=rule_texts,
+            section_path=self.section_path(_row_gop(row), quarter),
         )
 
     def lookup_hessen(self, gop: str, quarter: str, region: str = "Hessen") -> CatalogEntry | None:
@@ -275,6 +335,7 @@ class CatalogRepository:
             page=_to_int(row["page"]),
             description=row["description"],
             rule_texts=rule_texts,
+            section_path=self.section_path(_row_gop(row), quarter),
         )
 
     def lookup(self, gop: str, quarter: str, region: str = "Hessen") -> CatalogEntry | None:
@@ -559,6 +620,7 @@ class CatalogRepository:
                     euro=_to_float(row["euro"]),
                     description=rule_texts[0] if rule_texts else None,
                     rule_texts=rule_texts,
+                    section_path=self.section_path(_row_gop(row), quarter),
                 )
             )
         for row in regional_rows:
@@ -579,6 +641,7 @@ class CatalogRepository:
                     page=_to_int(row["page"]),
                     description=row["description"],
                     rule_texts=rule_texts,
+                    section_path=self.section_path(_row_gop(row), quarter),
                 )
             )
         return entries[:limit]

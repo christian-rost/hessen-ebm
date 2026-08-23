@@ -168,3 +168,12 @@ def test_regional_catalog_check_reports_no_matching_regional_gops(tmp_path):
     assert check["matched_gops"] == []
     assert check["missing_gop_bases"] == ["06333"]
     assert "keine passenden regionalen GOPs" in check["message"]
+
+
+def test_section_path_is_empty_without_a_usable_node_table(tmp_path):
+    """Ältere oder minimale Kataloge führen keinen vollständigen Baum."""
+    from app.catalog import CatalogRepository
+
+    repo = CatalogRepository(tmp_path / "fehlt.sqlite")
+    assert repo.section_path("01212", "2026/Q1") == []
+    assert repo.section_paths("2026/Q1") == {}

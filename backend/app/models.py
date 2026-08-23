@@ -62,6 +62,9 @@ class CatalogEntry(BaseModel):
     page: int | None = None
     description: str | None = None
     rule_texts: list[str] = Field(default_factory=list)
+    # Stellung im Katalogbaum, von der Kapitelebene bis zum führenden Abschnitt.
+    # Der Abschnitt sagt, für welchen Versorgungszusammenhang eine GOP gilt.
+    section_path: list[str] = Field(default_factory=list)
 
 
 class BillingItem(BaseModel):
