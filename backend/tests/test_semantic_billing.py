@@ -922,3 +922,32 @@ def test_derivation_gives_up_after_the_configured_attempts():
 
     assert len(calls) == 3, "max_attempts aus semantic_policy wurde nicht beachtet"
     assert "Versuch 1" in str(excinfo.value) and "Versuch 3" in str(excinfo.value)
+
+
+def test_a_purely_non_binding_candidate_is_presented_not_billed():
+    """Kandidatenregeln führen mehrdeutige Evidenz auf mögliche GOPs.
+
+    Findet das Retrieval eine GOP zusätzlich über die Katalogsuche, gilt diese
+    Einschränkung nicht mehr — dann steht sie auf demselben Weg wie jede andere.
+    """
+    from app.semantic_billing import _non_binding_candidate_reason
+
+    nur_regel = {"support_levels": ["non_binding_candidate"]}
+    auch_gefunden = {"support_levels": ["non_binding_candidate", "semantic_search"]}
+    aus_regelwerk = {"support_levels": ["binding_rule"]}
+
+    assert _non_binding_candidate_reason(nur_regel) is not None
+    assert _non_binding_candidate_reason(auch_gefunden) is None
+    assert _non_binding_candidate_reason(aus_regelwerk) is None
+
+
+def test_time_and_sequence_variants_stay_billable():
+    """Zeit- und Sequenzregeln sind bindend, auch wenn sie denselben Weg nehmen."""
+    from app.billing_rules import non_binding_gops_for_evidence_kind
+
+    non_binding = non_binding_gops_for_evidence_kind("internal_service.emergency_ordination", "2026/Q1", "Hessen")
+
+    # Die Notfallvarianten stammen aus Zeit- und Sequenzregeln und bleiben abrechenbar,
+    # obwohl dieselbe Kandidatenregel sie ebenfalls nennt.
+    assert "01212" not in non_binding
+    assert "01216" not in non_binding

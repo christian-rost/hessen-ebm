@@ -851,3 +851,36 @@ def _easter_sunday(year: int) -> date:
     month = (h + l - 7 * m + 114) // 31
     day = ((h + l - 7 * m + 114) % 31) + 1
     return date(year, month, day)
+
+
+def non_binding_gops_for_evidence_kind(
+    evidence_kind: str,
+    quarter: str | None = None,
+    region: str = "Hessen",
+    rule_set: BillingRuleSet | None = None,
+) -> set[str]:
+    """GOPs, die nur aus einer unverbindlichen Kandidatenregel stammen.
+
+    Kandidatenregeln fuehren mehrdeutige Evidenz auf moegliche GOPs, ohne dass die
+    Zuordnung feststeht. Zeit- und Sequenzregeln sind dagegen bindend: Sie leiten
+    aus einem bestimmten Sachverhalt eine bestimmte Variante ab. Beide erreichen den
+    Kandidatenpool ueber denselben Weg und muessen unterscheidbar bleiben.
+    """
+    definitions = rule_set or get_runtime_billing_rule_set(quarter, region)
+    binding: set[str] = set()
+    for rule in definitions.event_sequence_rules:
+        if not _definition_applies(rule, quarter, region):
+            continue
+        binding.update({_normalize_rule_gop(rule.initial_gop), _normalize_rule_gop(rule.subsequent_gop)})
+    for rule in definitions.temporal_rules:
+        if not _definition_applies(rule, quarter, region):
+            continue
+        binding.update(_normalize_rule_gop(gop) for gop in rule.gops)
+        binding.update(_normalize_rule_gop(outcome.gop) for outcome in rule.outcomes)
+    candidates = {
+        _normalize_rule_gop(gop)
+        for rule in definitions.candidate_rules
+        if rule.evidence_kind == evidence_kind and _definition_applies(rule, quarter, region)
+        for gop in rule.gops
+    }
+    return candidates - binding

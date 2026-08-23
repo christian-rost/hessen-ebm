@@ -14,6 +14,7 @@ from .billing_rules import (
     apply_temporal_gop_rule,
     billing_rule_guidance,
     candidate_gops_for_evidence_kind,
+    non_binding_gops_for_evidence_kind,
     derive_additional_gops,
     evaluate_catalog_context_rules,
 )
@@ -182,14 +183,17 @@ def _collect_catalog_candidates(
     # Zeit- und Sequenzregeln liefern weiterhin ihre Varianten, weil diese GOPs
     # ohne Uhrzeitkontext gar nicht auffindbar waeren.
     for item in evidence:
+        # Kandidatenregeln sind unverbindlich, Zeit- und Sequenzregeln nicht.
+        # Beide erreichen den Pool ueber denselben Weg und muessen unterscheidbar bleiben.
+        non_binding = non_binding_gops_for_evidence_kind(item.kind, quarter, region)
         for gop in candidate_gops_for_evidence_kind(
             item.kind, quarter, region, evidence_flags=evidence_flags(item)
         ):
             add(
                 catalog.lookup(gop, quarter, region),
                 [item.evidence_id],
-                f"time-dependent billing rule for {item.kind}",
-                "configured_candidate",
+                f"billing rule for {item.kind}",
+                "non_binding_candidate" if normalize_gop(gop)[0] in non_binding else "binding_rule",
                 gop,
             )
 
@@ -552,7 +556,9 @@ def _billing_items_from_payload(
             )
             continue
         proposal_reason = _clean_optional_str(proposal.get("reason"))
-        acceptance_reason = _semantic_acceptance_failure(candidate, proposal_reason, semantic_policy)
+        acceptance_reason = _non_binding_candidate_reason(candidate) or _semantic_acceptance_failure(
+            candidate, proposal_reason, semantic_policy
+        )
         if acceptance_reason:
             review.append(
                 ReviewCandidate(
@@ -764,6 +770,23 @@ def _billing_items_from_payload(
         )
 
     return items, review
+
+
+def _non_binding_candidate_reason(candidate: dict[str, Any]) -> str | None:
+    """Kandidatenregeln sind ausdruecklich unverbindlich.
+
+    Sie fuehren mehrdeutige Evidenz - etwa einen internen Leistungscode oder einen
+    dokumentierten Befund - auf moegliche GOPs, ohne dass die Zuordnung feststeht.
+    Wird eine solche GOP nur ueber diesen Weg gefunden, ist sie ein Vorschlag zur
+    Pruefung und keine Rechnungsposition.
+    """
+    levels = {str(value) for value in candidate.get("support_levels") or []}
+    if levels and levels == {"non_binding_candidate"}:
+        return (
+            "Die GOP stammt ausschließlich aus einer unverbindlichen Kandidatenregel; "
+            "sie wird zur Prüfung vorgelegt, nicht automatisch abgerechnet."
+        )
+    return None
 
 
 def _semantic_acceptance_failure(
