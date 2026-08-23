@@ -76,9 +76,28 @@ class CaseResult:
     amount_expected: float | None = None
     amount_produced: float | None = None
 
+    # Konzept 6 verlangt die Trennung von "vorgeschlagen und korrekt",
+    # "vorgeschlagen aber unzulaessig" und "uebersehen". Eine einzige Trefferquote
+    # verwischt sie: Ein System, das alles vorschlaegt, sieht dort gut aus.
+    hints: list[str] = field(default_factory=list)
+
     @property
     def recall(self) -> float:
         return len(self.hit) / len(self.expected) if self.expected else 0.0
+
+    @property
+    def precision(self) -> float:
+        produced = len(self.hit) + len(self.extra)
+        return len(self.hit) / produced if produced else 0.0
+
+    @property
+    def recovered_by_hint(self) -> list[str]:
+        """Uebersehene Sollpositionen, die als Dokumentationshinweis auftauchen.
+
+        Kein Treffer - die Position steht nicht auf der Rechnung. Aber ein anderer
+        Fehler als spurloses Verschwinden: Der Anwender sieht, was fehlt.
+        """
+        return sorted(set(self.missing) & {h.split("@")[0] + "@" + h.split("@")[1] for h in self.hints})
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -92,6 +111,10 @@ class CaseResult:
             "zusaetzlich": self.extra,
             "ohne_belegstelle": self.without_evidence,
             "review": self.review_count,
+            "hinweise": len(self.hints),
+            "durch_hinweis_sichtbar": self.recovered_by_hint,
+            "precision": round(self.precision, 4),
+            "recall": round(self.recall, 4),
             "betrag_soll": self.amount_expected,
             "betrag_ist": self.amount_produced,
         }
@@ -145,12 +168,14 @@ def measure_case(directory: Path, catalog_path: Path) -> CaseResult:
     try:
         semantic = generate_semantic_billing_items(evidence, catalog, quarter, settings, region)
         items, summary = semantic.items, semantic.summary
+        hints = semantic.documentation_hints
         result.review_count += len(semantic.review_candidates)
         result.derived = True
     except SemanticBillingError as exc:
         # Ohne Modellzugang oder bei unbrauchbarer Antwort bleibt der deterministische
         # Pfad, der keine Zuordnung leisten kann. Das ist kein Abbruch, sondern ein Befund.
         items, summary = generate_billing_items(evidence, catalog, quarter, region)
+        hints = []
         result.reason = str(exc)
     except Exception as exc:  # pragma: no cover - Messwerkzeug soll nie abbrechen
         result.reason = f"unerwarteter Fehler: {exc}"
@@ -166,6 +191,7 @@ def measure_case(directory: Path, catalog_path: Path) -> CaseResult:
     result.missing = sorted(expected_set - produced_set)
     result.extra = sorted(produced_set - expected_set)
     result.without_evidence = sum(1 for item in items if not item.evidence_ids)
+    result.hints = [_key(h.gop, h.service_date) for h in hints]
     if warnings:
         result.reason = "; ".join(warnings)[:300] if not result.reason else result.reason
     return result
@@ -182,6 +208,7 @@ def _totals(results: list[CaseResult]) -> dict[str, Any]:
     expected = sum(len(r.expected) for r in results)
     hit = sum(len(r.hit) for r in results)
     extra = sum(len(r.extra) for r in results)
+    hint_recovered = sum(len(r.recovered_by_hint) for r in results)
     return {
         "faelle": len(results),
         "abgeleitet": sum(1 for r in results if r.derived),
@@ -192,6 +219,13 @@ def _totals(results: list[CaseResult]) -> dict[str, Any]:
         "ohne_belegstelle": sum(r.without_evidence for r in results),
         # Die massgebliche Kennzahl: Anteil der Sollpositionen, die ohne Korrektur entstehen.
         "trefferquote": round(hit / expected, 4) if expected else 0.0,
+        # Konzept 6: Precision haelt dagegen. Ohne sie laesst sich der Recall
+        # jederzeit hochtreiben, indem man mehr vorschlaegt.
+        "precision": round(hit / (hit + extra), 4) if (hit + extra) else 0.0,
+        "hinweise": sum(len(r.hints) for r in results),
+        "durch_hinweis_sichtbar": hint_recovered,
+        # Was weder abgerechnet noch als Hinweis sichtbar ist: der stille Ausfall.
+        "still_verloren": expected - hit - hint_recovered,
     }
 
 
@@ -210,7 +244,13 @@ def _print_report(results: list[CaseResult], baseline: dict[str, Any] | None) ->
     print("-" * 92)
     print(
         f"{'gesamt':<26} {'':<9} {totals['soll']:>5} {totals['treffer']:>8} "
-        f"{totals['zusaetzlich']:>6}  Trefferquote {totals['trefferquote']:.0%}"
+        f"{totals['zusaetzlich']:>6}  Recall {totals['trefferquote']:.0%} · "
+        f"Precision {totals['precision']:.0%}"
+    )
+    print(
+        f"{'':<26} {'':<9} {'':>5} {'':>8} {'':>6}  "
+        f"{totals['hinweise']} Dokumentationshinweise, davon {totals['durch_hinweis_sichtbar']} "
+        f"auf Sollpositionen · {totals['still_verloren']} still verloren"
     )
     if totals["abgeleitet"] < totals["faelle"]:
         print(f"\n  {totals['faelle'] - totals['abgeleitet']} Fälle ohne Ableitung — Grund je Fall oben.")

@@ -33,7 +33,15 @@ from .catalog import CatalogRepository, canonical_gop, normalize_gop
 from .catalog_rule_validation import apply_catalog_rule_validation
 from .config import Settings
 from .evidence_extraction import quarter_from_date
-from .models import BillingItem, CatalogEntry, Evidence, ExcludedEvidence, InvoiceSummary, ReviewCandidate
+from .models import (
+    BillingItem,
+    CatalogEntry,
+    DocumentationHint,
+    Evidence,
+    ExcludedEvidence,
+    InvoiceSummary,
+    ReviewCandidate,
+)
 from .rule_engine import (
     _resolve_quarter,
     append_derived_billing_items,
@@ -54,6 +62,7 @@ class SemanticBillingResult:
     summary: InvoiceSummary
     review_candidates: list[ReviewCandidate]
     excluded_evidence: list[ExcludedEvidence]
+    documentation_hints: list[DocumentationHint]
     context: dict[str, Any]
 
 
@@ -94,10 +103,16 @@ def generate_semantic_billing_items(
         )
         for item_quarter in sorted({item.quarter for item in items})
     ]
-    items, blocked_review = _split_items_by_catalog_verdict(items, catalog_rule_validation)
+    items, blocked_review, content_gap_hints = _split_items_by_catalog_verdict(
+        items, catalog_rule_validation
+    )
     finalize_billing_timeline(items)
     review = item_review + blocked_review + _review_from_payload(payload, billing_evidence)
     excluded = _excluded_from_payload(payload, billing_evidence)
+    hints = _documentation_hints_from_payload(
+        payload, billing_evidence, candidates, catalog, quarter, region
+    )
+    hints += content_gap_hints
     summary = InvoiceSummary(
         line_count=len(items),
         points_total=sum((item.points or 0) * item.quantity for item in items),
@@ -110,6 +125,7 @@ def generate_semantic_billing_items(
         summary=summary,
         review_candidates=review,
         excluded_evidence=excluded,
+        documentation_hints=hints,
         context={
             "mode": "semantic_llm",
             "provider": "mistral",
@@ -123,6 +139,84 @@ def generate_semantic_billing_items(
             "catalog_rule_validation": catalog_rule_validation,
         },
     )
+
+
+def _documentation_hints_from_payload(
+    payload: dict[str, Any],
+    evidence: list[Evidence],
+    candidates: list[dict[str, Any]],
+    catalog: CatalogRepository,
+    quarter: str,
+    region: str,
+) -> list[DocumentationHint]:
+    """Konzept 3.4: erbracht, aber nicht vollstaendig dokumentiert.
+
+    Es gilt dasselbe Tor wie fuer Positionen - nur GOPs aus dem Kandidatenpool.
+    Ein Hinweis ist keine Abrechnung, aber er landet vor den Augen des Arztes und
+    darf deshalb genauso wenig erfunden sein.
+    """
+    evidence_by_id = {item.evidence_id: item for item in evidence}
+    by_gop = {str(candidate["gop"]): candidate for candidate in candidates}
+    by_base = {str(candidate["gop_base"]): candidate for candidate in candidates}
+
+    hints: list[DocumentationHint] = []
+    seen: set[tuple[str, str | None]] = set()
+    for raw in _as_list(payload.get("documentation_hints")):
+        if not isinstance(raw, dict):
+            continue
+        gop = canonical_gop(str(raw.get("gop") or "").strip())
+        if not gop:
+            continue
+        gop_base, _suffix = normalize_gop(gop)
+        candidate = by_gop.get(gop) or by_base.get(gop_base)
+        if candidate is None:
+            continue
+        evidence_ids = [
+            str(value) for value in _as_list(raw.get("evidence_ids")) if str(value) in evidence_by_id
+        ]
+        missing = [str(value) for value in _as_list(raw.get("missing_content")) if str(value).strip()]
+        if not missing:
+            # Ohne benannte Luecke ist der Hinweis wertlos: Er sagt dann nur, dass
+            # etwas nicht ging, nicht was zu tun waere.
+            continue
+        service_date = _clean_optional_str(raw.get("service_date")) or _date_from_evidence(
+            evidence_ids, evidence_by_id
+        )
+        key = (gop, service_date)
+        if key in seen:
+            continue
+        seen.add(key)
+        item_quarter = quarter_from_date(service_date) if service_date else quarter
+        entry = _lookup_candidate_entry(catalog, gop, item_quarter or quarter, region, candidate)
+        hints.append(
+            DocumentationHint(
+                gop=gop,
+                gop_base=gop_base,
+                title=entry.title if entry else candidate.get("title"),
+                quarter=item_quarter or quarter,
+                service_date=service_date,
+                points=entry.points if entry else None,
+                euro=entry.euro if entry else None,
+                catalog_source=entry.source if entry else candidate.get("source"),
+                catalog_id=entry.catalog_id if entry else candidate.get("catalog_id"),
+                catalog_data_stand=entry.data_stand if entry else candidate.get("data_stand"),
+                evidence_ids=evidence_ids,
+                evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                covered_service_content=[
+                    str(value) for value in _as_list(raw.get("covered_content")) if str(value).strip()
+                ],
+                missing_service_content=missing,
+                reason=_clean_optional_str(raw.get("reason")),
+            )
+        )
+    return hints
+
+
+def _date_from_evidence(evidence_ids: list[str], evidence_by_id: dict[str, Evidence]) -> str | None:
+    dates = sorted(
+        {evidence_by_id[eid].service_date for eid in evidence_ids if evidence_by_id.get(eid) and evidence_by_id[eid].service_date}
+    )
+    return dates[0] if dates else None
 
 
 def _quarter_from_evidence(evidence: list[Evidence]) -> str | None:
@@ -339,6 +433,11 @@ def _build_messages(
         "Bei zeitabhängigen Positionen sind Leistungsdatum, Uhrzeit, Wochentag, Feiertag sowie Erst- oder Folgekontakt zu beachten. "
         "Wenn eine Leistung nur angefordert, storniert, intern dokumentiert oder unsicher ist, nimm sie nicht als item auf, "
         "sondern als review_candidate oder excluded_evidence. "
+        "Stufe jeden Kandidaten in genau eine von drei Lagen ein: belegt, dann als item; erbracht, aber "
+        "die Dokumentation deckt nicht jeden obligaten Leistungsinhalt, dann als documentation_hint mit "
+        "missing_content; nicht erbracht oder nicht belegt, dann als excluded_evidence. Eine Leistung, die "
+        "die Akte erkennbar erwähnt, darf in keiner Antwort ganz fehlen - der mittlere Fall ist der "
+        "häufigste und der wertvollste, weil er sagt, woran die Abrechnung scheitert. "
         "Kandidaten mit ausschließlich configured_candidate oder semantic_search sind nur Suchhinweise und dürfen nicht "
         "ohne zusätzliche strukturierte Evidenz als item übernommen werden. Eine ausdrücklich nicht vollständig erfüllte "
         "Leistung darf niemals als item erscheinen. "
@@ -367,6 +466,16 @@ def _build_messages(
                     "confidence": "high|medium|low",
                     "reason": "kurze fachliche Herleitung",
                     "covered_content": ["wörtliches Element des obligaten Leistungsinhalts, das belegt ist"],
+                }
+            ],
+            "documentation_hints": [
+                {
+                    "gop": "string",
+                    "evidence_ids": ["ev-..."],
+                    "service_date": "YYYY-MM-DD oder null",
+                    "covered_content": ["belegtes Element des obligaten Leistungsinhalts"],
+                    "missing_content": ["Element des obligaten Leistungsinhalts, das die Dokumentation nicht hergibt"],
+                    "reason": "was zur Abrechnung fehlt",
                 }
             ],
             "review_candidates": [
@@ -821,27 +930,72 @@ def _semantic_acceptance_failure(
 def _split_items_by_catalog_verdict(
     items: list[BillingItem],
     validation_results: list[dict[str, Any]],
-) -> tuple[list[BillingItem], list[ReviewCandidate]]:
+) -> tuple[list[BillingItem], list[ReviewCandidate], list[DocumentationHint]]:
     """Katalogurteil als Abrechnungstor anwenden.
 
     Positionen mit verletzter, maschinell entscheidbarer Klausel werden zu
     Review-Kandidaten. Unentscheidbare Klauseln bleiben als Pruefhinweis an der
     Position; sie verhindern die Abrechnung nicht.
+
+    Konzept 3.4 zieht eine dritte Linie: Scheitert eine Position ausschliesslich
+    daran, dass ein obligater Leistungsinhalt nicht belegt ist, ist das kein
+    Abrechnungsausschluss, sondern eine Luecke in der Dokumentation. Sie wird
+    nicht verworfen, sondern mit dem fehlenden Element benannt - das ist der Fall,
+    in dem der Arzt etwas tun kann.
     """
     blocked: dict[tuple[str, str | None], list[str]] = {}
+    gaps: dict[tuple[str, str | None], list[str]] = {}
     for result in validation_results:
         for verdict in result.get("item_verdicts") or []:
+            key = (str(verdict.get("gop_original")), verdict.get("service_event_id"))
+            for element in verdict.get("content_gaps") or []:
+                if str(element) not in gaps.setdefault(key, []):
+                    gaps[key].append(str(element))
             if verdict.get("billable"):
                 continue
-            key = (str(verdict.get("gop_original")), verdict.get("service_event_id"))
             blocked.setdefault(key, []).extend(str(note) for note in verdict.get("violations") or [])
 
     kept: list[BillingItem] = []
     review: list[ReviewCandidate] = []
+    hints: list[DocumentationHint] = []
     for item in items:
-        violations = blocked.get((item.gop_original, item.service_event_id))
+        key = (item.gop_original, item.service_event_id)
+        violations = blocked.get(key)
         if not violations:
             kept.append(item)
+            continue
+        missing = gaps.get(key) or []
+        # Nur wenn jede Verletzung von der Inhaltsklausel stammt, ist es eine
+        # Dokumentationsluecke. Kommt ein Ausschluss oder eine fehlende Genehmigung
+        # dazu, bleibt es ein Fall fuer die Pruefung.
+        only_content = bool(missing) and all(
+            any(element[:80] in note for element in missing) for note in violations
+        )
+        if only_content:
+            hints.append(
+                DocumentationHint(
+                    gop=item.gop_original,
+                    gop_base=item.gop_base,
+                    title=item.title,
+                    quarter=item.quarter,
+                    service_date=item.service_date,
+                    points=item.points,
+                    euro=item.amount_eur,
+                    catalog_source=item.catalog_source,
+                    catalog_id=item.catalog_id,
+                    catalog_data_stand=item.catalog_data_stand,
+                    evidence_ids=list(item.evidence_ids),
+                    evidence_pages=list(item.evidence_pages),
+                    covered_service_content=list(item.covered_service_content),
+                    missing_service_content=missing,
+                    confidence=item.confidence,
+                    reason=(
+                        "Die Leistung ist belegt, die Dokumentation deckt aber nicht jeden obligaten "
+                        "Leistungsinhalt. Wird das Fehlende nachgetragen, ist die Position abrechenbar."
+                    ),
+                    origin="catalog_content_gap",
+                )
+            )
             continue
         review.append(
             ReviewCandidate(
@@ -857,7 +1011,7 @@ def _split_items_by_catalog_verdict(
         )
     for index, item in enumerate(kept, start=1):
         item.line = index
-    return kept, review
+    return kept, review, hints
 
 
 def _select_billing_event(

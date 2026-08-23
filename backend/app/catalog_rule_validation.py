@@ -32,6 +32,12 @@ class ClauseVerdict:
 
     severity: str
     note: str
+    # Konzept 3.4: Eine Luecke im obligaten Leistungsinhalt ist etwas anderes als
+    # ein Ausschluss. Sie sagt nicht "nicht abrechenbar", sondern "so wie es
+    # dokumentiert ist, noch nicht". Damit die Pipeline das unterscheiden kann,
+    # nennt das Urteil die Klausel und die fehlenden Elemente beim Namen.
+    clause_type: str | None = None
+    missing_content: tuple[str, ...] = ()
 
 
 VIOLATION = "violation"
@@ -103,7 +109,7 @@ def apply_catalog_rule_validation(
     # Pro Position sammeln, ob eine entscheidbare Klausel verletzt ist. Das ist das
     # Abrechnungstor: nur Positionen ohne Verletzung duerfen automatisch entstehen.
     verdicts: dict[int, dict[str, list[str]]] = {
-        id(item): {"violations": [], "advisories": []} for item in items
+        id(item): {"violations": [], "advisories": [], "content_gaps": []} for item in items
     }
     for item in items:
         for row in by_gop.get(item.gop_base, []):
@@ -127,6 +133,9 @@ def apply_catalog_rule_validation(
                 bucket = "violations" if verdict.severity == VIOLATION else "advisories"
                 if verdict.note not in verdicts[id(item)][bucket]:
                     verdicts[id(item)][bucket].append(verdict.note)
+                for element in verdict.missing_content:
+                    if element not in verdicts[id(item)]["content_gaps"]:
+                        verdicts[id(item)]["content_gaps"].append(element)
             if rule_notes:
                 new_notes = [note for note in rule_notes if note not in item.validation_notes]
                 review_notes += len(new_notes)
@@ -145,6 +154,7 @@ def apply_catalog_rule_validation(
                 "service_event_id": item.service_event_id,
                 "violations": verdicts[id(item)]["violations"],
                 "advisories": verdicts[id(item)]["advisories"],
+                "content_gaps": verdicts[id(item)]["content_gaps"],
                 "billable": not verdicts[id(item)]["violations"],
             }
             for item in items
@@ -294,7 +304,12 @@ def _evaluate_clause(
         # Vorerst nur melden. Ob eine Luecke die Position blockiert, entscheidet
         # die Politik, damit sich das Verhalten ohne Codeaenderung scharf schalten laesst.
         blocking = bool((clause_policy or {}).get("required_service_content_blocks"))
-        return ClauseVerdict(VIOLATION if blocking else ADVISORY, note)
+        return ClauseVerdict(
+            VIOLATION if blocking else ADVISORY,
+            note,
+            clause_type="required_service_content",
+            missing_content=tuple(missing),
+        )
 
     if clause_type in _advisory_clause_types(clause_policy):
         return ClauseVerdict(ADVISORY, f"Manuelle Prüfung der Katalogbedingung erforderlich: {source_text}")

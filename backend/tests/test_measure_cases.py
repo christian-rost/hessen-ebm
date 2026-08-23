@@ -54,3 +54,41 @@ def test_recall_is_reported_per_case():
     result = case("a", ["01212@2026-01-01", "01786@2026-01-01"], ["01212@2026-01-01"])
     assert result.recall == 0.5
     assert result.as_dict()["fehlend"] == ["01786@2026-01-01"]
+
+
+def test_precision_holds_recall_honest():
+    """Konzept 6: Recall allein laesst sich durch mehr Vorschlaege hochtreiben.
+
+    Zwei Faelle mit gleicher Trefferzahl, aber verschieden vielen Fehlvorschlaegen
+    muessen sich in der Kennzahl unterscheiden - sonst belohnt der Messstand
+    genau das Verhalten, das die Rechnung unbrauchbar macht.
+    """
+    from tools.measure_cases import CaseResult, _totals
+
+    sauber = CaseResult(name="sauber", derived=True, expected=["A@1", "B@1"], hit=["A@1"], missing=["B@1"])
+    streuend = CaseResult(
+        name="streuend", derived=True, expected=["A@1", "B@1"], hit=["A@1"], missing=["B@1"],
+        extra=["X@1", "Y@1", "Z@1"],
+    )
+    assert sauber.precision == 1.0
+    assert streuend.precision == 0.25
+    assert sauber.recall == streuend.recall
+
+    gesamt = _totals([sauber, streuend])
+    assert gesamt["trefferquote"] == 0.5
+    assert gesamt["precision"] == 0.4
+
+
+def test_hint_turns_a_silent_loss_into_a_visible_one():
+    """Eine uebersehene Position, die als Hinweis erscheint, ist kein stiller Ausfall."""
+    from tools.measure_cases import CaseResult, _totals
+
+    still = CaseResult(name="still", derived=True, expected=["A@2026-01-01"], missing=["A@2026-01-01"])
+    sichtbar = CaseResult(
+        name="sichtbar", derived=True, expected=["A@2026-01-01"], missing=["A@2026-01-01"],
+        hints=["A@2026-01-01"],
+    )
+    assert still.recovered_by_hint == []
+    assert sichtbar.recovered_by_hint == ["A@2026-01-01"]
+    assert _totals([still])["still_verloren"] == 1
+    assert _totals([sichtbar])["still_verloren"] == 0

@@ -144,6 +144,36 @@ class InvoiceTimelineEvent(BaseModel):
     evidence_pages: list[int] = Field(default_factory=list)
 
 
+class DocumentationHint(BaseModel):
+    """Leistung, die erbracht sein duerfte, deren Dokumentation aber nicht traegt.
+
+    Konzept 3.4 trennt "medizinisch erbracht" von "abrechnungsfaehig". Wer beides
+    in einer Entscheidung zusammenzieht, verliert die interessantesten Faelle
+    lautlos: Die Leistung steht in der Akte, ein obligater Inhalt fehlt in der
+    Doku - und der Vorschlag verschwindet, ohne dass jemand erfaehrt, woran es lag.
+    Hier wird er stattdessen benannt, mitsamt dem, was zur Abrechnung fehlt.
+    """
+
+    gop: str
+    gop_base: str
+    title: str | None = None
+    quarter: str | None = None
+    service_date: str | None = None
+    points: int | None = None
+    euro: float | None = None
+    catalog_source: str | None = None
+    catalog_id: str | None = None
+    catalog_data_stand: str | None = None
+    evidence_ids: list[str] = Field(default_factory=list)
+    evidence_pages: list[int] = Field(default_factory=list)
+    covered_service_content: list[str] = Field(default_factory=list)
+    # Das eigentliche Ergebnis: was die Akte fuer diese Position noch hergeben muesste.
+    missing_service_content: list[str] = Field(default_factory=list)
+    confidence: str = "medium"
+    reason: str | None = None
+    origin: str = "semantic_llm"
+
+
 class AnalysisResult(BaseModel):
     analysis_id: str
     export_profile: str = "EBM_KVDT_ADT_LIKE_V1_DRAFT"
@@ -158,4 +188,5 @@ class AnalysisResult(BaseModel):
     items: list[BillingItem]
     review_candidates: list[ReviewCandidate]
     excluded_evidence: list[ExcludedEvidence]
+    documentation_hints: list[DocumentationHint] = Field(default_factory=list)
     summary: InvoiceSummary

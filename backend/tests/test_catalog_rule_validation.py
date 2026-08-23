@@ -163,13 +163,15 @@ def test_catalog_verdict_blocks_only_decidable_violations() -> None:
         }
     ]
 
-    kept, review = _split_items_by_catalog_verdict([billable, blocked], validation)
+    kept, review, hints = _split_items_by_catalog_verdict([billable, blocked], validation)
 
     assert [entry.gop_original for entry in kept] == ["34241"]
     assert kept[0].line == 1
     assert len(review) == 1
     assert review[0].possible_gops == ["01210"]
     assert "Abrechnungsausschluss" in review[0].reason
+    # Ein Ausschluss ist keine Dokumentationsluecke - dafuer gibt es nichts nachzutragen.
+    assert hints == []
 
 
 def test_ignored_clause_types_do_not_reach_the_gate() -> None:

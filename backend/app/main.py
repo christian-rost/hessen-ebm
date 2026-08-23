@@ -22,7 +22,7 @@ from .evidence_extraction import extract_evidence
 from .invoice_export import load_analysis, save_upload, sha256_file, store_analysis
 from .invoice_store import delete_invoice, list_invoices, load_invoice, save_invoice
 from .invoice_timeline import build_invoice_timeline
-from .models import AnalysisResult, ReviewCandidate
+from .models import AnalysisResult, DocumentationHint, ReviewCandidate
 from .pdf_text import extract_pages
 from .rule_engine import generate_billing_items, rule_overview_payload
 from .semantic_billing import SemanticBillingError, generate_semantic_billing_items
@@ -268,6 +268,7 @@ def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Setting
     clinical_definitions = get_runtime_clinical_definition_set()
     pages, warnings = extract_pages(uploaded_path, settings, clinical_definitions)
     segments = segment_pages(pages, clinical_definitions)
+    documentation_hints: list[DocumentationHint] = []
     evidence, review_candidates, excluded, case_context = extract_evidence(
         pages,
         segments,
@@ -308,6 +309,7 @@ def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Setting
             summary = semantic_result.summary
             review_candidates.extend(semantic_result.review_candidates)
             excluded.extend(semantic_result.excluded_evidence)
+            documentation_hints.extend(semantic_result.documentation_hints)
             billing_derivation = semantic_result.context
         except SemanticBillingError as exc:
             analysis_warnings.append(f"Semantische Herleitung fehlgeschlagen: {exc}. Ohne sie entsteht keine Rechnungsposition; Segmente, Zeitleiste und Evidenzen bleiben vorhanden.")
@@ -370,6 +372,7 @@ def _analyze_uploaded_pdf(uploaded_path, source_filename: str, settings: Setting
         items=items,
         review_candidates=review_candidates,
         excluded_evidence=excluded,
+        documentation_hints=documentation_hints,
         summary=summary,
     )
     store_analysis(result, analysis_dir)

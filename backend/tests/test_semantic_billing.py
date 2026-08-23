@@ -952,3 +952,54 @@ def test_time_and_sequence_variants_stay_billable():
     # obwohl dieselbe Kandidatenregel sie ebenfalls nennt.
     assert "01212" not in non_binding
     assert "01216" not in non_binding
+
+
+def test_incomplete_obligatory_content_becomes_a_documentation_hint():
+    """Konzept 3.4: erbracht, aber nicht vollständig dokumentiert - und zwar benannt.
+
+    Der Unterschied zum Ausschluss ist der, auf den es dem Arzt ankommt: Hier gibt
+    es etwas zu tun. Wird die fehlende Angabe nachgetragen, ist die Position
+    abrechenbar; ein Nebeneinanderausschluss dagegen bleibt einer.
+    """
+    from app.semantic_billing import _split_items_by_catalog_verdict
+    from app.models import BillingItem
+
+    item = BillingItem(
+        line=1,
+        gop_original="01786",
+        gop_base="01786",
+        title="CTG",
+        catalog_source="EBM_KBV",
+        quarter="2026/Q1",
+        service_date="2026-01-01",
+        service_event_id="evt-1",
+        rule_id="semantic_llm.01786.v1",
+        confidence="high",
+        evidence_ids=["ev-1"],
+        evidence_pages=[20],
+        covered_service_content=["Externe kardiotokographische Untersuchung"],
+        quantity=1,
+    )
+    fehlend = "Dokumentation der Auswertung"
+    validation = [
+        {
+            "item_verdicts": [
+                {
+                    "gop_original": "01786",
+                    "service_event_id": "evt-1",
+                    "violations": [f"Obligater Leistungsinhalt ist nicht vollständig belegt: {fehlend}"],
+                    "advisories": [],
+                    "content_gaps": [fehlend],
+                    "billable": False,
+                }
+            ]
+        }
+    ]
+
+    kept, review, hints = _split_items_by_catalog_verdict([item], validation)
+
+    assert kept == [] and review == []
+    assert len(hints) == 1
+    assert hints[0].gop == "01786"
+    assert hints[0].missing_service_content == [fehlend]
+    assert hints[0].origin == "catalog_content_gap"

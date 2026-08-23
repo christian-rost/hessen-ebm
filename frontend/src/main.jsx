@@ -1108,6 +1108,8 @@ function ResultPanel({ result, onDownload }) {
         }))} />
       </TwoColumn>
 
+      <DocumentationHints hints={result.documentation_hints || []} />
+
       <DetailList title="Nicht übernommen" items={result.excluded_evidence.map((item, index) => ({
         key: `excluded-${index}`,
         title: item.evidence,
@@ -1152,6 +1154,37 @@ function SummaryBox({ label, value }) {
 
 function TwoColumn({ children }) {
   return <div className="two-column">{children}</div>;
+}
+
+function DocumentationHints({ hints }) {
+  // Konzept 3.4: Diese Zeilen sind die einzigen, bei denen der Arzt noch etwas
+  // aendern kann. Sie stehen deshalb nicht unter "nicht uebernommen", sondern
+  // eigenstaendig - und nennen das Fehlende, nicht nur das Ergebnis.
+  if (!hints.length) return null;
+  return (
+    <section className="detail-list">
+      <h3>Dokumentation unvollständig — nachtragbar</h3>
+      <p className="muted-text">
+        Die Leistung ist in der Akte belegt, ein obligater Leistungsinhalt fehlt aber in der
+        Dokumentation. Wird er nachgetragen, ist die Position abrechenbar.
+      </p>
+      <ul>
+        {hints.map((hint, index) => (
+          <li key={`hint-${index}`}>
+            <strong>
+              {hint.gop} {hint.title ? `— ${hint.title}` : ""}
+              {hint.service_date ? ` (${hint.service_date})` : ""}
+            </strong>
+            <span>
+              Es fehlt: {hint.missing_service_content.join("; ")}
+              {hint.evidence_pages.length ? ` · Belegstellen: S. ${hint.evidence_pages.join(", ")}` : ""}
+              {hint.euro ? ` · entgangen: ${hint.euro.toFixed(2)} €` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 function DetailList({ title, items }) {
