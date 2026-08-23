@@ -996,6 +996,7 @@ def test_incomplete_obligatory_content_becomes_a_documentation_hint():
                     "violations": [f"Obligater Leistungsinhalt ist nicht vollständig belegt: {fehlend}"],
                     "advisories": [],
                     "content_gaps": [fehlend],
+                    "violation_clause_types": ["required_service_content"],
                     "billable": False,
                 }
             ]
@@ -1136,3 +1137,40 @@ def test_a_repeated_proposal_within_one_pass_is_not_a_second_opinion():
     assert all(count <= passes for count in agreement.values()), (
         f"Zustimmung kann nicht über der Zahl der Durchgänge liegen: {agreement}"
     )
+
+
+def test_a_content_gap_next_to_a_real_exclusion_stays_a_review_case():
+    """Kommt zur Dokumentationslücke ein echtes Verbot, gibt es nichts nachzutragen.
+
+    Die Unterscheidung läuft über den Klauseltyp, nicht über den Wortlaut der
+    Notiz. Ein Textvergleich hätte zwei Stellen über die Formulierung gekoppelt
+    und wäre beim nächsten Umformulieren still gebrochen.
+    """
+    from app.semantic_billing import _split_items_by_catalog_verdict
+    from app.models import BillingItem
+
+    item = BillingItem(
+        line=1, gop_original="01786", gop_base="01786", title="CTG",
+        catalog_source="EBM_KBV", quarter="2026/Q1", service_date="2026-01-01",
+        service_event_id="evt-1", rule_id="semantic_llm.01786.v1", confidence="high",
+        evidence_ids=["ev-1"], evidence_pages=[20], quantity=1,
+    )
+    validation = [
+        {
+            "item_verdicts": [
+                {
+                    "gop_original": "01786",
+                    "service_event_id": "evt-1",
+                    "violations": ["Pflichtinhalt fehlt", "Abrechnungsausschluss im Behandlungsfall"],
+                    "advisories": [],
+                    "content_gaps": ["Auswertung"],
+                    "violation_clause_types": ["required_service_content", "mutual_exclusion"],
+                    "billable": False,
+                }
+            ]
+        }
+    ]
+
+    kept, review, hints = _split_items_by_catalog_verdict([item], validation)
+    assert kept == [] and hints == []
+    assert len(review) == 1

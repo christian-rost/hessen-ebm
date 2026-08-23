@@ -982,7 +982,12 @@ def _billing_items_from_payload(
                 sorted(str(value) for value in _as_list(proposal.get("evidence_ids")))
             )
             found_in = agreement.get((canonical_gop(gop), anchor or None), 0)
-            if found_in and found_in * 2 <= passes:
+            # Ab welchem Anteil eine Position als getragen gilt, ist eine fachliche
+            # Festlegung und keine Eigenschaft des Codes: Wer lieber mehr vorgelegt
+            # bekommt, hebt den Wert im Regelwerk an.
+            required_share = semantic_policy.get("min_pass_agreement_share")
+            required_share = float(required_share) if isinstance(required_share, (int, float)) else 0.5
+            if found_in and found_in / passes <= required_share:
                 confidence = "low"
                 validation_status = "review"
                 validation_notes.append(
@@ -1075,6 +1080,10 @@ def _semantic_acceptance_failure(
     return None
 
 
+# Der Klauseltyp, der eine Dokumentationsluecke beschreibt statt eines Verbots.
+CONTENT_CLAUSE_TYPE = "required_service_content"
+
+
 def _split_items_by_catalog_verdict(
     items: list[BillingItem],
     validation_results: list[dict[str, Any]],
@@ -1093,12 +1102,16 @@ def _split_items_by_catalog_verdict(
     """
     blocked: dict[tuple[str, str | None], list[str]] = {}
     gaps: dict[tuple[str, str | None], list[str]] = {}
+    kinds: dict[tuple[str, str | None], set[str]] = {}
     for result in validation_results:
         for verdict in result.get("item_verdicts") or []:
             key = (str(verdict.get("gop_original")), verdict.get("service_event_id"))
             for element in verdict.get("content_gaps") or []:
                 if str(element) not in gaps.setdefault(key, []):
                     gaps[key].append(str(element))
+            kinds.setdefault(key, set()).update(
+                str(kind) for kind in verdict.get("violation_clause_types") or []
+            )
             if verdict.get("billable"):
                 continue
             blocked.setdefault(key, []).extend(str(note) for note in verdict.get("violations") or [])

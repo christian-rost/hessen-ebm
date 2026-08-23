@@ -109,7 +109,8 @@ def apply_catalog_rule_validation(
     # Pro Position sammeln, ob eine entscheidbare Klausel verletzt ist. Das ist das
     # Abrechnungstor: nur Positionen ohne Verletzung duerfen automatisch entstehen.
     verdicts: dict[int, dict[str, list[str]]] = {
-        id(item): {"violations": [], "advisories": [], "content_gaps": []} for item in items
+        id(item): {"violations": [], "advisories": [], "content_gaps": [], "violation_clause_types": []}
+        for item in items
     }
     for item in items:
         for row in by_gop.get(item.gop_base, []):
@@ -136,6 +137,14 @@ def apply_catalog_rule_validation(
                 for element in verdict.missing_content:
                     if element not in verdicts[id(item)]["content_gaps"]:
                         verdicts[id(item)]["content_gaps"].append(element)
+                if verdict.severity == VIOLATION:
+                    # Den Klauseltyp mitfuehren, statt ihn spaeter aus dem Notiztext
+                    # zurueckzulesen. Ein Textvergleich haette zwei Stellen ueber die
+                    # Formulierung gekoppelt und waere beim naechsten Umformulieren
+                    # still gebrochen.
+                    kind = verdict.clause_type or str(clause.get("clause_type") or "")
+                    if kind not in verdicts[id(item)]["violation_clause_types"]:
+                        verdicts[id(item)]["violation_clause_types"].append(kind)
             if rule_notes:
                 new_notes = [note for note in rule_notes if note not in item.validation_notes]
                 review_notes += len(new_notes)
@@ -155,6 +164,7 @@ def apply_catalog_rule_validation(
                 "violations": verdicts[id(item)]["violations"],
                 "advisories": verdicts[id(item)]["advisories"],
                 "content_gaps": verdicts[id(item)]["content_gaps"],
+                "violation_clause_types": verdicts[id(item)]["violation_clause_types"],
                 "billable": not verdicts[id(item)]["violations"],
             }
             for item in items
@@ -294,7 +304,7 @@ def _evaluate_clause(
 
     if clause_type == "required_service_content":
         required = [str(value) for value in _values(parameters.get("elements"))]
-        missing = _uncovered_content(required, item.covered_service_content)
+        missing = _uncovered_content(required, item.covered_service_content, clause_policy)
         if not missing:
             return None
         note = (
@@ -479,7 +489,11 @@ def _ignored_clause_types(clause_policy: Mapping[str, Any] | None) -> set[str]:
     return {str(value) for value in (clause_policy or {}).get("ignored_clause_types") or []}
 
 
-def _uncovered_content(required: Sequence[str], covered: Sequence[str]) -> list[str]:
+def _uncovered_content(
+    required: Sequence[str],
+    covered: Sequence[str],
+    clause_policy: Mapping[str, Any] | None = None,
+) -> list[str]:
     """Pflichtelemente ohne Beleg.
 
     Das Modell gibt die Elemente woertlich zurueck, kann sie aber kuerzen oder
@@ -504,30 +518,48 @@ def _uncovered_content(required: Sequence[str], covered: Sequence[str]) -> list[
         if not words:
             continue
         if any(
-            _covers(words, candidate) for candidate in normalized_covered if candidate
+            _covers(words, candidate, clause_policy)
+            for candidate in normalized_covered
+            if candidate
         ):
             continue
         missing.append(element)
     return missing
 
 
-# Anteil der Anforderung, den ein Beleg abdecken muss, wenn er fuer sich steht.
-CONTENT_COVERAGE_RATIO = 0.6
-# Anteil des Belegs, der in der Anforderung aufgehen muss, damit er als Zitat
-# aus ihr gilt, und die Mindestzahl gemeinsamer Woerter dafuer.
-CONTENT_QUOTE_RATIO = 0.8
-CONTENT_QUOTE_MIN_WORDS = 3
+# Vorgaben, falls das Regelwerk nichts sagt. Sie stehen in clause_policy, weil sie
+# entscheiden, wann eine Dokumentation als ausreichend gilt - das ist eine
+# fachliche Festlegung und keine Eigenschaft des Codes. Wer sie schaerfer oder
+# milder haben will, aendert das Regelwerk, nicht diese Datei.
+CONTENT_COVERAGE_DEFAULTS = {
+    # Anteil der Anforderung, den ein Beleg abdecken muss, wenn er fuer sich steht.
+    "content_coverage_ratio": 0.6,
+    # Anteil des Belegs, der in der Anforderung aufgehen muss, damit er als Zitat
+    # aus ihr gilt, und die Mindestzahl gemeinsamer Woerter dafuer.
+    "content_quote_ratio": 0.8,
+    "content_quote_min_words": 3,
+}
 
 
-def _covers(required_words: set[str], covered_words: set[str]) -> bool:
+def _covers(
+    required_words: set[str],
+    covered_words: set[str],
+    clause_policy: Mapping[str, Any] | None = None,
+) -> bool:
+    policy = clause_policy or {}
+
+    def setting(key: str) -> float:
+        value = policy.get(key)
+        return float(value) if isinstance(value, (int, float)) else CONTENT_COVERAGE_DEFAULTS[key]
+
     shared = required_words & covered_words
     if not shared:
         return False
-    if len(shared) / len(required_words) >= CONTENT_COVERAGE_RATIO:
+    if len(shared) / len(required_words) >= setting("content_coverage_ratio"):
         return True
     return (
-        len(shared) / len(covered_words) >= CONTENT_QUOTE_RATIO
-        and len(shared) >= CONTENT_QUOTE_MIN_WORDS
+        len(shared) / len(covered_words) >= setting("content_quote_ratio")
+        and len(shared) >= setting("content_quote_min_words")
     )
 
 

@@ -295,3 +295,22 @@ def test_a_short_quote_covers_the_longer_requirement_it_comes_from():
 
     # Und ein Beleg ohne tragende Schnittmenge belegt gar nichts.
     assert _uncovered_content(["Pulsoxymetrie"], ["Befundbesprechung"]) == ["Pulsoxymetrie"]
+
+
+def test_coverage_thresholds_come_from_the_rule_set():
+    """Wann eine Dokumentation ausreicht, entscheidet das Regelwerk, nicht der Code.
+
+    Die Schwelle ist eine fachliche Festlegung: Sie bestimmt, wann ein Arzt zum
+    Nachtragen aufgefordert wird. Steht sie im Code, lässt sie sich nur mit einem
+    Deploy ändern — und niemand sieht, dass es sie gibt.
+    """
+    from app.catalog_rule_validation import _uncovered_content
+
+    anforderung = "Beratung und Untersuchung der Patientin nach Richtlinie"
+    knapper_beleg = "Beratung"
+
+    # Streng: ein Einzelwort trägt die Anforderung nicht.
+    assert _uncovered_content([anforderung], [knapper_beleg]) == [anforderung]
+    # Über das Regelwerk gelockert trägt derselbe Beleg.
+    gelockert = {"content_quote_ratio": 0.5, "content_quote_min_words": 1}
+    assert _uncovered_content([anforderung], [knapper_beleg], gelockert) == []

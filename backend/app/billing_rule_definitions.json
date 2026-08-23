@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "rule_set_id": "kbv-ebm-hessen-core",
-  "version": "2027.8",
+  "version": "2027.9",
   "clause_policy": {
     "advisory_clause_types": [
       "quantity_unit",
@@ -14,7 +14,11 @@
     "ignored_clause_types": [
       "reporting"
     ],
-    "required_service_content_blocks": false
+    "required_service_content_blocks": false,
+    "content_coverage_ratio": 0.6,
+    "content_quote_ratio": 0.8,
+    "content_quote_min_words": 3,
+    "_content_coverage_hinweis": "Wann ein Beleg einen obligaten Leistungsinhalt deckt. content_coverage_ratio: Anteil der Anforderung, den der Beleg abdeckt. content_quote_ratio mit content_quote_min_words: Anteil des Belegs, der in der Anforderung aufgeht - so belegt ein kurzes woertliches Zitat auch eine lange Anforderung."
   },
   "semantic_policy": {
     "auto_accept_support_levels": [
@@ -32,7 +36,9 @@
     "ensure_direct_rule_items": true,
     "max_attempts": 3,
     "derivation_passes": 3,
-    "_derivation_passes_hinweis": "Vier Laeufe desselben Falls mit derselben Fassung: kein Lauf enthielt alle Sollpositionen, keiner enthielt eine falsche, die Vereinigung traf die Sollmenge genau. Mehrere Durchgaenge kosten Modellaufrufe und heben den Recall; auf 1 gesetzt verhaelt sich die Ableitung wie zuvor."
+    "_derivation_passes_hinweis": "Vier Laeufe desselben Falls mit derselben Fassung: kein Lauf enthielt alle Sollpositionen, keiner enthielt eine falsche, die Vereinigung traf die Sollmenge genau. Mehrere Durchgaenge kosten Modellaufrufe und heben den Recall; auf 1 gesetzt verhaelt sich die Ableitung wie zuvor.",
+    "min_pass_agreement_share": 0.5,
+    "_min_pass_agreement_share_hinweis": "Bis zu welchem Anteil der Ableitungsdurchgaenge eine Position als schwach getragen gilt und zur Pruefung vorgelegt wird. 0.5 heisst: hoechstens die Haelfte der Durchgaenge hat sie vorgeschlagen."
   },
   "event_settings": {
     "default_session_gap_minutes": 180,
