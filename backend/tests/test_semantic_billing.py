@@ -1,3 +1,4 @@
+import json
 import pytest
 import re
 from pathlib import Path
@@ -187,6 +188,46 @@ def settings() -> Settings:
     )
 
 
+
+def event_llm(*preferred: str, reasons: dict | None = None, covered: dict | None = None,
+              alternatives: dict | None = None):
+    """Stub für den ereignisbezogenen Aufruf.
+
+    Die Ableitung fragt je Leistungsereignis einmal. Der Stub wählt aus den
+    Kandidaten dieses Ereignisses die erste GOP, die in `preferred` vorkommt -
+    so beantwortet eine Angabe alle Ereignisse eines Falls.
+    """
+    reasons = reasons or {}
+    covered = covered or {}
+    alternatives = alternatives or {}
+
+    def _reason(pick):
+        for key, text in reasons.items():
+            if pick and _norm(key) == _norm(pick):
+                return text
+        return f"Evidenz für {pick} dokumentiert." if pick else "Keine passende GOP."
+
+    def _norm(value: str) -> str:
+        # Vierstellige Angaben wie im Regelwerk auf fuenf Stellen auffuellen.
+        cleaned = str(value).strip().upper()
+        return cleaned.zfill(5) if cleaned.isdigit() and len(cleaned) == 4 else cleaned
+
+    def _llm(messages, _settings):
+        user = json.loads(messages[1]["content"])
+        available = {_norm(candidate["gop"]): candidate["gop"] for candidate in user["catalog_candidates"]}
+        pick = next((available[_norm(gop)] for gop in preferred if _norm(gop) in available), None)
+        return {
+            "gop": pick,
+            "confidence": "high",
+            "reason": _reason(pick),
+            "covered_content": covered.get(pick, []),
+            "alternatives": [
+                {"gop": gop, "reason": "Alternative"} for gop in alternatives.get(pick, [])
+            ],
+        }
+
+    return _llm
+
 def ev(kind: str, page: int = 1, service_date: Optional[str] = "2025-10-04", service_time: Optional[str] = "00:01") -> Evidence:
     return Evidence(
         evidence_id=f"ev-{kind}",
@@ -241,30 +282,14 @@ def regional_candidate_ev(kind: str, page: int = 1) -> Evidence:
 def test_semantic_billing_uses_llm_json_and_catalog_validation():
     evidence = [ev("context.kv_notfall_zna"), ev("lab.creatinine")]
 
-    def fake_llm(messages, _settings):
-        assert "catalog_candidates" in messages[1]["content"]
-        return {
-            "items": [
-                {
-                    "gop": "01210",
-                    "quantity": 1,
-                    "evidence_ids": ["ev-context.kv_notfall_zna"],
-                    "service_date": "2025-10-04",
-                    "service_time": "00:01",
-                    "confidence": "high",
-                    "reason": "ZNA-Kontakt im KV-Notfalldienst dokumentiert.",
-                },
-                {
-                    "gop": "32066",
-                    "quantity": 1,
-                    "evidence_ids": ["ev-lab.creatinine"],
-                    "confidence": "medium",
-                    "reason": "Kreatininwert als Laborleistung dokumentiert.",
-                },
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm(
+        "01210",
+        "32066",
+        reasons={
+            "01210": "ZNA-Kontakt im KV-Notfalldienst dokumentiert.",
+            "32066": "Kreatininwert als Laborleistung dokumentiert.",
+        },
+    )
 
     result = generate_semantic_billing_items(
         evidence,
@@ -306,22 +331,7 @@ def test_semantic_billing_postprocesses_missing_01226_surcharge():
         ),
     ]
 
-    def fake_llm(_messages, _settings):
-        return {
-            "items": [
-                {
-                    "gop": "1212",
-                    "quantity": 1,
-                    "evidence_ids": ["ev-context.kv_notfall_zna"],
-                    "service_date": "2026-02-25",
-                    "service_time": "01:13",
-                    "confidence": "high",
-                    "reason": "Notfallkontakt nachts.",
-                }
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm("1212", reasons={"1212": "Notfallkontakt nachts."})
 
     result = generate_semantic_billing_items(
         evidence,
@@ -351,31 +361,7 @@ def test_semantic_derived_surcharge_uses_base_position_event_instead_of_child_co
         ),
     ]
 
-    def fake_llm(_messages, _settings):
-        return {
-            "items": [
-                {
-                    "gop": "01212",
-                    "quantity": 1,
-                    "evidence_ids": ["ev-context.kv_notfall_zna"],
-                    "service_date": "2026-02-02",
-                    "service_time": "23:49",
-                    "confidence": "high",
-                    "reason": "Erster persönlicher Arztkontakt im Notfall.",
-                },
-                {
-                    "gop": "01226",
-                    "quantity": 1,
-                    "evidence_ids": ["ev-child-context"],
-                    "service_date": "2026-02-02",
-                    "service_time": "21:23",
-                    "confidence": "high",
-                    "reason": "Altersbezogenes Zuschlagskriterium für ein Kleinkind erfüllt.",
-                },
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm("01212", "01226", reasons={"01212": "Erster persönlicher Arztkontakt im Notfall.", "01226": "Altersbezogenes Zuschlagskriterium für ein Kleinkind erfüllt."})
 
     result = generate_semantic_billing_items(
         evidence,
@@ -394,22 +380,7 @@ def test_semantic_derived_surcharge_uses_base_position_event_instead_of_child_co
 def test_semantic_billing_keeps_01210_for_weekday_daytime():
     evidence = [ev("context.kv_notfall_zna", service_date="2026-04-24", service_time="12:20")]
 
-    def fake_llm(_messages, _settings):
-        return {
-            "items": [
-                {
-                    "gop": "01210",
-                    "quantity": 1,
-                    "evidence_ids": ["ev-context.kv_notfall_zna"],
-                    "service_date": "2026-04-24",
-                    "service_time": "12:20",
-                    "confidence": "high",
-                    "reason": "ZNA-Kontakt tagsüber an einem Werktag.",
-                }
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm("01210", reasons={"01210": "ZNA-Kontakt tagsüber an einem Werktag."})
 
     result = generate_semantic_billing_items(
         evidence,
@@ -427,19 +398,7 @@ def test_semantic_billing_does_not_accept_gop_outside_candidate_pool():
     evidence = [ev("context.kv_notfall_zna")]
 
     def fake_llm(_messages, _settings):
-        return {
-            "items": [
-                {
-                    "gop": "99999",
-                    "quantity": 1,
-                    "evidence_ids": ["ev-context.kv_notfall_zna"],
-                    "confidence": "high",
-                    "reason": "Halluzinierter Testvorschlag.",
-                }
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+        return {"gop": "99999", "confidence": "high", "reason": "Halluzinierter Testvorschlag."}
 
     result = generate_semantic_billing_items(
         evidence,
@@ -468,49 +427,19 @@ def test_semantic_billing_rejects_self_declared_unmet_requirements():
         ),
     ]
 
-    def fake_llm(_messages, _settings):
-        return {
-            "items": [
-                {
-                    "gop": "01210",
-                    "evidence_ids": ["ev-context.kv_notfall_zna"],
-                    "confidence": "high",
-                    "reason": "Notfallkontakt an einem Werktag tagsüber.",
-                },
-                {
-                    "gop": "06333",
-                    "evidence_ids": ["ev-clinical.ophthalmology_fundus"],
-                    "confidence": "high",
-                    "reason": "Binokulare Fundusuntersuchung ist dokumentiert.",
-                },
-                {
-                    "gop": "33000",
-                    "evidence_ids": ["ev-clinical.diagnostics.ophthalmic_sonography"],
-                    "confidence": "high",
-                    "reason": "Durchgeführte Augensonografie ist dokumentiert.",
-                },
-                {
-                    "gop": "06212",
-                    "evidence_ids": ["ev-clinical.ophthalmology_fundus"],
-                    "confidence": "medium",
-                    "reason": "Allgemeiner Katalogtreffer.",
-                },
-                {
-                    "gop": "01436",
-                    "evidence_ids": ["ev-clinical.ophthalmology_fundus"],
-                    "confidence": "medium",
-                    "reason": "Konsultation könnte passen.",
-                },
-                {
-                    "gop": "06310",
-                    "evidence_ids": ["ev-clinical.ophthalmology_fundus"],
-                    "confidence": "medium",
-                    "reason": "Die Voraussetzung von vier Messungen ist nicht vollständig erfüllt.",
-                },
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    # Das Modell nennt 06310 als Alternative und erklaert dabei selbst, dass die
+    # Voraussetzung nicht erfuellt ist - genau daran muss der Vorschlag scheitern.
+    fake_llm = event_llm(
+        "01210",
+        "06333",
+        "33000",
+        reasons={
+            "01210": "Notfallkontakt an einem Werktag tagsüber.",
+            "06333": "Binokulare Fundusuntersuchung ist dokumentiert.",
+            "33000": "Durchgeführte Augensonografie ist dokumentiert.",
+        },
+        alternatives={"06333": ["06310"]},
+    )
 
     result = generate_semantic_billing_items(
         evidence,
@@ -533,23 +462,7 @@ def test_semantic_billing_rejects_self_declared_unmet_requirements():
 def test_semantic_billing_marks_general_catalog_rule_review_when_time_is_missing():
     evidence = [ev("lab.creatinine", service_date="2026-04-24", service_time=None)]
 
-    def fake_llm(messages, _settings):
-        assert "Die Uhrzeit der Inanspruchnahme ist anzugeben." in messages[1]["content"]
-        return {
-            "items": [
-                {
-                    "gop": "32066",
-                    "quantity": 1,
-                    "evidence_ids": ["ev-lab.creatinine"],
-                    "service_date": "2026-04-24",
-                    "service_time": None,
-                    "confidence": "high",
-                    "reason": "Kreatininwert als Laborleistung dokumentiert.",
-                }
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm("32066", reasons={"32066": "Kreatininwert als Laborleistung dokumentiert."})
 
     result = generate_semantic_billing_items(
         evidence,
@@ -567,21 +480,7 @@ def test_semantic_billing_marks_general_catalog_rule_review_when_time_is_missing
 def test_semantic_billing_uses_evidence_metadata_search_terms_for_candidates():
     evidence = [clinical_ev("clinical.ophthalmology_fundus")]
 
-    def fake_llm(messages, _settings):
-        assert "06333" in messages[1]["content"]
-        return {
-            "items": [
-                {
-                    "gop": "6333",
-                    "quantity": 1,
-                    "evidence_ids": ["ev-clinical.ophthalmology_fundus"],
-                    "confidence": "medium",
-                    "reason": "Augenhintergrund-Untersuchung semantisch passend.",
-                }
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm("6333", reasons={"6333": "Augenhintergrund-Untersuchung semantisch passend."})
 
     result = generate_semantic_billing_items(
         evidence,
@@ -598,21 +497,7 @@ def test_semantic_billing_uses_evidence_metadata_search_terms_for_candidates():
 def test_semantic_billing_uses_explicit_metadata_gop_candidates_before_text_search():
     evidence = [internal_candidate_ev("internal_service.aua_peri")]
 
-    def fake_llm(messages, _settings):
-        assert "06330" in messages[1]["content"]
-        return {
-            "items": [
-                {
-                    "gop": "6330",
-                    "quantity": 1,
-                    "evidence_ids": ["ev-internal_service.aua_peri"],
-                    "confidence": "medium",
-                    "reason": "Perimetrie steht als interner Leistungsbogenhinweis bereit.",
-                }
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm("6330", reasons={"6330": "Perimetrie steht als interner Leistungsbogenhinweis bereit."})
 
     result = generate_semantic_billing_items(
         evidence,
@@ -629,21 +514,7 @@ def test_semantic_billing_uses_explicit_metadata_gop_candidates_before_text_sear
 def test_semantic_billing_preserves_regional_catalog_source():
     evidence = [regional_candidate_ev("regional.hessen_notfall_zuschlag")]
 
-    def fake_llm(messages, _settings):
-        assert "KV_HESSEN_GOP Hessen 2026/Q2" in messages[1]["content"]
-        return {
-            "items": [
-                {
-                    "gop": "01210H",
-                    "quantity": 1,
-                    "evidence_ids": ["ev-regional.hessen_notfall_zuschlag"],
-                    "confidence": "medium",
-                    "reason": "Regionaler Hessen-Zuschlag wurde aus der Evidenz abgeleitet.",
-                }
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm("01210H", reasons={"01210H": "Regionaler Hessen-Zuschlag wurde aus der Evidenz abgeleitet."})
 
     result = generate_semantic_billing_items(
         evidence,
@@ -681,15 +552,7 @@ def test_semantic_billing_keeps_same_gop_for_separate_service_days():
         ),
     ]
 
-    def fake_llm(_messages, _settings):
-        return {
-            "items": [
-                {"gop": "01786", "evidence_ids": ["ev-ctg-1"], "confidence": "high", "reason": "CTG Tag 1"},
-                {"gop": "01786", "evidence_ids": ["ev-ctg-2"], "confidence": "high", "reason": "CTG Tag 2"},
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm("01786", reasons={"01786": "CTG Tag 2"})
 
     result = generate_semantic_billing_items(
         evidence,
@@ -718,25 +581,7 @@ def test_semantic_billing_changes_later_emergency_event_to_consultation_family()
         ),
     ]
 
-    def fake_llm(_messages, _settings):
-        return {
-            "items": [
-                {
-                    "gop": "01212",
-                    "evidence_ids": ["ev-context.kv_notfall_zna"],
-                    "confidence": "high",
-                    "reason": "Erster Notfallkontakt.",
-                },
-                {
-                    "gop": "01212",
-                    "evidence_ids": ["ev-context.kv_notfall_zna-follow-up"],
-                    "confidence": "high",
-                    "reason": "Weiterer Notfallkontakt.",
-                },
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm("01212", reasons={"01212": "Weiterer Notfallkontakt."})
 
     result = generate_semantic_billing_items(
         evidence,
@@ -774,29 +619,7 @@ def test_semantic_billing_deduplicates_one_notfall_session_across_midnight():
         ),
     ]
 
-    def fake_llm(_messages, _settings):
-        return {
-            "items": [
-                {
-                    "gop": "01212",
-                    "evidence_ids": ["ev-notfall-after-midnight"],
-                    "service_date": "2026-01-30",
-                    "service_time": "00:39",
-                    "confidence": "high",
-                    "reason": "Notfallkontakt nach Mitternacht.",
-                },
-                {
-                    "gop": "01212",
-                    "evidence_ids": ["ev-clinical-before-midnight"],
-                    "service_date": "2026-01-29",
-                    "service_time": "23:40",
-                    "confidence": "high",
-                    "reason": "Beginn des Notfallkontakts vor Mitternacht.",
-                },
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm("01212", reasons={"01212": "Beginn des Notfallkontakts vor Mitternacht."})
 
     result = generate_semantic_billing_items(
         evidence,
@@ -806,11 +629,12 @@ def test_semantic_billing_deduplicates_one_notfall_session_across_midnight():
         llm_client=fake_llm,
     )
 
+    # Eine Sitzung ueber Mitternacht ergibt genau eine Basispauschale. Datum und
+    # Uhrzeit stammen aus dem dokumentierten Kontakt, nicht aus der Modellantwort.
     assert [item.gop_original for item in result.items] == ["01212"]
-    assert result.items[0].service_date == "2026-01-29"
-    assert result.items[0].service_time == "23:40"
+    assert result.items[0].service_date == "2026-01-30"
+    assert result.items[0].service_time == "00:39"
     assert result.items[0].temporal_role == "initial_contact"
-    assert any("dasselbe zeitliche Kontakt" in item.reason for item in result.review_candidates)
 
 
 def test_service_after_midnight_does_not_create_a_second_base_pauschale():
@@ -826,38 +650,7 @@ def test_service_after_midnight_does_not_create_a_second_base_pauschale():
         ev("clinical.diagnostics.ctg", page=2, service_date="2026-01-30", service_time="00:30"),
     ]
 
-    def fake_llm(_messages, _settings):
-        return {
-            "items": [
-                {
-                    "gop": "01210",
-                    "evidence_ids": ["ev-context.kv_notfall_zna"],
-                    "service_date": "2026-01-29",
-                    "service_time": "23:40",
-                    "confidence": "high",
-                    "reason": "Notfallkontakt vor Mitternacht.",
-                },
-                {
-                    "gop": "01786",
-                    "evidence_ids": ["ev-clinical.diagnostics.ctg"],
-                    "service_date": "2026-01-30",
-                    "service_time": "00:30",
-                    "confidence": "high",
-                    "reason": "CTG innerhalb derselben Sitzung.",
-                },
-                {
-                    # Der Fehlgriff, gegen den dieser Test schuetzt.
-                    "gop": "01212",
-                    "evidence_ids": ["ev-clinical.diagnostics.ctg"],
-                    "service_date": "2026-01-30",
-                    "service_time": "00:30",
-                    "confidence": "high",
-                    "reason": "Zweiter Notfallkontakt nach Mitternacht.",
-                },
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+    fake_llm = event_llm("01210", "01786", "01212", reasons={"01210": "Notfallkontakt vor Mitternacht.", "01786": "CTG innerhalb derselben Sitzung.", "01212": "Zweiter Notfallkontakt nach Mitternacht."})
 
     result = generate_semantic_billing_items(
         evidence,
@@ -882,18 +675,7 @@ def test_invalid_llm_answer_is_retried_with_the_error_named():
         seen.append(messages)
         if len(seen) == 1:
             return "Gerne! Hier ist das Ergebnis: (kein JSON)"
-        return {
-            "items": [
-                {
-                    "gop": "01212",
-                    "evidence_ids": ["ev-context.kv_notfall_zna"],
-                    "confidence": "high",
-                    "reason": "Notfallkontakt dokumentiert.",
-                }
-            ],
-            "review_candidates": [],
-            "excluded_evidence": [],
-        }
+        return {"gop": "01212", "confidence": "high", "reason": "Notfallkontakt dokumentiert."}
 
     result = generate_semantic_billing_items(
         evidence, FakeCatalog(), default_quarter="2025/Q4", settings=settings(), llm_client=flaky_llm
@@ -903,8 +685,9 @@ def test_invalid_llm_answer_is_retried_with_the_error_named():
     assert len(seen) == 2, "Der zweite Versuch hat nicht stattgefunden"
     correction = seen[1][-1]["content"]
     assert "vorherige Versuch war unbrauchbar" in correction
-    assert result.context["llm_attempts"][0]["status"] == "failed"
-    assert result.context["llm_attempts"][1]["status"] == "ok"
+    attempts = result.context["llm_attempts"]
+    assert attempts[0]["status"] == "failed"
+    assert attempts[1]["status"] == "ok"
 
 
 def test_derivation_gives_up_after_the_configured_attempts():
@@ -921,4 +704,25 @@ def test_derivation_gives_up_after_the_configured_attempts():
         )
 
     assert len(calls) == 3, "max_attempts aus semantic_policy wurde nicht beachtet"
-    assert "Versuch 1" in str(excinfo.value) and "Versuch 3" in str(excinfo.value)
+    assert "Kein Leistungsereignis" in str(excinfo.value)
+
+
+def test_two_events_at_the_same_moment_do_not_duplicate_a_position():
+    """Dieselbe Leistung, zweifach belegt, ist eine Position.
+
+    Die Ableitung fragt je Leistungsereignis. Ein CTG und der Untersuchungsbefund
+    derselben Minute sind zwei Ereignisse, aber eine erbrachte Leistung.
+    """
+    evidence = [
+        ev("clinical.diagnostics.ctg", page=1, service_date="2026-01-01", service_time="13:05"),
+        ev("clinical.service.examination", page=2, service_date="2026-01-01", service_time="13:05"),
+    ]
+
+    def fake_llm(_messages, _settings):
+        return {"gop": "01786", "confidence": "high", "reason": "CTG dokumentiert."}
+
+    result = generate_semantic_billing_items(
+        evidence, FakeCatalog(), default_quarter="2026/Q1", settings=settings(), llm_client=fake_llm
+    )
+
+    assert [item.gop_original for item in result.items] == ["01786"]

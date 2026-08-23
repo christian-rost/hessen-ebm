@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from app.billing_rule_definitions import parse_billing_rule_set
@@ -154,27 +155,20 @@ def derive_items(evidence, catalog, default_quarter, region="Hessen"):
             )
     catalog.term_index = {term: tuple(gops) for term, gops in term_index.items()}
 
-    def fake_llm(_messages, _settings):
-        # Evidenz derselben Art am selben Leistungstag ist ein Leistungsereignis
-        # und ergibt genau einen Vorschlag, so wie es ein sorgfaeltiges LLM taete.
-        grouped: dict[tuple[str, str | None], list] = {}
-        for item in evidence:
-            if item.kind in SEARCH_HINTS:
-                grouped.setdefault((item.kind, item.service_date), []).append(item)
-        items = []
-        for (kind, service_date), members in grouped.items():
-            items.append(
-                {
-                    "gop": SEARCH_HINTS[kind][0],
-                    "quantity": 1,
-                    "evidence_ids": [member.evidence_id for member in members],
-                    "service_date": service_date,
-                    "service_time": members[0].service_time,
-                    "confidence": "high",
-                    "reason": f"Evidenz {kind} dokumentiert.",
-                }
-            )
-        return {"items": items, "review_candidates": [], "excluded_evidence": []}
+    # Die Ableitung fragt je Leistungsereignis einmal. Der Stub waehlt aus den
+    # Kandidaten dieses Ereignisses die GOP, die das Retrieval dafuer vorgesehen hat.
+    wanted = {gop for gops in SEARCH_HINTS.values() for gop in gops}
+
+    def fake_llm(messages, _settings):
+        payload = json.loads(messages[1]["content"])
+        available = [candidate["gop"] for candidate in payload["catalog_candidates"]]
+        pick = next((gop for gop in available if gop in wanted), None)
+        return {
+            "gop": pick,
+            "confidence": "high",
+            "reason": f"Evidenz für {pick} dokumentiert." if pick else "Keine passende GOP.",
+            "covered_content": [],
+        }
 
     result = generate_semantic_billing_items(
         evidence,
@@ -271,9 +265,10 @@ def test_radiology_extremity_hand_and_wrist_ct_rules():
 
     items, summary = derive_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
 
-    # Die Positionsreihenfolge folgt jetzt der Evidenz im Dokument, nicht mehr der
-    # Reihenfolge einer Regelliste.
-    assert [item.gop_original for item in items] == ["34233", "34232", "34351"]
+    # Alle drei Leistungen tragen denselben Zeitstempel; die Reihenfolge der
+    # Positionen ist dann nicht fachlich bestimmt. Geprueft wird, welche GOPs
+    # entstehen, nicht in welcher Folge.
+    assert sorted(item.gop_original for item in items) == ["34232", "34233", "34351"]
     assert summary.points_total == 698
     assert summary.amount_total_eur == 88.92
 
