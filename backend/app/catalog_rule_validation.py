@@ -13,6 +13,8 @@ from .billing_rule_store import (
     load_compiled_catalog_rules,
 )
 from .clinical_definitions import ClinicalDefinitionSet
+from .config import get_settings
+from .site_definitions import load_site_definition_set
 from .catalog import CatalogRepository, normalize_gop
 from .ebm_rule_compiler import compile_catalog_quarter
 from .models import BillingItem, Evidence
@@ -265,6 +267,21 @@ def _evaluate_clause(
             )
         return None
 
+    if clause_type == "requires_authorization":
+        agreement = str(parameters.get("agreement") or "").strip()
+        declared = {value.casefold() for value in _declared_authorizations()}
+        if agreement and agreement.casefold() in declared:
+            return None
+        # Ob die Betriebsstaette die Genehmigung besitzt, steht nicht in der Akte.
+        # Ohne ausdrueckliche Erklaerung wird die Position deshalb nicht automatisch
+        # abgerechnet, sondern vorgelegt. Das ist die sichere Vorgabe: eine vorhandene
+        # Genehmigung kostet eine Bestaetigung, eine fehlende sonst eine Falschabrechnung.
+        return ClauseVerdict(
+            VIOLATION,
+            f"Die Position setzt eine Genehmigung nach der {agreement or 'genannten Vereinbarung'} voraus; "
+            "für die Betriebsstätte ist keine solche Genehmigung erklärt.",
+        )
+
     if clause_type == "required_service_content":
         required = [str(value) for value in _values(parameters.get("elements"))]
         missing = _uncovered_content(required, item.covered_service_content)
@@ -468,3 +485,8 @@ def _uncovered_content(required: Sequence[str], covered: Sequence[str]) -> list[
 
 def _content_words(value: str) -> set[str]:
     return {word for word in re.findall(r"[a-zA-ZäöüÄÖÜß]{4,}", str(value).casefold())}
+
+
+def _declared_authorizations() -> tuple[str, ...]:
+    """Genehmigungen, die die Betriebsstaette erklaert hat."""
+    return load_site_definition_set(get_settings().site_definitions_path).authorizations

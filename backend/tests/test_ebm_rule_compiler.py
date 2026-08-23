@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.billing_rule_store import build_clause_rows, build_definition_rows
-from app.ebm_rule_compiler import RuleCompilationError, compile_catalog_quarter, compile_gop_rule, _obligatory_content_clauses
+from app.ebm_rule_compiler import RuleCompilationError, compile_catalog_quarter, compile_gop_rule, _obligatory_content_clauses, _authorization_clauses
 
 
 def build_compiler_catalog(path: Path) -> None:
@@ -264,3 +264,18 @@ def test_obligatory_service_content_is_extracted_as_elements():
 
 def test_gops_without_an_obligatory_content_section_get_no_clause():
     assert _obligatory_content_clauses("Beschreibung Irgendeine Leistung ohne Abschnitt.") == []
+
+
+def test_only_a_position_s_own_authorization_blocks():
+    """Derselbe Satz in einer Präambel gilt für ein ganzes Kapitel."""
+    text = (
+        "Die Berechnung der Gebührenordnungsposition 01770 setzt eine Genehmigung der "
+        "Kassenärztlichen Vereinigung nach der Ultraschall-Vereinbarung gemäß § 135 Abs. 2 SGB V voraus."
+    )
+
+    eigene = _authorization_clauses(text, "01770")
+    kapitel = _authorization_clauses(text, None)
+
+    assert [c.clause_type for c in eigene] == ["requires_authorization"]
+    assert eigene[0].parameters["agreement"] == "Ultraschall-Vereinbarung"
+    assert all(c.clause_type == "authorization" for c in kapitel)

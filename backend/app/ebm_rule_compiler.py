@@ -186,7 +186,7 @@ def compile_gop_rule(
     clauses.extend(_age_clauses(cleaned))
     clauses.extend(_duration_clauses(cleaned))
     clauses.extend(_time_clauses(cleaned))
-    clauses.extend(_authorization_clauses(cleaned))
+    clauses.extend(_authorization_clauses(cleaned, gop_base))
     clauses.extend(_location_clauses(cleaned))
     clauses.extend(_reporting_clauses(cleaned))
     clauses.extend(_reference_clauses(cleaned))
@@ -595,9 +595,43 @@ def _time_clauses(text: str) -> list[CompiledRuleClause]:
     ]
 
 
-def _authorization_clauses(text: str) -> list[CompiledRuleClause]:
-    pattern = re.compile(r"[^.]{0,120}\b(Genehmigung|Qualifikation|Qualifikationsvoraussetzung)\b[^.]{0,180}", re.IGNORECASE)
-    return [
+# Ein ausdruecklicher Genehmigungsvorbehalt benennt die Vereinbarung, auf die er sich
+# stuetzt. Der Name ist die pruefbare Angabe: ohne ihn bleibt nur ein Pruefhinweis,
+# mit ihm laesst sich die Position gegen die Genehmigungen der Betriebsstaette halten.
+NAMED_AUTHORIZATION_PATTERN = re.compile(
+    r"setzt\s+eine\s+Genehmigung\s+der\s+Kassen[aä]rztlichen\s+Vereinigung\s+"
+    r"nach\s+(?:der|dem)?\s*(?P<agreement>.{3,80}?)\s+gem[aä][sß]",
+    re.IGNORECASE | re.DOTALL,
+)
+AUTHORIZATION_HINT_PATTERN = re.compile(
+    r"[^.]{0,120}\b(Genehmigung|Qualifikation|Qualifikationsvoraussetzung)\b[^.]{0,180}",
+    re.IGNORECASE,
+)
+
+
+def _authorization_clauses(text: str, gop_base: str | None = None) -> list[CompiledRuleClause]:
+    named = {
+        _clean(match.group("agreement")): _clean(match.group(0))
+        for match in NAMED_AUTHORIZATION_PATTERN.finditer(text)
+    }
+    # Nur der Vorbehalt der Position selbst sperrt. Derselbe Satz in einer Praeambel
+    # oder in den Allgemeinen Bestimmungen gilt fuer ein ganzes Kapitel und waere als
+    # Sperre viel zu weit - er bleibt ein Pruefhinweis.
+    clauses = [
+        _clause(
+            "requires_authorization",
+            "provider",
+            {"agreement": agreement},
+            source,
+            # Ob die Betriebsstaette die Genehmigung besitzt, steht nicht in der Akte.
+            # Die Klausel ist damit nicht aus dem Fall heraus entscheidbar.
+            False,
+            True,
+            0.92,
+        )
+        for agreement, source in named.items()
+    ] if gop_base else []
+    clauses.extend(
         _clause(
             "authorization",
             "provider",
@@ -607,8 +641,10 @@ def _authorization_clauses(text: str) -> list[CompiledRuleClause]:
             True,
             0.84,
         )
-        for match in pattern.finditer(text)
-    ]
+        for match in AUTHORIZATION_HINT_PATTERN.finditer(text)
+        if not gop_base or not any(agreement in _clean(match.group(0)) for agreement in named)
+    )
+    return clauses
 
 
 def _location_clauses(text: str) -> list[CompiledRuleClause]:

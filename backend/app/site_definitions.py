@@ -10,6 +10,7 @@ Der Beitrag eines Standorts besteht aus drei Teilen:
 `evidence_rules`      vollstaendige Evidenzregeln fuer eigene Leistungscodes
 `marker_extensions`   zusaetzliche Marker fuer bestehende allgemeine Regeln
 `candidate_rules`     Zuordnung eigener Evidenzarten zu GOP-Kandidaten
+`authorizations`      KV-Genehmigungen, die die Betriebsstaette besitzt
 """
 
 from __future__ import annotations
@@ -34,10 +35,14 @@ class SiteDefinitionSet:
     evidence_rules: tuple[dict[str, Any], ...] = ()
     marker_extensions: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     candidate_rules: tuple[dict[str, Any], ...] = ()
+    # Vereinbarungen nach § 135 Abs. 2 SGB V, die die Betriebsstaette besitzt.
+    # Leer heisst nicht 'keine', sondern 'nicht erklaert' - dann bleibt die
+    # Position in der Pruefung statt automatisch zu entfallen.
+    authorizations: tuple[str, ...] = ()
 
     @property
     def empty(self) -> bool:
-        return not (self.evidence_rules or self.marker_extensions or self.candidate_rules)
+        return not (self.evidence_rules or self.marker_extensions or self.candidate_rules or self.authorizations)
 
 
 def parse_site_definition_set(payload: dict[str, Any]) -> SiteDefinitionSet:
@@ -64,6 +69,7 @@ def parse_site_definition_set(payload: dict[str, Any]) -> SiteDefinitionSet:
         evidence_rules=tuple(payload.get("evidence_rules") or ()),
         marker_extensions=extensions,
         candidate_rules=tuple(payload.get("candidate_rules") or ()),
+        authorizations=tuple(str(value).strip() for value in payload.get("authorizations") or () if str(value).strip()),
     )
 
 

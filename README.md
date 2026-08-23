@@ -213,6 +213,22 @@ Die Prüfung läuft zunächst im Meldemodus: Eine Lücke hängt als Prüfhinweis
 
 Die aus dem Katalogtext kompilierten `time_window`-Klauseln bilden häufig nur die Uhrzeit-Hälfte einer Bedingung ab, nicht die Alternative „oder an Samstagen, Sonntagen, Feiertagen". Hat eine Zeitregel des Regelwerks die Variante bereits aus Datum, Uhrzeit, Wochentag und Feiertag bestimmt, überstimmt eine solche Klausel diese Entscheidung nicht mehr; sie bleibt als Prüfhinweis an der Position. Die Position merkt sich dafür strukturell, welche Zeitregel sie bestimmt hat; eine umbenannte Regel schaltet den Vorrang also nicht stillschweigend ab.
 
+## Genehmigungsvorbehalte
+
+72 Gebührenordnungspositionen eines Quartals setzen ausdrücklich eine Genehmigung der Kassenärztlichen Vereinigung voraus und benennen die Vereinbarung, auf die sie sich stützen — Ultraschall-Vereinbarung, Strahlendiagnostik und weitere. Ob die Betriebsstätte eine solche Genehmigung besitzt, steht nicht in der Patientenakte; aus dem Fall heraus ist die Bedingung nicht entscheidbar.
+
+Solche Positionen werden deshalb nicht automatisch abgerechnet, sondern vorgelegt. Das ist die sichere Vorgabe: Eine vorhandene Genehmigung kostet eine Bestätigung durch die Sachbearbeitung, eine fehlende sonst eine Falschabrechnung.
+
+Erklärt die Betriebsstätte ihre Genehmigungen in `site_service_codes.json`, entfällt die Vorlage für die betroffenen Positionen:
+
+```json
+"authorizations": ["Ultraschall-Vereinbarung"]
+```
+
+Das ist eine Angabe über die Praxis, keine GOP-Liste — welche Positionen betroffen sind, sagt der Katalog. Eine leere Angabe bedeutet nicht „keine Genehmigung", sondern „nicht erklärt".
+
+Maßgeblich ist ausschließlich der Vorbehalt der Position selbst. Derselbe Satz in einer Präambel oder in den Allgemeinen Bestimmungen gilt für ein ganzes Kapitel und bleibt ein Prüfhinweis; als Sperre wäre er viel zu weit.
+
 ## Mandantenspezifische Leistungskennungen
 
 Klinikinterne Leistungscodes stammen aus dem KIS eines Standorts. Sie sind weder aus dem EBM-Katalog noch aus klinischer Sprache ableitbar und stehen deshalb getrennt in `backend/app/site_service_codes.json`:

@@ -230,3 +230,37 @@ def test_partially_covered_content_still_names_the_missing_element() -> None:
     assert verdict is not None
     assert "Mutterpass" in verdict.note
     assert "Ultraschall" not in verdict.note
+
+
+def authorization_clause(agreement: str) -> dict:
+    return {
+        "clause_type": "requires_authorization",
+        "scope": "provider",
+        "parameters": {"agreement": agreement},
+        "source_text": f"setzt eine Genehmigung nach der {agreement} voraus",
+    }
+
+
+def test_unbacked_authorization_keeps_the_position_out_of_the_invoice():
+    """Ob die Betriebsstätte die Genehmigung hat, steht nicht in der Akte.
+
+    Ohne ausdrückliche Erklärung wird die Position vorgelegt statt abgerechnet:
+    eine vorhandene Genehmigung kostet eine Bestätigung, eine fehlende sonst eine
+    Falschabrechnung.
+    """
+    current = item("99999", "2026-01-03", "session-1", 1)
+
+    verdict = _evaluate_clause(authorization_clause("Ultraschall-Vereinbarung"), current, Counter(), {}, {})
+
+    assert verdict is not None
+    assert verdict.severity == VIOLATION
+    assert "Ultraschall-Vereinbarung" in verdict.note
+
+
+def test_declared_authorization_lets_the_position_pass(monkeypatch):
+    import app.catalog_rule_validation as validation
+
+    monkeypatch.setattr(validation, "_declared_authorizations", lambda: ("Ultraschall-Vereinbarung",))
+    current = item("99999", "2026-01-03", "session-1", 1)
+
+    assert _evaluate_clause(authorization_clause("Ultraschall-Vereinbarung"), current, Counter(), {}, {}) is None
