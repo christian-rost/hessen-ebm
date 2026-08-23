@@ -171,7 +171,7 @@ Patientenakte
   -> Rechnungsentwurf mit Sachbearbeiterfreigabe
 ```
 
-Die Kandidatensuche nutzt den FTS5-Volltextindex der Katalogdatenbank. Das ist wesentlich, weil klinische Dokumentation und EBM-Legende unterschiedlich formulieren: "Röntgen Thorax 2 Ebenen" gegen "Übersichtsaufnahme der Brustorgane, zwei Ebenen". Eine Substring-Suche findet solche Treffer nicht. Gemessen an den zuvor gepflegten Zuordnungen liegt die Trefferquote der Volltextsuche bei 96 Prozent in den Top 25 gegenüber 68 Prozent zuvor; für den Goldstandardfall `FALL-A` sind alle 15 GOPs allein über die Katalogsuche erreichbar. Ohne Index fällt die Suche auf `LIKE` zurück.
+Die Kandidatensuche nutzt den FTS5-Volltextindex der Katalogdatenbank. Das ist wesentlich, weil klinische Dokumentation und EBM-Legende unterschiedlich formulieren: "Röntgen Thorax 2 Ebenen" gegen "Übersichtsaufnahme der Brustorgane, zwei Ebenen". Eine Substring-Suche findet solche Treffer nicht. Gemessen an den zuvor gepflegten Zuordnungen liegt die Trefferquote der Volltextsuche bei 96 Prozent in den Top 25 gegenüber 68 Prozent zuvor; für den ersten Goldstandardfall sind alle 15 GOPs allein über die Katalogsuche erreichbar. Ohne Index fällt die Suche auf `LIKE` zurück.
 
 Das Abrechnungstor sind die kompilierten Katalogregeln des Leistungsquartals, rund 4.500 Regeln mit rund 10.000 Klauseln. Eine vorgeschlagene GOP wird nur dann zur Position, wenn keine maschinell entscheidbare Klausel verletzt ist:
 

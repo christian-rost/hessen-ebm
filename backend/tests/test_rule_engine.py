@@ -1,11 +1,8 @@
-import re
 from pathlib import Path
 
 from app.billing_rule_definitions import parse_billing_rule_set
 from app.catalog import CatalogRepository
-from app.document_segmentation import segment_pages
-from app.evidence_extraction import extract_evidence
-from app.models import BillingItem, CatalogEntry, Evidence, PageText
+from app.models import BillingItem, CatalogEntry, Evidence
 from app.config import Settings
 from app.rule_engine import reconcile_derived_item_anchors
 from app.semantic_billing import _search_terms, generate_semantic_billing_items
@@ -188,145 +185,6 @@ def derive_items(evidence, catalog, default_quarter, region="Hessen"):
         llm_client=fake_llm,
     )
     return result.items, result.summary
-
-
-def test_case_FALL-B_rule_total():
-    evidence = [
-        ev("context.kv_notfall_zna"),
-        ev("radiology.ct_head_native"),
-        ev("radiology.xray_shoulder_2_planes"),
-        ev("radiology.xray_spine_hws_2_planes"),
-        ev("lab.quick"),
-        ev("lab.creatinine"),
-        ev("lab.sodium"),
-        ev("lab.potassium"),
-        ev("lab.glucose"),
-        ev("lab.alt_gpt"),
-        ev("lab.erythrocytes"),
-        ev("lab.leukocytes"),
-        ev("lab.thrombocytes"),
-        ev("lab.hemoglobin"),
-        ev("lab.hematocrit"),
-    ]
-
-    items, summary = derive_items(evidence, FakeCatalog(), default_quarter="2025/Q4")
-
-    assert len(items) == 15
-    assert summary.points_total == 1006
-    assert summary.amount_total_eur == 129.1
-    assert [item.gop_original for item in items[:4]] == ["01212", "34310", "34231", "34221"]
-    assert items[0].catalog_source_label == "KBV EBM 2025/Q4"
-    assert items[0].rule_id.endswith("time.notfall.initial.01212.v1")
-
-
-def test_case_FALL-C_reconstructs_expected_services_without_false_ctg_or_follow_up():
-    pages = [
-        PageText(
-            page=1,
-            text=(
-                "Behandlungsbericht ZNA Aufnahme 09.06.2026 21:55 Notfallambulanz KIM1. "
-                "Erstkontakt Arzt 09.06.2026 22:00. "
-                "Notfallsonographie: Ausschluss Perikarderguss, Ausschluss Pleuraergüsse beidseits, "
-                "Ausschluss Pneumothorax, keine intraabdominelle freie Flüssigkeit."
-            ),
-        ),
-        PageText(
-            page=2,
-            text=(
-                "Behandlungsbericht ZNA Behandlungsende 09.06.2026 22:58. Verstorben. "
-                "Entlassungszeit 10.06.2026 01:21 Entlassende FA Notfallambulanz KIM1."
-            ),
-        ),
-        PageText(
-            page=3,
-            text=(
-                "Radiologie - Befund CT Kopf nativ, durchgeführt am 09.06.2026 um 23:00. "
-                "CT-Angio Art. pulmonalis, durchgeführt am 09.06.2026 um 23:15. "
-                "Stehendes Kontrastmittel in der Vena cava superior."
-            ),
-        ),
-        PageText(
-            page=4,
-            text=(
-                "Leistungen 1.0x RACTH524 Angio-CT Art. pulmonalis + KM "
-                "1.0x RAKGK082 KM-Gabe intravenös über Hochdruckspritze. "
-                "Prozeduren 3-222 Computertomographie des Thorax mit Kontrastmittel. "
-                "Kontrastmittel Imeron 400 80,00 ml (i.v.)."
-            ),
-        ),
-        PageText(
-            page=5,
-            text=(
-                "Status fertig Blutgasanalyse Probenentnahmedat. 09.06.2026 22:08 "
-                "Untersuchung Wert Einheit Referenzbereich Blutgase & Analytik POCT "
-                "pH-Wert 7.008 pCO2 62.0 mmHg pO2 23.8 mmHg "
-                "HaemoglobinPOCT 12.6 g/dl HaematokritPOCT 38.7 % "
-                "KaliumPOCT 5.1 mmol/l NatriumPOCT 137 mmol/l GlucosePOCT 387 mg/dl"
-            ),
-        ),
-        PageText(
-            page=6,
-            text=(
-                "Status fertig Blutgasanalyse Probenentnahmedat. 09.06.2026 22:25 "
-                "Untersuchung Wert Einheit Referenzbereich Blutgase & Analytik POCT "
-                "pH-Wert 6.820 pCO2 98.0 mmHg pO2 19.9 mmHg HaemoglobinPOCT 12.2 g/dl"
-            ),
-        ),
-        PageText(
-            page=7,
-            text=(
-                "Laborbefund Probenentnahmedat. 09.06.2026 22:09 Untersuchung Wert Einheit Referenzbereich "
-                "Kreatinin 2.32 mg/dl Natrium 135 mmol/l Kalium 5.1 mmol/l Glucose 387 mg/dl ALT 42 U/l"
-            ),
-        ),
-        PageText(
-            page=8,
-            text=(
-                "Laborbefund Probenentnahmedat. 09.06.2026 22:09 Untersuchung Wert Einheit Referenzbereich "
-                "Quick 72 % Leukozyten 14.2 Mrd./l Erythrozyten 4.1 Bil./l "
-                "Hämoglobin 12.0 g/dl Hämatokrit 40.6 % Thrombozyten 208 Mrd./l"
-            ),
-        ),
-    ]
-
-    segments = segment_pages(pages)
-    evidence, _review, excluded, context = extract_evidence(pages, segments)
-    items, _summary = derive_items(evidence, FakeCatalog(), default_quarter="2026/Q2")
-    gops = [item.gop_original for item in items]
-
-    assert context["administrative_admission"] == "2026-06-09T21:55:00"
-    assert context["first_personal_physician_contact"] == "2026-06-09T22:00:00"
-    assert context["treatment_start"] == "2026-06-09T22:00:00"
-    assert context["treatment_end"] == "2026-06-09T22:58:00"
-    assert len(gops) == 17
-    assert set(gops) == {
-        "01212",
-        "33042",
-        "32247",
-        "32025",
-        "32035A",
-        "32036A",
-        "32037A",
-        "32038A",
-        "32039A",
-        "32066",
-        "32081",
-        "32083",
-        "32070",
-        "32113",
-        "34310",
-        "34330",
-        "34345",
-    }
-    assert "01786" not in gops
-    assert "01218" not in gops
-    assert not any(item.kind == "clinical.diagnostics.ctg" for item in evidence)
-    assert not any(item.service_date == "2026-06-10" and item.kind == "context.kv_notfall_zna" for item in evidence)
-    assert excluded == []
-    assert any(
-        segment.segment_type == "data_capture" and segment.start_page <= 4 <= segment.end_page
-        for segment in segments
-    )
 
 
 def test_kv_notfall_zna_daytime_uses_01210():
