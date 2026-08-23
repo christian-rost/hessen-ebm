@@ -113,6 +113,7 @@ def generate_semantic_billing_items(
         payload, billing_evidence, candidates, catalog, quarter, region
     )
     hints += content_gap_hints
+    review += _uncovered_service_days(events, items, hints)
     summary = InvoiceSummary(
         line_count=len(items),
         points_total=sum((item.points or 0) * item.quantity for item in items),
@@ -139,6 +140,53 @@ def generate_semantic_billing_items(
             "catalog_rule_validation": catalog_rule_validation,
         },
     )
+
+
+def _uncovered_service_days(
+    events: list[BillingEvent],
+    items: list[BillingItem],
+    hints: list[DocumentationHint],
+) -> list[ReviewCandidate]:
+    """Behandlungstage ohne jede Position melden.
+
+    Ein frueherer Versuch hat dasselbe je Evidenz geprueft und 38 Eintraege
+    erzeugt - unbrauchbar, weil die meisten Belege zu Recht in einer Pauschale
+    aufgehen. Der Behandlungstag ist die richtige Koernung: Er ist die Einheit,
+    in der abgerechnet wird, es gibt wenige davon, und ein Tag mit dokumentierten
+    Leistungsereignissen und null Positionen ist immer erklaerungsbeduerftig.
+
+    Konzept 3.3 nennt die Timeline das zentrale Zwischenartefakt. Sie ist
+    deterministisch aufgebaut; damit ist auch diese Gegenprobe deterministisch
+    und haengt nicht daran, ob das Modell einen Tag uebersehen hat.
+    """
+    abgedeckt = {item.service_date for item in items if item.service_date}
+    abgedeckt |= {hint.service_date for hint in hints if hint.service_date}
+
+    nach_tag: dict[str, list[BillingEvent]] = {}
+    for event in events:
+        if not event.primary_episode or not event.service_date:
+            continue
+        nach_tag.setdefault(event.service_date, []).append(event)
+
+    offen: list[ReviewCandidate] = []
+    for tag in sorted(set(nach_tag) - abgedeckt):
+        tages_events = nach_tag[tag]
+        evidence_ids = sorted({eid for event in tages_events for eid in event.evidence_ids})
+        seiten = sorted({item.page for event in tages_events for item in event.evidence})
+        offen.append(
+            ReviewCandidate(
+                evidence=f"Behandlungstag {tag} ohne Position",
+                evidence_pages=seiten,
+                evidence_ids=evidence_ids,
+                possible_gops=[],
+                reason=(
+                    f"An diesem Tag sind {len(tages_events)} Leistungsereignisse dokumentiert, "
+                    "der Entwurf enthält dafür aber keine einzige Position und auch keinen "
+                    "Dokumentationshinweis. Bitte prüfen, ob eine Leistung übersehen wurde."
+                ),
+            )
+        )
+    return offen
 
 
 def _documentation_hints_from_payload(
@@ -961,10 +1009,12 @@ def _split_items_by_catalog_verdict(
     for item in items:
         key = (item.gop_original, item.service_event_id)
         violations = blocked.get(key)
+        missing = gaps.get(key) or []
         if not violations:
+            # Die Luecke blockiert hier nicht - sichtbar sein muss sie trotzdem.
+            item.missing_service_content = missing
             kept.append(item)
             continue
-        missing = gaps.get(key) or []
         # Nur wenn jede Verletzung von der Inhaltsklausel stammt, ist es eine
         # Dokumentationsluecke. Kommt ein Ausschluss oder eine fehlende Genehmigung
         # dazu, bleibt es ein Fall fuer die Pruefung.

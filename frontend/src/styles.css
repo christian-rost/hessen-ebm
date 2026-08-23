@@ -805,6 +805,15 @@ td code,
   font-weight: 600;
 }
 
+/* Die Luecke ist umsetzbar, nicht bloss ein Hinweis - sie bekommt deshalb mehr
+   Gewicht als die Zaehlzeile daneben, aber nicht die Farbe eines Fehlers. */
+.reason-cell .content-gap {
+  color: #8a5b00;
+  font-weight: 600;
+  border-left: 3px solid #d9a441;
+  padding-left: 0.5rem;
+}
+
 .timeline-cell {
   min-width: 170px;
 }

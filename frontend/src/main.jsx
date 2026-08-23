@@ -1081,6 +1081,11 @@ function ResultPanel({ result, onDownload }) {
                   {temporalNotes(item).map((note, index) => (
                     <span key={`${item.line}-note-${index}`}>{note}</span>
                   ))}
+                  {(item.missing_service_content || []).length > 0 && (
+                    <span className="content-gap">
+                      Dokumentation unvollständig — es fehlt: {item.missing_service_content.join("; ")}
+                    </span>
+                  )}
                   {item.validation_status === "review" && (
                     <span className="review-count">
                       Weitere Katalogbedingungen im Review: {(item.validation_notes || []).length - temporalNotes(item).length}

@@ -88,6 +88,10 @@ class BillingItem(BaseModel):
     temporal_reason: str | None = None
     temporal_rule_id: str | None = None
     covered_service_content: list[str] = Field(default_factory=list)
+    # Die Gegenseite: was die Kataloglegende verlangt und die Doku nicht hergibt.
+    # Blockiert die Position nicht zwingend, gehoert aber vor die Augen des Arztes -
+    # sonst steht eine Position auf der Rechnung, deren Beleg eine Luecke hat.
+    missing_service_content: list[str] = Field(default_factory=list)
     quantity: int = 1
     points: int | None = None
     amount_eur: float | None = None

@@ -1003,3 +1003,50 @@ def test_incomplete_obligatory_content_becomes_a_documentation_hint():
     assert hints[0].gop == "01786"
     assert hints[0].missing_service_content == [fehlend]
     assert hints[0].origin == "catalog_content_gap"
+
+
+def test_a_treatment_day_without_any_position_is_reported():
+    """Ein ganzer Behandlungstag ohne Position darf nicht unbemerkt bleiben.
+
+    Beobachtet an einem echten Entwurf: Für den zweiten Behandlungstag standen
+    vier Leistungsereignisse in der Timeline, die Rechnung enthielt dafür nichts.
+    Weder Position noch Hinweis - und ohne diese Gegenprobe auch keine Meldung.
+
+    Die Prüfung sitzt bewusst auf dem Tag und nicht auf der Evidenz: je Evidenz
+    erzeugte sie an demselben Fall 38 Einträge Rauschen, weil die meisten Belege
+    zu Recht in einer Pauschale aufgehen.
+    """
+    tag_eins = ev("context.kv_notfall_zna", service_date="2025-10-04", service_time="00:01")
+    tag_zwei = ev("clinical.diagnostics.ctg", page=7, service_date="2025-10-06", service_time="09:30")
+
+    def fake_llm(messages, _settings):
+        # Das Modell liefert nur für den ersten Tag etwas.
+        return {
+            "items": [
+                {
+                    "gop": "01210",
+                    "quantity": 1,
+                    "evidence_ids": [tag_eins.evidence_id],
+                    "service_date": "2025-10-04",
+                    "service_time": "00:01",
+                    "confidence": "high",
+                }
+            ],
+            "documentation_hints": [],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        [tag_eins, tag_zwei],
+        FakeCatalog(),
+        default_quarter="2025/Q4",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    tage = [r for r in result.review_candidates if "2025-10-06" in r.evidence]
+    assert tage, "Der Tag ohne Position muss gemeldet werden"
+    assert tag_zwei.evidence_id in tage[0].evidence_ids
+    # Der abgerechnete Tag darf nicht gemeldet werden.
+    assert not [r for r in result.review_candidates if "2025-10-04" in r.evidence]
