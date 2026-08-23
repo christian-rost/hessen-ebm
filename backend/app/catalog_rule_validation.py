@@ -265,6 +265,20 @@ def _evaluate_clause(
             )
         return None
 
+    if clause_type == "required_service_content":
+        required = [str(value) for value in _values(parameters.get("elements"))]
+        missing = _uncovered_content(required, item.covered_service_content)
+        if not missing:
+            return None
+        note = (
+            "Obligater Leistungsinhalt ist nicht vollständig belegt: "
+            + "; ".join(element[:80] for element in missing)
+        )
+        # Vorerst nur melden. Ob eine Luecke die Position blockiert, entscheidet
+        # die Politik, damit sich das Verhalten ohne Codeaenderung scharf schalten laesst.
+        blocking = bool((clause_policy or {}).get("required_service_content_blocks"))
+        return ClauseVerdict(VIOLATION if blocking else ADVISORY, note)
+
     if clause_type in _advisory_clause_types(clause_policy):
         return ClauseVerdict(ADVISORY, f"Manuelle Prüfung der Katalogbedingung erforderlich: {source_text}")
 
@@ -431,3 +445,26 @@ def _advisory_clause_types(clause_policy: Mapping[str, Any] | None) -> set[str]:
 
 def _ignored_clause_types(clause_policy: Mapping[str, Any] | None) -> set[str]:
     return {str(value) for value in (clause_policy or {}).get("ignored_clause_types") or []}
+
+
+def _uncovered_content(required: Sequence[str], covered: Sequence[str]) -> list[str]:
+    """Pflichtelemente ohne Beleg.
+
+    Das Modell gibt die Elemente woertlich zurueck, kann sie aber kuerzen oder
+    umstellen. Verglichen wird deshalb ueber die Wortmenge: ein Element gilt als
+    belegt, wenn eine Angabe seine tragenden Woerter weitgehend enthaelt.
+    """
+    normalized_covered = [_content_words(value) for value in covered if str(value).strip()]
+    missing: list[str] = []
+    for element in required:
+        words = _content_words(element)
+        if not words:
+            continue
+        if any(len(words & candidate) / len(words) >= 0.6 for candidate in normalized_covered if candidate):
+            continue
+        missing.append(element)
+    return missing
+
+
+def _content_words(value: str) -> set[str]:
+    return {word for word in re.findall(r"[a-zA-ZäöüÄÖÜß]{4,}", str(value).casefold())}

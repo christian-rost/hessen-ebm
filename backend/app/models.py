@@ -84,6 +84,7 @@ class BillingItem(BaseModel):
     temporal_role: str = "service_event"
     temporal_reason: str | None = None
     temporal_rule_id: str | None = None
+    covered_service_content: list[str] = Field(default_factory=list)
     quantity: int = 1
     points: int | None = None
     amount_eur: float | None = None

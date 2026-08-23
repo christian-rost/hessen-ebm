@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "rule_set_id": "kbv-ebm-hessen-core",
-  "version": "2027.4",
+  "version": "2027.5",
   "clause_policy": {
     "advisory_clause_types": [
       "quantity_unit",
@@ -13,7 +13,8 @@
     ],
     "ignored_clause_types": [
       "reporting"
-    ]
+    ],
+    "required_service_content_blocks": false
   },
   "semantic_policy": {
     "auto_accept_support_levels": [

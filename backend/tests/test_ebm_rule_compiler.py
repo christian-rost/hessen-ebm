@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.billing_rule_store import build_clause_rows, build_definition_rows
-from app.ebm_rule_compiler import RuleCompilationError, compile_catalog_quarter, compile_gop_rule
+from app.ebm_rule_compiler import RuleCompilationError, compile_catalog_quarter, compile_gop_rule, _obligatory_content_clauses
 
 
 def build_compiler_catalog(path: Path) -> None:
@@ -239,3 +239,28 @@ def test_identical_regional_rows_receive_unique_stable_variant_keys(tmp_path: Pa
     assert len(regional) == 2
     assert len({rule.rule_id for rule in regional}) == 2
     assert [rule.source_reference["variant_index"] for rule in regional] == [0, 1]
+
+
+def test_obligatory_service_content_is_extracted_as_elements():
+    """Der Katalog nennt bei knapp der Hälfte aller GOPs den Pflichtinhalt."""
+    text = (
+        "Beschreibung Betreuung einer Schwangeren gemäß Mutterschafts-Richtlinie "
+        "Obligater Leistungsinhalt Beratungen und Untersuchungen gemäß der Richtlinie, "
+        "Bilddokumentation(en), Dokumentation im Mutterpass, "
+        "Abrechnungsbestimmung einmal im Behandlungsfall "
+        "Anmerkung Die Gebührenordnungsposition ist höchstens viermal berechnungsfähig."
+    )
+
+    clauses = _obligatory_content_clauses(text)
+
+    assert len(clauses) == 1
+    elements = clauses[0].parameters["elements"]
+    assert "Dokumentation im Mutterpass" in elements
+    assert any("Bilddokumentation" in element for element in elements)
+    # Was hinter dem Abschnitt steht, gehört nicht zum Pflichtinhalt.
+    assert not any("Anmerkung" in element or "höchstens viermal" in element for element in elements)
+    assert clauses[0].machine_executable is False
+
+
+def test_gops_without_an_obligatory_content_section_get_no_clause():
+    assert _obligatory_content_clauses("Beschreibung Irgendeine Leistung ohne Abschnitt.") == []

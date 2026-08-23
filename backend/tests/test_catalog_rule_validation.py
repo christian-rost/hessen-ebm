@@ -176,3 +176,57 @@ def test_ignored_clause_types_do_not_reach_the_gate() -> None:
     """Berichtspflicht ist Verwaltungsangabe, keine Abrechnungsbedingung."""
     policy = load_billing_rule_set().clause_policy
     assert "reporting" in (policy.get("ignored_clause_types") or [])
+
+
+def content_clause(*elements: str) -> dict:
+    return {
+        "clause_type": "required_service_content",
+        "scope": "service",
+        "parameters": {"elements": list(elements)},
+        "source_text": ", ".join(elements),
+    }
+
+
+def test_uncovered_obligatory_content_is_reported_but_does_not_block() -> None:
+    """Meldemodus: die Lücke steht in der Position, verhindert sie aber nicht."""
+    current = item("99999", "2026-01-03", "session-1", 1)
+    verdict = _evaluate_clause(content_clause("Dokumentation im Mutterpass"), current, Counter(), {}, {})
+
+    assert verdict is not None
+    assert verdict.severity == ADVISORY
+    assert "nicht vollständig belegt" in verdict.note
+
+
+def test_uncovered_obligatory_content_blocks_when_the_policy_says_so() -> None:
+    current = item("99999", "2026-01-03", "session-1", 1)
+    policy = {"required_service_content_blocks": True}
+
+    verdict = _evaluate_clause(content_clause("Dokumentation im Mutterpass"), current, Counter(), {}, policy)
+
+    assert verdict is not None
+    assert verdict.severity == VIOLATION
+
+
+def test_covered_obligatory_content_passes_despite_different_wording() -> None:
+    """Das Modell darf kürzen und umstellen, solange die tragenden Wörter stimmen."""
+    current = item("99999", "2026-01-03", "session-1", 1)
+    current.covered_service_content = ["Dokumentation der Befunde im Mutterpass der Patientin"]
+
+    assert _evaluate_clause(content_clause("Dokumentation im Mutterpass"), current, Counter(), {}, {}) is None
+
+
+def test_partially_covered_content_still_names_the_missing_element() -> None:
+    current = item("99999", "2026-01-03", "session-1", 1)
+    current.covered_service_content = ["Ultraschalluntersuchungen nach Anlage I a"]
+
+    verdict = _evaluate_clause(
+        content_clause("Ultraschalluntersuchungen nach Anlage I a", "Dokumentation im Mutterpass"),
+        current,
+        Counter(),
+        {},
+        {},
+    )
+
+    assert verdict is not None
+    assert "Mutterpass" in verdict.note
+    assert "Ultraschall" not in verdict.note

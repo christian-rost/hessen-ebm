@@ -199,6 +199,14 @@ Notfallkontakte werden über ein Merkmal erkannt, nicht über eine Liste von Evi
 
 Eine Sitzung wird nach absolutem Zeitabstand gebildet, nicht nach Kalendertag. Beginnt ein Notfallkontakt um 23:40 und wird um 00:30 eine Leistung erbracht, ist das **eine** Sitzung: Der Zeitstempel um 00:30 belegt eine Leistung innerhalb der Sitzung, keinen neuen Kontakt. Eine zweite Basispauschale entsteht daraus nicht, auch wenn 00:30 für sich genommen wieder im Nachtfenster liegt. Zwei unabhängige Prüfungen halten das: eine Basispauschale je Sequenzereignis, und eine GOP-Basis je Leistungsereignis.
 
+### Obligater Leistungsinhalt
+
+Der Katalog nennt bei 1.833 der 3.864 GOPs ausdrücklich, welche Leistung erbracht sein muss. Der Compiler zieht diesen Abschnitt als Klausel `required_service_content` heraus — 4.454 Pflichtelemente je Quartal. Das Modell muss zu jeder vorgeschlagenen GOP angeben, welches Element die Evidenz belegt; der Server prüft, ob die Zuordnung vollständig ist. Verglichen wird über die tragenden Wörter, das Modell darf also kürzen und umstellen.
+
+Damit schließt sich eine Lücke im Abrechnungstor: Geprüft wurden bisher nur Nebenbedingungen — Ausschlüsse, Häufigkeiten, Alter, Uhrzeit —, nie aber, ob die Leistung erbracht wurde, die die GOP beschreibt.
+
+Die Prüfung läuft zunächst im Meldemodus: Eine Lücke hängt als Prüfhinweis an der Position, verhindert sie aber nicht. Scharf geschaltet wird sie über `clause_policy.required_service_content_blocks`. Das ist Absicht — solange nicht gemessen ist, wie zuverlässig das Modell `covered_content` füllt, würde eine harte Sperre korrekte Positionen verwerfen, deren Beleg vorliegt und nur nicht zugeordnet wurde.
+
 ### Vorrang der Zeitregel vor unvollständigen Katalogklauseln
 
 Die aus dem Katalogtext kompilierten `time_window`-Klauseln bilden häufig nur die Uhrzeit-Hälfte einer Bedingung ab, nicht die Alternative „oder an Samstagen, Sonntagen, Feiertagen". Hat eine Zeitregel des Regelwerks die Variante bereits aus Datum, Uhrzeit, Wochentag und Feiertag bestimmt, überstimmt eine solche Klausel diese Entscheidung nicht mehr; sie bleibt als Prüfhinweis an der Position. Die Position merkt sich dafür strukturell, welche Zeitregel sie bestimmt hat; eine umbenannte Regel schaltet den Vorrang also nicht stillschweigend ab.

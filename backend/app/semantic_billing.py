@@ -340,6 +340,9 @@ def _build_messages(
         "Behandle Angaben wie einmal im Fall, je Sitzung oder am Behandlungstag als Abrechnungshäufigkeit. "
         "Eine Leistungsdauer darfst du nur verlangen oder zur Mengenberechnung verwenden, wenn die Kataloglegende "
         "ausdrücklich mindestens Minuten oder je vollendete Minuten nennt. "
+        "Nennt die Kataloglegende einen obligaten Leistungsinhalt, führe in covered_content jedes "
+        "geforderte Element wörtlich auf, das die Evidenz belegt. Lass ein Element weg, wenn die Evidenz "
+        "es nicht belegt; erfinde keine Belege. "
         "Antworte ausschließlich als JSON-Objekt."
     )
     user = {
@@ -357,6 +360,7 @@ def _build_messages(
                     "service_time": "HH:MM oder null",
                     "confidence": "high|medium|low",
                     "reason": "kurze fachliche Herleitung",
+                    "covered_content": ["wörtliches Element des obligaten Leistungsinhalts, das belegt ist"],
                 }
             ],
             "review_candidates": [
@@ -687,6 +691,9 @@ def _billing_items_from_payload(
                 temporal_role=event.temporal_role if event else "service_event",
                 temporal_reason=event.temporal_reason if event else None,
                 temporal_rule_id=temporal_decision.temporal_rule_id,
+                covered_service_content=[
+                    str(value) for value in (proposal.get("covered_content") or []) if str(value).strip()
+                ],
                 quantity=quantity,
                 points=points,
                 amount_eur=amount,

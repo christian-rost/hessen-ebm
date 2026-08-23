@@ -190,6 +190,7 @@ def compile_gop_rule(
     clauses.extend(_location_clauses(cleaned))
     clauses.extend(_reporting_clauses(cleaned))
     clauses.extend(_reference_clauses(cleaned))
+    clauses.extend(_obligatory_content_clauses(cleaned))
     deduplicated = tuple(_deduplicate_clauses(clauses))
     coverage_status = "partial" if deduplicated else "text_only"
     source_token = "ebm" if source_type == "EBM_KBV" else "regional"
@@ -653,6 +654,54 @@ def _reference_clauses(text: str) -> list[CompiledRuleClause]:
             0.8,
         )
         for match in pattern.finditer(text)
+    ]
+
+
+# Der Katalog nennt bei knapp der Haelfte aller GOPs ausdruecklich, welche
+# Leistung erbracht sein muss. Der Abschnitt endet an der naechsten Ueberschrift.
+OBLIGATORY_CONTENT_PATTERN = re.compile(
+    r"Obligater\s+Leistungsinhalt(?P<content>.*?)"
+    r"(?=Fakultativer\s+Leistungsinhalt|Abrechnungsbestimmung|Anmerkung|Berichtspflicht"
+    r"|Abrechnungsausschl|Kalkulationszeit|Aufwand\s+in\s+Min|Beschreibung|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+# Der Pflichtinhalt ist eine Aufzaehlung. Kommas trennen die Elemente, aber nicht
+# innerhalb von Klammern und nicht in Verweisen wie "Anlage I a und Anlage I b".
+CONTENT_ELEMENT_SPLIT = re.compile(r",(?![^(]*\))")
+MIN_CONTENT_ELEMENT_LENGTH = 4
+
+
+def _obligatory_content_clauses(text: str) -> list[CompiledRuleClause]:
+    """Pflichtinhalt einer GOP als pruefbare Klausel.
+
+    Bisher pruefte das Tor nur Nebenbedingungen - Ausschluesse, Haeufigkeiten,
+    Alter, Uhrzeit. Ob die beschriebene Leistung ueberhaupt erbracht wurde, blieb
+    ungeprueft. Diese Klausel traegt die Elemente, die der Katalog verlangt; die
+    Zuordnung zu Evidenz erfolgt semantisch, die Vollstaendigkeit prueft der Server.
+    """
+    match = OBLIGATORY_CONTENT_PATTERN.search(text)
+    if not match:
+        return []
+    content = _clean(match.group("content"))
+    elements = [
+        element.strip(" ,;")
+        for element in CONTENT_ELEMENT_SPLIT.split(content)
+        if len(element.strip(" ,;")) >= MIN_CONTENT_ELEMENT_LENGTH
+    ]
+    if not elements:
+        return []
+    return [
+        _clause(
+            "required_service_content",
+            "service",
+            {"elements": elements},
+            content,
+            # Die Pruefung braucht eine semantische Zuordnung, ist also nicht
+            # allein maschinell entscheidbar.
+            False,
+            True,
+            0.9,
+        )
     ]
 
 
