@@ -104,6 +104,7 @@ def extract_evidence(
         review.extend(_apply_review_rules(rule_set, page, match_context, service_date))
         review.extend(_selection_reviews(rule_set, page))
         excluded.extend(_apply_exclusion_rules(rule_set, page, match_context, service_date))
+        excluded.extend(_unmapped_selection_exclusions(rule_set, page, page_evidence))
 
     if not case_context["treatment_start"]:
         case_context["treatment_start"] = fallback_treatment_start
@@ -385,6 +386,48 @@ def _apply_review_rules(
                 evidence_pages=[page.page],
                 reason=str(rule["reason"]),
                 possible_gops=candidate_gops_for_evidence_kind(candidate_kind, quarter=quarter) if candidate_kind else [],
+            )
+        )
+    return result
+
+
+def _unmapped_selection_exclusions(
+    definitions: ClinicalDefinitionSet,
+    page: PageText,
+    page_evidence: list[Evidence],
+) -> list[ExcludedEvidence]:
+    """Angekreuzte Leistungscodes ohne freigegebenes Mapping ausweisen.
+
+    Frueher stand dafuer eine Liste einzelner Hauscodes im Regelwerk. Die Regel
+    ist aber strukturell: jeder als `checked` erkannte Code, aus dem keine
+    Evidenzregel eine Evidenz erzeugt hat, ist nicht abrechenbar und wird
+    dokumentiert. Neue Codes brauchen dafuer keinen Eintrag mehr.
+    """
+    definition = definitions.selection_extraction.get("unmapped_exclusion") or {}
+    if not isinstance(definition, dict) or not definition:
+        return []
+    mapped = {
+        str(entry.get("code", "")).casefold()
+        for item in page_evidence
+        if isinstance(entry := item.metadata.get("selection_entry"), dict)
+    }
+    states = {str(value) for value in definition.get("states") or ["checked"]}
+    evidence_template = str(definition.get("evidence") or "Interner Leistungscode {code} {label}")
+    reason = str(
+        definition.get("reason")
+        or "Angekreuzter interner Leistungscode ohne freigegebenes EBM-/Hessen-GOP-Mapping."
+    )
+    result: list[ExcludedEvidence] = []
+    for entry in page.selection_entries:
+        if entry.state not in states or entry.code.casefold() in mapped:
+            continue
+        result.append(
+            ExcludedEvidence(
+                evidence=str(
+                    render_value(evidence_template, {"code": entry.code, "label": entry.label or ""})
+                ).strip(),
+                evidence_pages=[page.page],
+                reason=reason,
             )
         )
     return result

@@ -187,6 +187,20 @@ Wichtig für die Einordnung: Das Tor greift nur dort, wo der Katalog eine Beding
 
 Ohne `MISTRAL_API_KEY` entstehen keine Rechnungspositionen: die semantische Zuordnung ist der einzige Weg von Evidenz zu GOP. Die Analyse liefert dann Segmente, Zeitleiste und Evidenzen, und der Grund steht in `catalog_context.analysis_warnings`.
 
+## Mandantenspezifische Leistungskennungen
+
+Klinikinterne Leistungscodes stammen aus dem KIS eines Standorts. Sie sind weder aus dem EBM-Katalog noch aus klinischer Sprache ableitbar und stehen deshalb getrennt in `backend/app/site_service_codes.json`:
+
+| Abschnitt | Inhalt |
+| --- | --- |
+| `evidence_rules` | vollständige Evidenzregeln für eigene Leistungscodes, z. B. Leistungsbogen-Kürzel |
+| `marker_extensions` | zusätzliche Marker für bestehende allgemeine Regeln, etwa hausinterne Radiologiecodes in einer Röntgenregel |
+| `candidate_rules` | Zuordnung eigener Evidenzarten zu GOP-Kandidaten |
+
+Beim Laden werden die Standortdefinitionen in das allgemeine Regelwerk eingemischt; die Versionsangabe wird um `+site-<id>-<version>` ergänzt, damit im Regelstatus sichtbar bleibt, welcher Standortstand aktiv ist. Marker werden in jeden passenden Bedingungszweig eingehängt, aber niemals in einen negierten — ein zusätzlicher Marker würde dort die Bedeutung umkehren.
+
+Ein anderer Standort ersetzt ausschließlich diese Datei, per `SITE_DEFINITIONS_PATH`. Fehlt sie, läuft das System ohne Hauscodes weiter; erkannt werden dann nur klinisch formulierte Evidenzen. Ein Architekturtest verhindert, dass Hauscodes in die allgemeinen Regelwerke zurückwandern.
+
 ## Versionierte Fachregeln
 
 Der normale Ableitungspfad ist semantisch:

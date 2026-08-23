@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 
+from .site_definitions import load_site_definition_set
+
 RULE_DEFINITIONS_PATH = Path(__file__).with_name("billing_rule_definitions.json")
 SUPPORTED_SCHEMA_VERSION = 1
 SUPPORTED_CONDITION_OPERATORS = {
@@ -162,12 +164,22 @@ def billing_rule_set_payload(rule_set: BillingRuleSet) -> dict[str, Any]:
 
 
 @lru_cache(maxsize=4)
-def load_billing_rule_set(path: str | Path | None = None) -> BillingRuleSet:
+def load_billing_rule_set(
+    path: str | Path | None = None,
+    site_path: str | Path | None = None,
+) -> BillingRuleSet:
     source = Path(path) if path else RULE_DEFINITIONS_PATH
     with source.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
         raise ValueError("Das Regelwerk muss ein JSON-Objekt sein.")
+
+    # Kandidatenregeln fuer hausinterne Leistungscodes kommen aus der Standortdatei.
+    site = load_site_definition_set(site_path)
+    if site.candidate_rules:
+        payload = dict(payload)
+        payload["candidate_rules"] = list(payload.get("candidate_rules") or []) + list(site.candidate_rules)
+        payload["version"] = f"{payload.get('version', '')}+site-{site.site_id}-{site.version}"
     return parse_billing_rule_set(payload)
 
 

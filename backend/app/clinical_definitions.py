@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 
+from .site_definitions import apply_marker_extensions, load_site_definition_set
+
 CLINICAL_DEFINITIONS_PATH = Path(__file__).with_name("clinical_evidence_definitions.json")
 SUPPORTED_SCHEMA_VERSION = 1
 
@@ -94,12 +96,30 @@ def parse_clinical_definition_set(payload: dict[str, Any]) -> ClinicalDefinition
 
 
 @lru_cache(maxsize=4)
-def load_clinical_definition_set(path: str | Path | None = None) -> ClinicalDefinitionSet:
+def load_clinical_definition_set(
+    path: str | Path | None = None,
+    site_path: str | Path | None = None,
+) -> ClinicalDefinitionSet:
     source = Path(path) if path else CLINICAL_DEFINITIONS_PATH
     with source.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
         raise ValueError("Die Evidenzdefinitionen müssen ein JSON-Objekt sein.")
+
+    # Hausinterne Leistungskennungen liegen getrennt und werden hier eingemischt.
+    site = load_site_definition_set(site_path)
+    if not site.empty:
+        payload = dict(payload)
+        payload["evidence_rules"] = apply_marker_extensions(
+            list(payload.get("evidence_rules") or []),
+            site.marker_extensions,
+        ) + list(site.evidence_rules)
+        # Auch die Dokumentklassifikation kann standortspezifische Marker brauchen.
+        payload["segment_classifiers"] = apply_marker_extensions(
+            list(payload.get("segment_classifiers") or []),
+            site.marker_extensions,
+        )
+        payload["version"] = f"{payload.get('version', '')}+site-{site.site_id}-{site.version}"
     return parse_clinical_definition_set(payload)
 
 

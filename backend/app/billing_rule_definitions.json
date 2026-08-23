@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "rule_set_id": "kbv-ebm-hessen-core",
-  "version": "2027.1",
+  "version": "2027.2",
   "clause_policy": {
     "advisory_clause_types": [
       "quantity_unit",
@@ -11,10 +11,18 @@
       "service_location",
       "catalog_reference"
     ],
-    "ignored_clause_types": ["reporting"]
+    "ignored_clause_types": [
+      "reporting"
+    ]
   },
   "semantic_policy": {
-    "auto_accept_support_levels": ["validated_rule", "validated_rule_variant", "derived_rule", "explicit_candidate", "regional_catalog"],
+    "auto_accept_support_levels": [
+      "validated_rule",
+      "validated_rule_variant",
+      "derived_rule",
+      "explicit_candidate",
+      "regional_catalog"
+    ],
     "proposal_rejection_patterns": [
       "\\bnicht\\s+(?:vollständig\\s+)?erfüllt\\b",
       "\\bVoraussetzungen?.{0,100}(?:fehlt|fehlen|nicht erfüllt)\\b",
@@ -41,77 +49,178 @@
     "anchor_strategies": [
       {
         "evidence_kind_prefix": "context.",
-        "sort_fields": ["service_date", "page", "confidence_desc", "service_time"]
+        "sort_fields": [
+          "service_date",
+          "page",
+          "confidence_desc",
+          "service_time"
+        ]
       },
       {
-        "sort_fields": ["service_date", "service_time", "confidence_desc", "page"]
+        "sort_fields": [
+          "service_date",
+          "service_time",
+          "confidence_desc",
+          "page"
+        ]
       }
     ]
   },
   "calendar_definitions": {
     "default": {
-      "weekdays": [5, 6],
-      "fixed_dates": ["01-01", "05-01", "10-03", "12-24", "12-25", "12-26", "12-31"],
-      "easter_offsets": [-2, 1, 39, 50]
+      "weekdays": [
+        5,
+        6
+      ],
+      "fixed_dates": [
+        "01-01",
+        "05-01",
+        "10-03",
+        "12-24",
+        "12-25",
+        "12-26",
+        "12-31"
+      ],
+      "easter_offsets": [
+        -2,
+        1,
+        39,
+        50
+      ]
     },
     "regions": {
       "hessen": {
         "inherits": "default",
-        "easter_offsets": [60]
+        "easter_offsets": [
+          60
+        ]
       }
     }
   },
   "candidate_rules": [
-    {"rule_id": "candidate.internal.consultation_fee.v1", "evidence_kind": "internal_service.consultation_fee", "gops": ["01436"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.internal.ordination_fee.v1", "evidence_kind": "internal_service.ordination_fee", "gops": ["06210", "06211", "06212"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.internal.emergency_ordination.v1", "evidence_kind": "internal_service.emergency_ordination", "gops": ["01210", "01212", "01214", "01216", "01218"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.internal.ophthalmology_fundus.v1", "evidence_kind": "internal_service.ophthalmology_fundus", "gops": ["06333"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.internal.aua_echo.v1", "evidence_kind": "internal_service.aua_echo", "gops": ["33000", "33001", "33002"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.internal.aua_epu.v1", "evidence_kind": "internal_service.aua_epu", "gops": ["06312"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.internal.aua_fag.v1", "evidence_kind": "internal_service.aua_fag", "gops": ["06331"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.internal.aua_pdt.v1", "evidence_kind": "internal_service.aua_pdt", "gops": ["06332"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.internal.aua_peri.v1", "evidence_kind": "internal_service.aua_peri", "gops": ["06330"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.internal.aua_schiel.v1", "evidence_kind": "internal_service.aua_schiel", "gops": ["06320", "06321"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.internal.aua_tws.v1", "evidence_kind": "internal_service.aua_tws", "gops": ["06352"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.internal.aua_lidheber.v1", "evidence_kind": "internal_service.aua_lidheber", "gops": ["06350", "06351", "06352"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.review.lab.pregnancy_test.v1", "evidence_kind": "lab.pregnancy_test", "gops": ["32132"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.review.lab.drug_screen_urine.v1", "evidence_kind": "lab.drug_screen_urine", "gops": ["32292", "32307"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.review.lab.urinalysis.v1", "evidence_kind": "lab.urinalysis", "gops": ["32720"], "valid_from": "2025/Q1", "regions": ["*"]},
-    {"rule_id": "candidate.review.lab.extended_panel.v1", "evidence_kind": "lab.extended_panel", "gops": ["32065", "32069", "32071", "32074", "32092", "32128", "32450"], "valid_from": "2025/Q1", "regions": ["*"]}
+    {
+      "rule_id": "candidate.review.lab.pregnancy_test.v1",
+      "evidence_kind": "lab.pregnancy_test",
+      "gops": [
+        "32132"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.review.lab.drug_screen_urine.v1",
+      "evidence_kind": "lab.drug_screen_urine",
+      "gops": [
+        "32292",
+        "32307"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.review.lab.urinalysis.v1",
+      "evidence_kind": "lab.urinalysis",
+      "gops": [
+        "32720"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.review.lab.extended_panel.v1",
+      "evidence_kind": "lab.extended_panel",
+      "gops": [
+        "32065",
+        "32069",
+        "32071",
+        "32074",
+        "32092",
+        "32128",
+        "32450"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    }
   ],
   "event_sequence_rules": [
     {
       "rule_id": "sequence.notfall.contact.v1",
       "name": "Notfallkontakte im Behandlungsfall",
-      "evidence_kinds": ["context.kv_notfall_zna"],
+      "evidence_kinds": [
+        "context.kv_notfall_zna"
+      ],
       "initial_gop": "01210",
       "subsequent_gop": "01214",
       "session_gap_minutes": 90,
       "initial_role": "initial_contact",
       "subsequent_role": "follow_up_contact",
       "valid_from": "2025/Q1",
-      "regions": ["*"]
+      "regions": [
+        "*"
+      ]
     }
   ],
   "temporal_rules": [
     {
       "rule_id": "time.notfall.initial.v1",
       "name": "Notfall-Erstkontakt",
-      "gops": ["01210", "01212"],
-      "required_context": ["service_date", "service_time"],
+      "gops": [
+        "01210",
+        "01212"
+      ],
+      "required_context": [
+        "service_date",
+        "service_time"
+      ],
       "valid_from": "2025/Q1",
-      "regions": ["*"],
+      "regions": [
+        "*"
+      ],
       "outcomes": [
         {
           "rule_id": "time.notfall.initial.01212.v1",
           "gop": "01212",
-          "when": {"any": [{"special_day": true}, {"time_window": {"start": "07:00", "end": "19:00", "inside": false}}]},
+          "when": {
+            "any": [
+              {
+                "special_day": true
+              },
+              {
+                "time_window": {
+                  "start": "07:00",
+                  "end": "19:00",
+                  "inside": false
+                }
+              }
+            ]
+          },
           "note": "Notfallpauschale II: Wochenende/Feiertag/Sondertag oder außerhalb 07:00-19:00 Uhr."
         },
         {
           "rule_id": "time.notfall.initial.01210.v1",
           "gop": "01210",
-          "when": {"all": [{"special_day": false}, {"time_window": {"start": "07:00", "end": "19:00", "inside": true}}]},
+          "when": {
+            "all": [
+              {
+                "special_day": false
+              },
+              {
+                "time_window": {
+                  "start": "07:00",
+                  "end": "19:00",
+                  "inside": true
+                }
+              }
+            ]
+          },
           "note": "Notfallpauschale I: Werktag von 07:00 Uhr bis vor 19:00 Uhr."
         }
       ]
@@ -119,39 +228,113 @@
     {
       "rule_id": "time.notfall.consultation.v1",
       "name": "Notfall-Konsultation",
-      "gops": ["01214", "01216", "01218"],
-      "required_context": ["service_date", "service_time"],
+      "gops": [
+        "01214",
+        "01216",
+        "01218"
+      ],
+      "required_context": [
+        "service_date",
+        "service_time"
+      ],
       "valid_from": "2025/Q1",
-      "regions": ["*"],
+      "regions": [
+        "*"
+      ],
       "outcomes": [
         {
           "rule_id": "time.notfall.consultation.01216.special.v1",
           "gop": "01216",
-          "when": {"all": [{"special_day": true}, {"time_window": {"start": "07:00", "end": "19:00", "inside": true}}]},
+          "when": {
+            "all": [
+              {
+                "special_day": true
+              },
+              {
+                "time_window": {
+                  "start": "07:00",
+                  "end": "19:00",
+                  "inside": true
+                }
+              }
+            ]
+          },
           "note": "Konsultation im Notfall: Wochenende/Feiertag/Sondertag von 07:00 Uhr bis vor 19:00 Uhr."
         },
         {
           "rule_id": "time.notfall.consultation.01218.special.v1",
           "gop": "01218",
-          "when": {"all": [{"special_day": true}, {"time_window": {"start": "07:00", "end": "19:00", "inside": false}}]},
+          "when": {
+            "all": [
+              {
+                "special_day": true
+              },
+              {
+                "time_window": {
+                  "start": "07:00",
+                  "end": "19:00",
+                  "inside": false
+                }
+              }
+            ]
+          },
           "note": "Konsultation im Notfall: Wochenende/Feiertag/Sondertag außerhalb 07:00-19:00 Uhr."
         },
         {
           "rule_id": "time.notfall.consultation.01216.evening.v1",
           "gop": "01216",
-          "when": {"all": [{"special_day": false}, {"time_window": {"start": "19:00", "end": "22:00", "inside": true}}]},
+          "when": {
+            "all": [
+              {
+                "special_day": false
+              },
+              {
+                "time_window": {
+                  "start": "19:00",
+                  "end": "22:00",
+                  "inside": true
+                }
+              }
+            ]
+          },
           "note": "Konsultation im Notfall: Werktag von 19:00 Uhr bis vor 22:00 Uhr."
         },
         {
           "rule_id": "time.notfall.consultation.01218.night.v1",
           "gop": "01218",
-          "when": {"all": [{"special_day": false}, {"time_window": {"start": "07:00", "end": "22:00", "inside": false}}]},
+          "when": {
+            "all": [
+              {
+                "special_day": false
+              },
+              {
+                "time_window": {
+                  "start": "07:00",
+                  "end": "22:00",
+                  "inside": false
+                }
+              }
+            ]
+          },
           "note": "Konsultation im Notfall: Werktag von 22:00 Uhr bis vor 07:00 Uhr."
         },
         {
           "rule_id": "time.notfall.consultation.01214.v1",
           "gop": "01214",
-          "when": {"all": [{"special_day": false}, {"time_window": {"start": "07:00", "end": "19:00", "inside": true}}]},
+          "when": {
+            "all": [
+              {
+                "special_day": false
+              },
+              {
+                "time_window": {
+                  "start": "07:00",
+                  "end": "19:00",
+                  "inside": true
+                }
+              }
+            ]
+          },
           "note": "Konsultation im Notfall: Werktag von 07:00 Uhr bis vor 19:00 Uhr."
         }
       ]
@@ -159,21 +342,55 @@
     {
       "rule_id": "time.notfall.clarification.v1",
       "name": "Notfall-Abklärung",
-      "gops": ["01205", "01207"],
-      "required_context": ["service_date", "service_time"],
+      "gops": [
+        "01205",
+        "01207"
+      ],
+      "required_context": [
+        "service_date",
+        "service_time"
+      ],
       "valid_from": "2025/Q1",
-      "regions": ["*"],
+      "regions": [
+        "*"
+      ],
       "outcomes": [
         {
           "rule_id": "time.notfall.clarification.01207.v1",
           "gop": "01207",
-          "when": {"any": [{"special_day": true}, {"time_window": {"start": "07:00", "end": "19:00", "inside": false}}]},
+          "when": {
+            "any": [
+              {
+                "special_day": true
+              },
+              {
+                "time_window": {
+                  "start": "07:00",
+                  "end": "19:00",
+                  "inside": false
+                }
+              }
+            ]
+          },
           "note": "Notfallabklärung: Wochenende/Feiertag/Sondertag oder außerhalb 07:00-19:00 Uhr."
         },
         {
           "rule_id": "time.notfall.clarification.01205.v1",
           "gop": "01205",
-          "when": {"all": [{"special_day": false}, {"time_window": {"start": "07:00", "end": "19:00", "inside": true}}]},
+          "when": {
+            "all": [
+              {
+                "special_day": false
+              },
+              {
+                "time_window": {
+                  "start": "07:00",
+                  "end": "19:00",
+                  "inside": true
+                }
+              }
+            ]
+          },
           "note": "Notfallabklärung: Werktag von 07:00 Uhr bis vor 19:00 Uhr."
         }
       ]
@@ -187,27 +404,92 @@
       "evidence_kind": "derived.notfall.severity",
       "insert_after": "01212",
       "valid_from": "2025/Q1",
-      "regions": ["*"],
+      "regions": [
+        "*"
+      ],
       "description": "Schweregradzuschlag bei 01212 und dokumentierter komplexer Beeinträchtigung beziehungsweise altersbezogenem Versorgungsbedarf.",
       "requirements": [
-        {"gop_present": "01212"}
+        {
+          "gop_present": "01212"
+        }
       ],
       "criteria": [
         {
           "label": "gesicherte Demenz-/Alzheimer-/Parkinson-Diagnose",
-          "when": {"icd_prefix_any": ["F00", "F01", "F02", "F03", "G30", "G20.1", "G20.2"]}
+          "when": {
+            "icd_prefix_any": [
+              "F00",
+              "F01",
+              "F02",
+              "F03",
+              "G30",
+              "G20.1",
+              "G20.2"
+            ]
+          }
         },
         {
           "label": "krankheitsbedingt komplexe kognitive, emotionale oder verhaltensbezogene Beeinträchtigung",
-          "when": {"text_any": ["Demenz", "dement", "Alzheimer", "kognitiv", "desorientiert", "orientierungslos", "Delir", "hirnorganisch", "Weglauftendenz", "verhaltens", "Kommunikationsfähigkeit"]}
+          "when": {
+            "text_any": [
+              "Demenz",
+              "dement",
+              "Alzheimer",
+              "kognitiv",
+              "desorientiert",
+              "orientierungslos",
+              "Delir",
+              "hirnorganisch",
+              "Weglauftendenz",
+              "verhaltens",
+              "Kommunikationsfähigkeit"
+            ]
+          }
         },
         {
           "label": "Neugeborenen-/Säuglings-/Kleinkind-Kontext",
-          "when": {"any": [{"age": {"max": 5}}, {"text_any": ["Neugeboren", "Säugling", "Kleinkind"]}]}
+          "when": {
+            "any": [
+              {
+                "age": {
+                  "max": 5
+                }
+              },
+              {
+                "text_any": [
+                  "Neugeboren",
+                  "Säugling",
+                  "Kleinkind"
+                ]
+              }
+            ]
+          }
         },
         {
           "label": "geriatrischer Versorgungsbedarf/Frailty-Kontext ab dem 70. Lebensjahr",
-          "when": {"all": [{"age": {"min": 70}}, {"text_any": ["geriatr", "Frailty", "gebrech", "Ganggeschwindigkeit", "Erschöpfung", "muskuläre Schwäche", "verminderte körperliche Aktivität", "Gewichtsverlust", "kognitiv", "desorientiert"]}]}
+          "when": {
+            "all": [
+              {
+                "age": {
+                  "min": 70
+                }
+              },
+              {
+                "text_any": [
+                  "geriatr",
+                  "Frailty",
+                  "gebrech",
+                  "Ganggeschwindigkeit",
+                  "Erschöpfung",
+                  "muskuläre Schwäche",
+                  "verminderte körperliche Aktivität",
+                  "Gewichtsverlust",
+                  "kognitiv",
+                  "desorientiert"
+                ]
+              }
+            ]
+          }
         }
       ],
       "exclusions": [
@@ -216,17 +498,64 @@
           "action": "review",
           "when": {
             "all": [
-              {"text_any": ["Intoxikation", "Alkohol", "Drogen", "psychotrope Substanz", "substanzbedingt"]},
-              {"not": {"any": [{"icd_prefix_any": ["F00", "F01", "F02", "F03", "G30", "G20.1", "G20.2"]}, {"text_any": ["Demenz", "Alzheimer"]}]}}
+              {
+                "text_any": [
+                  "Intoxikation",
+                  "Alkohol",
+                  "Drogen",
+                  "psychotrope Substanz",
+                  "substanzbedingt"
+                ]
+              },
+              {
+                "not": {
+                  "any": [
+                    {
+                      "icd_prefix_any": [
+                        "F00",
+                        "F01",
+                        "F02",
+                        "F03",
+                        "G30",
+                        "G20.1",
+                        "G20.2"
+                      ]
+                    },
+                    {
+                      "text_any": [
+                        "Demenz",
+                        "Alzheimer"
+                      ]
+                    }
+                  ]
+                }
+              }
             ]
           }
         }
       ],
       "supporting_evidence": {
         "any": [
-          {"evidence_kind": "diagnosis.icd10"},
-          {"evidence_kind": "context.kv_notfall_zna"},
-          {"text_any": ["Demenz", "dement", "Alzheimer", "kognitiv", "desorientiert", "orientierungslos", "Frailty", "geriatr", "Säugling", "Kleinkind"]}
+          {
+            "evidence_kind": "diagnosis.icd10"
+          },
+          {
+            "evidence_kind": "context.kv_notfall_zna"
+          },
+          {
+            "text_any": [
+              "Demenz",
+              "dement",
+              "Alzheimer",
+              "kognitiv",
+              "desorientiert",
+              "orientierungslos",
+              "Frailty",
+              "geriatr",
+              "Säugling",
+              "Kleinkind"
+            ]
+          }
         ]
       }
     }

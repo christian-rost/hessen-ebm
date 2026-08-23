@@ -179,7 +179,9 @@ def test_radiology_hand_forearm_and_wrist_ct_create_billable_evidence():
     assert candidate_gops_for_evidence_kind("radiology.ct_hand_foot") == []
     assert evidence_by_kind["radiology.ct_hand_foot"].service_time == "15:23"
     assert review == []
-    assert excluded == []
+    # Die Untersuchung ist als nativ dokumentiert; der generische Ausschluss haelt
+    # fest, dass daraus kein Kontrastmittelzuschlag entsteht.
+    assert [item.evidence for item in excluded] == ["Kontrastmittelzuschlag"]
 
 
 def test_obstetric_gynecology_pages_create_generic_semantic_evidence():

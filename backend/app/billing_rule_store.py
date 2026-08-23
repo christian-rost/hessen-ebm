@@ -49,7 +49,7 @@ def build_rule_set_row(
 ) -> dict[str, Any]:
     core_payload = billing_rule_set_payload(core_rule_set)
     core_payload["clinical_definitions"] = clinical_definition_set_payload(
-        clinical_definitions or load_clinical_definition_set()
+        clinical_definitions or load_clinical_definition_set(site_path=get_settings().site_definitions_path)
     )
     return {
         "rule_set_key": rule_set_key(compiled),
@@ -135,7 +135,7 @@ def publish_compiled_rule_set(
     client = get_supabase()
     if not client:
         raise RuntimeError("Supabase ist nicht konfiguriert; das Regelwerk kann nicht migriert werden.")
-    core = core_rule_set or load_billing_rule_set()
+    core = core_rule_set or load_billing_rule_set(site_path=get_settings().site_definitions_path)
     key = rule_set_key(compiled)
     run_id = str(uuid4())
     client.table(RULE_COMPILE_RUNS_TABLE).insert(
@@ -212,7 +212,7 @@ def publish_compiled_rule_set(
 @lru_cache(maxsize=16)
 def get_runtime_billing_rule_set(quarter: str | None = None, region: str = "Hessen") -> BillingRuleSet:
     settings = get_settings()
-    local = load_billing_rule_set()
+    local = load_billing_rule_set(site_path=get_settings().site_definitions_path)
     source = settings.billing_rules_source.strip().casefold()
     try:
         client = get_supabase() if source in {"auto", "supabase"} else None
@@ -274,7 +274,7 @@ def get_runtime_clinical_definition_set(
     quarter: str | None = None,
     region: str = "Hessen",
 ) -> ClinicalDefinitionSet:
-    local = load_clinical_definition_set()
+    local = load_clinical_definition_set(site_path=get_settings().site_definitions_path)
     settings = get_settings()
     source = settings.billing_rules_source.strip().casefold()
     if source not in {"auto", "supabase"}:
