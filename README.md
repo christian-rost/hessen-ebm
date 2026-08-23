@@ -201,7 +201,7 @@ Eine Sitzung wird nach absolutem Zeitabstand gebildet, nicht nach Kalendertag. B
 
 ### Vorrang der Zeitregel vor unvollständigen Katalogklauseln
 
-Die aus dem Katalogtext kompilierten `time_window`-Klauseln bilden häufig nur die Uhrzeit-Hälfte einer Bedingung ab, nicht die Alternative „oder an Samstagen, Sonntagen, Feiertagen". Hat eine Zeitregel des Regelwerks die Variante bereits aus Datum, Uhrzeit, Wochentag und Feiertag bestimmt, überstimmt eine solche Klausel diese Entscheidung nicht mehr; sie bleibt als Prüfhinweis an der Position. Die maßgeblichen Regel-Präfixe stehen in `clause_policy.temporal_rule_id_prefixes`.
+Die aus dem Katalogtext kompilierten `time_window`-Klauseln bilden häufig nur die Uhrzeit-Hälfte einer Bedingung ab, nicht die Alternative „oder an Samstagen, Sonntagen, Feiertagen". Hat eine Zeitregel des Regelwerks die Variante bereits aus Datum, Uhrzeit, Wochentag und Feiertag bestimmt, überstimmt eine solche Klausel diese Entscheidung nicht mehr; sie bleibt als Prüfhinweis an der Position. Die Position merkt sich dafür strukturell, welche Zeitregel sie bestimmt hat; eine umbenannte Regel schaltet den Vorrang also nicht stillschweigend ab.
 
 ## Mandantenspezifische Leistungskennungen
 

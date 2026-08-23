@@ -37,6 +37,10 @@ class GopRuleDecision:
     rule_id: str
     notes: tuple[str, ...] = ()
     review_required: bool = False
+    # Gesetzt, wenn eine Zeitregel des Regelwerks die Variante bestimmt hat.
+    # Strukturell statt ueber das Namensmuster der Regel-ID: eine umbenannte
+    # Regel darf die Vorrangpruefung nicht stillschweigend abschalten.
+    temporal_rule_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -202,7 +206,9 @@ def apply_temporal_gop_rule(
                     f"{outcome.gop} korrigiert.",
                     outcome.note,
                 )
-            return GopRuleDecision(outcome.gop, outcome.rule_id, notes)
+            return GopRuleDecision(
+                outcome.gop, outcome.rule_id, notes, temporal_rule_id=temporal_rule.rule_id
+            )
         labels = {"service_date": "Datum", "service_time": "Uhrzeit", "region": "Region"}
         missing_labels = ", ".join(labels.get(field, field) for field in missing)
         return GopRuleDecision(
@@ -213,6 +219,7 @@ def apply_temporal_gop_rule(
                 "die zeitabhängige GOP muss manuell geprüft werden."
             ,),
             review_required=True,
+            temporal_rule_id=temporal_rule.rule_id,
         )
     for outcome in temporal_rule.outcomes:
         if not _matches_condition(outcome.when, facts):
@@ -223,13 +230,14 @@ def apply_temporal_gop_rule(
                 f"Zeitregel {temporal_rule.name}: GOP {normalized} wurde anhand von Datum/Uhrzeit auf {outcome.gop} korrigiert.",
                 outcome.note,
             )
-        return GopRuleDecision(outcome.gop, outcome.rule_id, notes)
+        return GopRuleDecision(outcome.gop, outcome.rule_id, notes, temporal_rule_id=temporal_rule.rule_id)
 
     return GopRuleDecision(
         normalized,
         f"{temporal_rule.rule_id}.unmatched",
         (f"Für die Zeitregel {temporal_rule.name} konnte kein eindeutiges Ergebnis ermittelt werden.",),
         review_required=True,
+        temporal_rule_id=temporal_rule.rule_id,
     )
 
 

@@ -249,7 +249,7 @@ def _evaluate_clause(
                 ADVISORY, f"Zeitbedingung kann ohne Leistungsuhrzeit nicht geprüft werden: {source_text}"
             )
         if not _inside_time_window(item.service_time, parameters):
-            if _decided_by_temporal_rule(item, clause_policy):
+            if item.temporal_rule_id:
                 # Die Zeitregel des Regelwerks hat Datum, Uhrzeit, Wochentag und
                 # Feiertag gemeinsam bewertet und genau diese Variante gewaehlt.
                 # Die kompilierte Klausel bildet davon oft nur das Zeitfenster ab,
@@ -431,13 +431,3 @@ def _advisory_clause_types(clause_policy: Mapping[str, Any] | None) -> set[str]:
 
 def _ignored_clause_types(clause_policy: Mapping[str, Any] | None) -> set[str]:
     return {str(value) for value in (clause_policy or {}).get("ignored_clause_types") or []}
-
-
-def _decided_by_temporal_rule(item: BillingItem, clause_policy: Mapping[str, Any] | None) -> bool:
-    """Wurde die GOP-Variante durch eine Zeitregel des Regelwerks bestimmt?"""
-    prefixes = tuple(
-        str(value) for value in (clause_policy or {}).get("temporal_rule_id_prefixes") or ()
-    )
-    if not prefixes:
-        return False
-    return any(part.startswith(prefixes) for part in str(item.rule_id or "").split("+"))

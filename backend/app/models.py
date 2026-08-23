@@ -83,6 +83,7 @@ class BillingItem(BaseModel):
     temporal_sequence: int | None = None
     temporal_role: str = "service_event"
     temporal_reason: str | None = None
+    temporal_rule_id: str | None = None
     quantity: int = 1
     points: int | None = None
     amount_eur: float | None = None

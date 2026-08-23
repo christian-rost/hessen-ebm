@@ -661,7 +661,7 @@ def _billing_items_from_payload(
         confidence = str(proposal.get("confidence") or "medium").lower()
         if confidence not in {"high", "medium", "low"}:
             confidence = "medium"
-        temporal_rule_suffix = f"+{temporal_decision.rule_id}" if temporal_decision.rule_id.startswith("time.") else ""
+        temporal_rule_suffix = f"+{temporal_decision.rule_id}" if temporal_decision.temporal_rule_id else ""
         sequence_rule_suffix = f"+{event.sequence_rule_id}" if event and event.sequence_rule_id else ""
         catalog_rule_suffix = (
             f"+{catalog_decision.rule_id}" if catalog_decision.rule_id != "catalog.context.noop.v1" else ""
@@ -686,6 +686,7 @@ def _billing_items_from_payload(
                 treatment_episode_id=event.episode_id if event else None,
                 temporal_role=event.temporal_role if event else "service_event",
                 temporal_reason=event.temporal_reason if event else None,
+                temporal_rule_id=temporal_decision.temporal_rule_id,
                 quantity=quantity,
                 points=points,
                 amount_eur=amount,

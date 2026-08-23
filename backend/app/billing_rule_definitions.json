@@ -13,9 +13,6 @@
     ],
     "ignored_clause_types": [
       "reporting"
-    ],
-    "temporal_rule_id_prefixes": [
-      "time."
     ]
   },
   "semantic_policy": {
