@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "rule_set_id": "kbv-ebm-hessen-core",
-  "version": "2027.9",
+  "version": "2027.10",
   "clause_policy": {
     "advisory_clause_types": [
       "quantity_unit",
@@ -38,7 +38,10 @@
     "derivation_passes": 3,
     "_derivation_passes_hinweis": "Vier Laeufe desselben Falls mit derselben Fassung: kein Lauf enthielt alle Sollpositionen, keiner enthielt eine falsche, die Vereinigung traf die Sollmenge genau. Mehrere Durchgaenge kosten Modellaufrufe und heben den Recall; auf 1 gesetzt verhaelt sich die Ableitung wie zuvor.",
     "min_pass_agreement_share": 0.5,
-    "_min_pass_agreement_share_hinweis": "Bis zu welchem Anteil der Ableitungsdurchgaenge eine Position als schwach getragen gilt und zur Pruefung vorgelegt wird. 0.5 heisst: hoechstens die Haelfte der Durchgaenge hat sie vorgeschlagen."
+    "_min_pass_agreement_share_hinweis": "Bis zu welchem Anteil der Ableitungsdurchgaenge eine Position als schwach getragen gilt und zur Pruefung vorgelegt wird. 0.5 heisst: hoechstens die Haelfte der Durchgaenge hat sie vorgeschlagen.",
+    "focused_day_passes": true,
+    "max_candidates_per_day": 60,
+    "_focused_day_passes_hinweis": "Zusaetzlich zu den fallweiten Durchgaengen je Behandlungstag eine eingegrenzte Nachfrage stellen, mit den Belegen und Kandidaten nur dieses Tages. Gemessen: ueber sechs fallweite Durchgaenge lagen zwei Sollpositionen bei 1/6, dafuer waeren rund dreizehn Durchgaenge noetig. Diese Durchgaenge zaehlen nicht in die Zustimmung; was nur sie finden, kommt zur Pruefung."
   },
   "event_settings": {
     "default_session_gap_minutes": 180,

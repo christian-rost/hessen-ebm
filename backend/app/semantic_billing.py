@@ -89,7 +89,11 @@ def generate_semantic_billing_items(
     messages = _build_messages(billing_evidence, candidates, quarter, region)
     rule_set = get_runtime_billing_rule_set(quarter, region)
     payload, attempts, agreement, passes = _derive_over_passes(
-        messages, settings, llm_client, rule_set.semantic_policy
+        messages,
+        settings,
+        llm_client,
+        rule_set.semantic_policy,
+        _focused_day_messages(events, catalog, quarter, region, rule_set.semantic_policy),
     )
 
     items, item_review = _billing_items_from_payload(
@@ -153,6 +157,7 @@ def _derive_over_passes(
     settings: Settings,
     llm_client: LlmClient | None,
     semantic_policy: dict[str, Any],
+    focused_messages: list[tuple[str, list[dict[str, str]]]] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[tuple[str, str | None], int], int]:
     """Mehrfach ableiten und vereinigen.
 
@@ -170,6 +175,18 @@ def _derive_over_passes(
     Position auftrat. Eine Position, die nur einer von vier Durchgaengen kennt,
     ist schwaecher belegt als eine, die alle nennen - das faellt in die
     Konfidenz und damit in die Vorlage zur Pruefung.
+
+    Wiederholung allein reicht allerdings nicht. Ueber sechs Durchgaenge gemessen
+    lagen drei Positionen bei 6/6, zwei aber bei 1/6; fuer die waeren rund
+    dreizehn Durchgaenge noetig, um sie mit 90 Prozent zu treffen. Deshalb gibt es
+    zusaetzlich enger zugeschnittene Durchgaenge - je Behandlungstag, mit den
+    Belegen und Kandidaten nur dieses Tages. Sie muessen den fallweiten
+    Zusammenhang nicht kennen: Erst- und Folgekontakt entscheidet der Server aus
+    Datum und Uhrzeit, nicht das Modell.
+
+    Sie zaehlen bewusst nicht in die Zustimmung. Ein Fund, den nur der enge
+    Durchgang kennt, kommt so mit niedriger Konfidenz zur Pruefung statt als
+    gesicherte Position auf die Rechnung.
     """
     passes = max(1, int(semantic_policy.get("derivation_passes") or 1))
     merged: dict[str, Any] = {"items": [], "documentation_hints": [], "review_candidates": [], "excluded_evidence": []}
@@ -178,7 +195,12 @@ def _derive_over_passes(
     attempts: list[dict[str, Any]] = []
     failures: list[str] = []
 
-    for index in range(1, passes + 1):
+    aufrufe: list[tuple[str, list[dict[str, str]], bool]] = [
+        (f"gesamt-{index}", messages, True) for index in range(1, passes + 1)
+    ]
+    aufrufe += [(f"tag-{tag}", msgs, False) for tag, msgs in (focused_messages or [])]
+
+    for label, call_messages, counts in aufrufe:
         # Je Durchgang einmal zaehlen. Schlaegt dasselbe Modell eine Position
         # innerhalb einer Antwort zweimal vor, ist das keine Bestaetigung durch
         # einen zweiten Durchgang - sonst waere ein Doppelvorschlag so viel wert
@@ -186,15 +208,15 @@ def _derive_over_passes(
         in_diesem_durchgang: set[tuple[str, str | None]] = set()
         try:
             payload, pass_attempts = _request_payload_with_retry(
-                messages, settings, llm_client, semantic_policy
+                call_messages, settings, llm_client, semantic_policy
             )
         except SemanticBillingError as exc:
             # Ein gescheiterter Durchgang macht die anderen nicht wertlos.
             failures.append(str(exc))
-            attempts.append({"pass": index, "status": "failed", "reason": str(exc)})
+            attempts.append({"pass": label, "status": "failed", "reason": str(exc)})
             continue
         for attempt in pass_attempts:
-            attempts.append({**attempt, "pass": index})
+            attempts.append({**attempt, "pass": label})
         for key in merged:
             for raw in _as_list(payload.get(key)):
                 if not isinstance(raw, dict):
@@ -208,7 +230,7 @@ def _derive_over_passes(
                     canonical_gop(str(raw.get("gop") or raw.get("not_billed_gop") or raw.get("evidence") or "")),
                     anchor or None,
                 )
-                if key == "items" and identity not in in_diesem_durchgang:
+                if key == "items" and counts and identity not in in_diesem_durchgang:
                     in_diesem_durchgang.add(identity)
                     agreement[identity] = agreement.get(identity, 0) + 1
                 previous = seen[key].get(identity)
@@ -223,6 +245,56 @@ def _derive_over_passes(
     if not any(merged[key] for key in merged) and failures:
         raise SemanticBillingError(failures[0])
     return merged, attempts, agreement, passes
+
+
+def _focused_day_messages(
+    events: list[BillingEvent],
+    catalog: CatalogRepository,
+    quarter: str,
+    region: str,
+    semantic_policy: dict[str, Any],
+) -> list[tuple[str, list[dict[str, str]]]]:
+    """Je Behandlungstag ein eigener, enger Durchgang.
+
+    Der fallweite Aufruf traegt alle Belege und den ganzen Kandidatenpool. Was
+    darin selten vorkommt, wird selten gefunden: ueber sechs Durchgaenge lagen
+    zwei Sollpositionen bei 1/6. Der enge Durchgang stellt dieselbe Frage noch
+    einmal, aber nur fuer einen Tag - mit den Belegen dieses Tages und den
+    Kandidaten, die aus ihnen stammen.
+
+    Der Tag ist auch hier die Einheit, in der abgerechnet wird. Ein frueherer
+    Versuch schnitt je Leistungsereignis zu und ersetzte den Gesamtaufruf; damit
+    ging der Zusammenhang verloren. Hier kommt der enge Durchgang hinzu, und die
+    Vereinigung nimmt, was er findet.
+    """
+    if not bool(semantic_policy.get("focused_day_passes")):
+        return []
+
+    by_day: dict[str, list[Evidence]] = {}
+    for event in events:
+        if not event.primary_episode or not event.service_date:
+            continue
+        by_day.setdefault(event.service_date, []).extend(event.evidence)
+
+    if len(by_day) < 2:
+        # Bei einem einzigen Tag waere der enge Durchgang eine Kopie des grossen.
+        return []
+
+    limit = semantic_policy.get("max_candidates_per_day")
+    limit = int(limit) if isinstance(limit, (int, float)) else None
+    messages: list[tuple[str, list[dict[str, str]]]] = []
+    for day in sorted(by_day):
+        seen: dict[str, Evidence] = {}
+        for item in by_day[day]:
+            seen.setdefault(item.evidence_id, item)
+        day_evidence = list(seen.values())
+        day_candidates = _collect_catalog_candidates(
+            day_evidence, catalog, quarter, region, max_candidates=limit
+        )
+        if not day_candidates:
+            continue
+        messages.append((day, _build_messages(day_evidence, day_candidates, quarter, region)))
+    return messages
 
 
 def _uncovered_service_days(
@@ -981,13 +1053,27 @@ def _billing_items_from_payload(
             anchor = _clean_optional_str(proposal.get("service_date")) or ",".join(
                 sorted(str(value) for value in _as_list(proposal.get("evidence_ids")))
             )
-            found_in = agreement.get((canonical_gop(gop), anchor or None), 0)
+            # Die Zustimmung ist unter der vorgeschlagenen GOP vermerkt, nicht unter
+            # der zeitlich korrigierten: 01210 wird serverseitig zu 01212, und ein
+            # Nachschlagen unter der korrigierten Nummer trifft ins Leere.
+            proposed_gop = canonical_gop(str(proposal.get("gop") or gop))
+            found_in = agreement.get((proposed_gop, anchor or None), 0)
             # Ab welchem Anteil eine Position als getragen gilt, ist eine fachliche
             # Festlegung und keine Eigenschaft des Codes: Wer lieber mehr vorgelegt
             # bekommt, hebt den Wert im Regelwerk an.
             required_share = semantic_policy.get("min_pass_agreement_share")
             required_share = float(required_share) if isinstance(required_share, (int, float)) else 0.5
-            if found_in and found_in / passes <= required_share:
+            if found_in == 0:
+                # Kein fallweiter Durchgang kannte die Position - sie stammt allein
+                # aus einem tagesbezogenen. Das ist ein Fund, kein Beleg.
+                confidence = "low"
+                validation_status = "review"
+                validation_notes.append(
+                    "Diese Position hat kein fallweiter Ableitungsdurchgang vorgeschlagen, "
+                    "sondern nur die auf einen Behandlungstag eingegrenzte Nachfrage; "
+                    "sie wird deshalb zur Prüfung vorgelegt."
+                )
+            elif found_in / passes <= required_share:
                 confidence = "low"
                 validation_status = "review"
                 validation_notes.append(

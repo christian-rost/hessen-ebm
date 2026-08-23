@@ -1174,3 +1174,60 @@ def test_a_content_gap_next_to_a_real_exclusion_stays_a_review_case():
     kept, review, hints = _split_items_by_catalog_verdict([item], validation)
     assert kept == [] and hints == []
     assert len(review) == 1
+
+
+def test_a_day_focused_pass_adds_findings_but_never_certainty():
+    """Der enge Durchgang darf finden, aber nichts als gesichert ausgeben.
+
+    Über sechs fallweite Durchgänge lagen zwei Sollpositionen bei 1/6 — für 90 %
+    wären rund dreizehn Durchgänge nötig. Der tagesbezogene Durchgang stellt
+    dieselbe Frage mit weniger Material. Was nur er kennt, ist ein Fund und kein
+    Beleg und gehört deshalb zur Prüfung, nicht ungeprüft auf die Rechnung.
+    """
+    tag_eins = ev("context.kv_notfall_zna", service_date="2025-10-04", service_time="00:01")
+    tag_zwei = ev("lab.creatinine", page=7, service_date="2025-10-06", service_time="09:30")
+    gesehen: list[str] = []
+
+    def llm(messages, _settings):
+        inhalt = messages[1]["content"]
+        # Der enge Durchgang trägt nur die Belege eines Tages.
+        nur_tag_zwei = tag_zwei.evidence_id in inhalt and tag_eins.evidence_id not in inhalt
+        gesehen.append("eng" if nur_tag_zwei else "gesamt")
+        if nur_tag_zwei:
+            return {
+                "items": [{
+                    "gop": "32066",
+                    "evidence_ids": [tag_zwei.evidence_id],
+                    "service_date": "2025-10-06",
+                    "confidence": "high",
+                }],
+                "review_candidates": [], "excluded_evidence": [],
+            }
+        return {
+            "items": [{
+                "gop": "01210",
+                "evidence_ids": [tag_eins.evidence_id],
+                "service_date": "2025-10-04",
+                "service_time": "00:01",
+                "confidence": "high",
+            }],
+            "review_candidates": [], "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        [tag_eins, tag_zwei], FakeCatalog(), default_quarter="2025/Q4",
+        settings=settings(), llm_client=llm,
+    )
+
+    assert "eng" in gesehen, "Der tagesbezogene Durchgang hat nicht stattgefunden"
+    gops = [i.gop_original for i in result.items]
+    assert "32066" in gops, "Sein Fund muss in der Vereinigung ankommen"
+
+    fund = next(i for i in result.items if i.gop_original == "32066")
+    assert fund.confidence == "low"
+    assert fund.validation_status == "review"
+    assert any("Behandlungstag eingegrenzte" in note for note in fund.validation_notes)
+
+    # Die fallweit gefundene Position bleibt unangetastet.
+    fallweit = next(i for i in result.items if i.gop_original == "01212")
+    assert fallweit.confidence == "high"
