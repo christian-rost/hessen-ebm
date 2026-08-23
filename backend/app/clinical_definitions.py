@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 
+from .site_definitions import apply_marker_extensions, load_site_definition_set
+
 CLINICAL_DEFINITIONS_PATH = Path(__file__).with_name("clinical_evidence_definitions.json")
 SUPPORTED_SCHEMA_VERSION = 1
 
@@ -25,6 +27,8 @@ class ClinicalDefinitionSet:
     review_rules: tuple[dict[str, Any], ...]
     exclusion_rules: tuple[dict[str, Any], ...]
     selection_extraction: dict[str, Any]
+    clause_facts: dict[str, dict[str, Any]]
+    datetime_extraction: dict[str, Any]
     formats: dict[str, Any]
 
 
@@ -43,6 +47,8 @@ def clinical_definition_set_payload(definitions: ClinicalDefinitionSet) -> dict[
         "review_rules": list(definitions.review_rules),
         "exclusion_rules": list(definitions.exclusion_rules),
         "selection_extraction": definitions.selection_extraction,
+        "clause_facts": definitions.clause_facts,
+        "datetime_extraction": definitions.datetime_extraction,
     }
 
 
@@ -86,17 +92,37 @@ def parse_clinical_definition_set(payload: dict[str, Any]) -> ClinicalDefinition
         review_rules=tuple(review_rules),
         exclusion_rules=tuple(exclusion_rules),
         selection_extraction=_optional_object(payload.get("selection_extraction"), "selection_extraction"),
+        clause_facts=_object_map(payload.get("clause_facts") or {}, "clause_facts"),
+        datetime_extraction=_optional_object(payload.get("datetime_extraction"), "datetime_extraction"),
         formats=dict(payload.get("formats") or {}),
     )
 
 
 @lru_cache(maxsize=4)
-def load_clinical_definition_set(path: str | Path | None = None) -> ClinicalDefinitionSet:
+def load_clinical_definition_set(
+    path: str | Path | None = None,
+    site_path: str | Path | None = None,
+) -> ClinicalDefinitionSet:
     source = Path(path) if path else CLINICAL_DEFINITIONS_PATH
     with source.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
         raise ValueError("Die Evidenzdefinitionen müssen ein JSON-Objekt sein.")
+
+    # Hausinterne Leistungskennungen liegen getrennt und werden hier eingemischt.
+    site = load_site_definition_set(site_path)
+    if not site.empty:
+        payload = dict(payload)
+        payload["evidence_rules"] = apply_marker_extensions(
+            list(payload.get("evidence_rules") or []),
+            site.marker_extensions,
+        ) + list(site.evidence_rules)
+        # Auch die Dokumentklassifikation kann standortspezifische Marker brauchen.
+        payload["segment_classifiers"] = apply_marker_extensions(
+            list(payload.get("segment_classifiers") or []),
+            site.marker_extensions,
+        )
+        payload["version"] = f"{payload.get('version', '')}+site-{site.site_id}-{site.version}"
     return parse_clinical_definition_set(payload)
 
 
@@ -158,3 +184,21 @@ def _required_text(item: dict[str, Any], field: str) -> str:
     if not value:
         raise ValueError(f"Pflichtfeld {field!r} fehlt.")
     return value
+
+
+def kinds_with_flags(definitions: ClinicalDefinitionSet, flags: Any) -> frozenset[str]:
+    """Evidenzarten, deren Definition eines der Merkmale setzt.
+
+    Das Merkmal steht in den Definitionen, nicht in jeder einzelnen Evidenz.
+    Damit greift eine merkmalsbasierte Regel auch dann, wenn eine Evidenz ohne
+    ausgefuellte Metadaten vorliegt.
+    """
+    wanted = {str(flag) for flag in flags}
+    if not wanted:
+        return frozenset()
+    return frozenset(
+        str(rule.get("kind"))
+        for rule in definitions.evidence_rules
+        if any((rule.get("metadata") or {}).get(flag) is True for flag in wanted)
+        and rule.get("kind")
+    )

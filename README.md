@@ -21,8 +21,9 @@ Die Anwendung nimmt ein klinisches PDF entgegen, extrahiert Text/OCR, trennt Dok
   - Datenerfassung
   - sonstige Seiten
 - Evidenzextraktion aus relevanten Segmenten
+- Kandidatensuche über den kompletten Quartalskatalog per FTS5-Volltextindex
 - semantische LLM-Herleitung von GOPs aus Evidenz und Katalogkandidaten
-- datengetriebene, versionierte Regel-Engine als deterministischer Fallback und fachliche Prüfschicht
+- Katalogregeln des Quartals als Abrechnungstor
 - generischer Compiler für sämtliche KBV-Detailtexte, Präambeln, Kapitelregeln, GOP-Bereiche und regionale Regeln
 - versionierte Fachregeln und einzelne Regelklauseln in Supabase
 - Katalogvalidierung gegen SQLite-EBM/Hessen-GOP
@@ -155,6 +156,67 @@ Wichtig: Die aktuelle Katalogdatenbank ist größer als 200 MB. Das mitgeliefert
 
 Das Coolify-Compose bindet keinen festen Host-Port. Das ist Absicht: Coolify routet über die generierte Frontend-Domain zum internen Container-Port `80`. Ein fester Host-Port wie `8080` kann auf Shared-Servern mit anderen Anwendungen kollidieren.
 
+## Ableitung: Retrieval, Semantik, Katalogtor
+
+Die Zuordnung Evidenz -> GOP ist nicht konfiguriert, sondern wird pro Fall aus dem Katalog erarbeitet:
+
+```text
+Patientenakte
+  -> Dokumentsegmente
+  -> Zeitleiste und Leistungsereignisse
+  -> Evidenzen je Segment
+  -> Kandidatensuche im Quartalskatalog (FTS5)
+  -> semantische Zuordnung mit Datum, Uhrzeit, Wochentag, Feiertag, Alter, Diagnose
+  -> Katalogregeln des Quartals als Abrechnungstor
+  -> Rechnungsentwurf mit Sachbearbeiterfreigabe
+```
+
+Die Kandidatensuche nutzt den FTS5-Volltextindex der Katalogdatenbank. Das ist wesentlich, weil klinische Dokumentation und EBM-Legende unterschiedlich formulieren: "Röntgen Thorax 2 Ebenen" gegen "Übersichtsaufnahme der Brustorgane, zwei Ebenen". Eine Substring-Suche findet solche Treffer nicht. Gemessen an den zuvor gepflegten Zuordnungen liegt die Trefferquote der Volltextsuche bei 96 Prozent in den Top 25 gegenüber 68 Prozent zuvor; für den ersten Goldstandardfall sind alle 15 GOPs allein über die Katalogsuche erreichbar. Ohne Index fällt die Suche auf `LIKE` zurück.
+
+Das Abrechnungstor sind die kompilierten Katalogregeln des Leistungsquartals, rund 4.500 Regeln mit rund 10.000 Klauseln. Eine vorgeschlagene GOP wird nur dann zur Position, wenn keine maschinell entscheidbare Klausel verletzt ist:
+
+| Klauselergebnis | Wirkung |
+| --- | --- |
+| Verletzung entscheidbar, z. B. Ausschluss, überschrittene Häufigkeit, Alter außerhalb, Uhrzeit außerhalb, fehlende Voraussetzung | Position entfällt und erscheint als Review-Kandidat mit Begründung |
+| nicht entscheidbar, z. B. Genehmigungsvorbehalt, Mindestdauer, patientenbezogene Häufigkeit über den Fall hinaus | Position bleibt, der Klauseltext hängt als Prüfhinweis daran |
+| ohne Abrechnungsbezug, z. B. Berichtspflicht | wird ignoriert |
+
+Welche Klauseltypen als Hinweis oder als irrelevant gelten, steht in `clause_policy` in `backend/app/billing_rule_definitions.json`, nicht im Code.
+
+Wichtig für die Einordnung: Das Tor greift nur dort, wo der Katalog eine Bedingung maschinell hergibt. Der Compiler stuft jede Regel als `partial` oder `text_only` ein; eine Stufe "vollständig maschinell geprüft" gibt es bewusst nicht. Prosa-Bedingungen aus Präambeln und Allgemeinen Bestimmungen binden deshalb nicht automatisch. Genau deshalb bleibt jeder Entwurf `draft_needs_human_review`.
+
+Ohne `MISTRAL_API_KEY` entstehen keine Rechnungspositionen: die semantische Zuordnung ist der einzige Weg von Evidenz zu GOP. Die Analyse liefert dann Segmente, Zeitleiste und Evidenzen, und der Grund steht in `catalog_context.analysis_warnings`.
+
+## Zeitstempel und Kontaktsequenzen
+
+Die Leistungszeit wird label-unabhängig erkannt. Klinische Dokumentation beschriftet Zeitstempel beliebig — „Notiz vom", „Vitalwerte vom", „CTG-Streifen vom" —, und eine Liste solcher Beschriftungen wäre nie vollständig. Aufgezählt werden deshalb nur die wenigen **administrativen** Beschriftungen, die kein Leistungszeitpunkt sind: Import-, Export-, Druck-, Scan-, Freigabe- und Validierungszeitpunkte sowie Stammdaten. Alles Übrige gilt als dokumentierter Leistungszeitpunkt. Die Konfiguration steht in `datetime_extraction` in `backend/app/clinical_evidence_definitions.json`.
+
+Zurückgeblickt wird nur bis zum vorherigen Zeitstempel, sonst würde dessen Beschriftung dem nächsten Treffer zugerechnet — bei `Importdatum 13:34 Notiz vom 13:19` sonst beiden.
+
+Notfallkontakte werden über ein Merkmal erkannt, nicht über eine Liste von Evidenzarten: Jede Evidenzregel, deren Metadaten `emergency_contact` setzen, gehört zur Kontaktsequenz. Eine neue Evidenzart mit derselben Bedeutung — etwa eine Fachambulanz statt einer ZNA — wird damit erfasst, ohne dass die Sequenzregel geändert werden muss.
+
+### Sitzungen über die Tagesgrenze
+
+Eine Sitzung wird nach absolutem Zeitabstand gebildet, nicht nach Kalendertag. Beginnt ein Notfallkontakt um 23:40 und wird um 00:30 eine Leistung erbracht, ist das **eine** Sitzung: Der Zeitstempel um 00:30 belegt eine Leistung innerhalb der Sitzung, keinen neuen Kontakt. Eine zweite Basispauschale entsteht daraus nicht, auch wenn 00:30 für sich genommen wieder im Nachtfenster liegt. Zwei unabhängige Prüfungen halten das: eine Basispauschale je Sequenzereignis, und eine GOP-Basis je Leistungsereignis.
+
+### Vorrang der Zeitregel vor unvollständigen Katalogklauseln
+
+Die aus dem Katalogtext kompilierten `time_window`-Klauseln bilden häufig nur die Uhrzeit-Hälfte einer Bedingung ab, nicht die Alternative „oder an Samstagen, Sonntagen, Feiertagen". Hat eine Zeitregel des Regelwerks die Variante bereits aus Datum, Uhrzeit, Wochentag und Feiertag bestimmt, überstimmt eine solche Klausel diese Entscheidung nicht mehr; sie bleibt als Prüfhinweis an der Position. Die Position merkt sich dafür strukturell, welche Zeitregel sie bestimmt hat; eine umbenannte Regel schaltet den Vorrang also nicht stillschweigend ab.
+
+## Mandantenspezifische Leistungskennungen
+
+Klinikinterne Leistungscodes stammen aus dem KIS eines Standorts. Sie sind weder aus dem EBM-Katalog noch aus klinischer Sprache ableitbar und stehen deshalb getrennt in `backend/app/site_service_codes.json`:
+
+| Abschnitt | Inhalt |
+| --- | --- |
+| `evidence_rules` | vollständige Evidenzregeln für eigene Leistungscodes, z. B. Leistungsbogen-Kürzel |
+| `marker_extensions` | zusätzliche Marker für bestehende allgemeine Regeln, etwa hausinterne Radiologiecodes in einer Röntgenregel |
+| `candidate_rules` | Zuordnung eigener Evidenzarten zu GOP-Kandidaten |
+
+Beim Laden werden die Standortdefinitionen in das allgemeine Regelwerk eingemischt; die Versionsangabe wird um `+site-<id>-<version>` ergänzt, damit im Regelstatus sichtbar bleibt, welcher Standortstand aktiv ist. Marker werden in jeden passenden Bedingungszweig eingehängt, aber niemals in einen negierten — ein zusätzlicher Marker würde dort die Bedeutung umkehren.
+
+Ein anderer Standort ersetzt ausschließlich diese Datei, per `SITE_DEFINITIONS_PATH`. Fehlt sie, läuft das System ohne Hauscodes weiter; erkannt werden dann nur klinisch formulierte Evidenzen. Ein Architekturtest verhindert, dass Hauscodes in die allgemeinen Regelwerke zurückwandern.
+
 ## Versionierte Fachregeln
 
 Der normale Ableitungspfad ist semantisch:
@@ -173,7 +235,6 @@ Wenn `MISTRAL_API_KEY` fehlt oder die LLM-Antwort nicht valide ist, fällt die A
 
 Das fachliche Regelwerk liegt unter `backend/app/billing_rule_definitions.json`. Es ist vom Python-Code getrennt und enthält:
 
-- direkte Zuordnungen von Evidenzarten zu GOPs
 - unverbindliche Kandidatenregeln für mehrdeutige Evidenz und interne Leistungskennungen
 - zeitabhängige GOP-Gruppen mit beliebig vielen Ergebnisvarianten
 - datengesteuerte Sequenzregeln für Erst- und Folgekontakte
@@ -183,7 +244,11 @@ Das fachliche Regelwerk liegt unter `backend/app/billing_rule_definitions.json`.
 
 Der generische Evaluator unterstützt unter anderem GOP-Voraussetzungen, Evidenzarten, ICD-Präfixe, Volltextmerkmale, Alter, Datum, Uhrzeit, Wochentag, Feiertage, Region, Quartal und strukturierte Metadaten. Weitere Regeln werden als Daten ergänzt; dafür ist keine neue GOP-spezifische Python-Funktion erforderlich. Beide Abrechnungspfade verwenden dasselbe Regelwerk: die deterministische Rechnungserzeugung ebenso wie die Prüfung und Nachbearbeitung der LLM-Vorschläge.
 
-Produktiver Python-Code enthält keine konkreten GOP-Zuordnungen. Direkte Abrechnung, Kandidatenlisten, zeitliche Varianten und Zuschläge werden ausschließlich aus dem versionierten Regelwerk beziehungsweise dem Quartalskatalog geladen. Ein Architekturtest verhindert, dass konkrete GOP-Literale erneut in `backend/app/*.py` eingeführt werden.
+Produktiver Python-Code enthält keine konkreten GOP-Zuordnungen. Direkte Abrechnung, Kandidatenlisten, zeitliche Varianten und Zuschläge werden ausschließlich aus dem versionierten Regelwerk beziehungsweise dem Quartalskatalog geladen. Architekturtests verhindern, dass fachliche Konstanten erneut in `backend/app/**/*.py` eingeführt werden. Geprüft werden GOP-Literale als Text, als vierstellige Kurzform (die der Regelparser auf fünf Stellen auffüllt) und als Zahl, Evidenzart-Literale in den regelausführenden Modulen sowie fest verdrahtete Leistungsquartale.
+
+Auch die Fakten, gegen die Katalogklauseln geprüft werden, sind Daten. Eine kompilierte Klausel vom Typ `requires_<fakt>` wird gegen den Abschnitt `clause_facts` in `backend/app/clinical_evidence_definitions.json` aufgelöst. Ein Fakt gilt als belegt, wenn eine Evidenz das konfigurierte Metadatenflag trägt, ihre Evidenzart gelistet ist oder ein konfigurierter Textmarker vorkommt. Ein neuer Klauseltyp wie `requires_written_report` braucht deshalb nur einen Eintrag in den Definitionen, keine Python-Verzweigung.
+
+Das Leistungsquartal steht nirgends im Code. Es wird aus dem Behandlungsdatum abgeleitet, ersatzweise aus dem Fallkontext übernommen und zuletzt auf den neuesten Snapshot des aktiven Katalogs zurückgeführt. Lässt sich kein Quartal bestimmen, bleibt es leer und die Katalogvalidierung meldet `catalog_missing`, statt still gegen einen festen Katalogstand zu rechnen. `GET /api/catalog/search` verwendet ohne `quarter`-Parameter ebenfalls den neuesten Katalogstand. Der CLI-Importer `hessen_gop_importer.py` verlangt `--quarter` jetzt ausdrücklich, damit ein regionales PDF nicht versehentlich in den falschen Katalogstand importiert wird.
 
 Die zeitliche Regelschicht dedupliziert nicht mehr pauschal fallweit nach GOP. Sie verwendet den Schlüssel aus GOP und Leistungsereignis. Dadurch kann beispielsweise `01786` an zwei verschiedenen Behandlungstagen zweimal vorkommen, während CTG-Start, CTG-Ende, Kurve und Verlaufsnotiz derselben Sitzung nur eine Position erzeugen. Für Kontaktsequenzen gilt zusätzlich: Pro Sequenzereignis entsteht höchstens eine Basispauschale. Eine laufende Notfallsitzung über Mitternacht erzeugt daher keine zweite `01212`; nur ein belegter weiterer Kontakt wird in die passende Folgekonsultations-GOP überführt. Katalogausschlüsse und Häufigkeitsgrenzen werden entsprechend ihrem Geltungsbereich pro Sitzung, Behandlungstag, Behandlungsfall oder Quartal geprüft.
 
@@ -191,32 +256,9 @@ Der Regelcompiler trennt Abrechnungshäufigkeit und Leistungsdauer. Formulierung
 
 Bei `BILLING_RULES_SOURCE=auto` bleiben die aktiven Supabase-Regeln maßgeblich. Neue lokale Kernregeln werden bis zur nächsten Admin-Kompilierung ergänzend eingeblendet, wenn ihre Regel-ID in Supabase noch fehlt. `POST /api/admin/rules/compile` schreibt anschließend das vollständige Kernregelwerk einschließlich der Kandidaten-, Ereignis- und Sequenzregeln nach Supabase.
 
-Aktuell enthält das Regelwerk unter anderem folgende direkte Evidenzzuordnungen:
+Das Regelwerk enthält **keine** Zuordnung von Evidenzarten zu GOPs mehr. Welche GOP zu einer Evidenz passt, entscheidet die Kandidatensuche im Quartalskatalog zusammen mit der semantischen Herleitung. Im Regelwerk stehen nur noch Regeln, die aus dem Katalogtext nicht ableitbar sind: Zeitvarianten, Kontaktsequenzen, Zuschlagsbeziehungen und unverbindliche Kandidatenhinweise für mehrdeutige interne Leistungscodes.
 
-| Evidenz | GOP |
-| --- | --- |
-| KV-Notfall/ZNA | `01210` |
-| CTG / Kardiotokografie | `01786` |
-| Sonografie der mütterlichen Nieren / des Retroperitoneums | `33042` |
-| Quick | `32113` |
-| Kreatinin | `32066` |
-| Natrium | `32083` |
-| Kalium | `32081` |
-| Glucose | `32025` |
-| ALT/GPT | `32070` |
-| Erythrozyten | `32035A` |
-| Leukozyten | `32036A` |
-| Thrombozyten | `32037A` |
-| Hämoglobin | `32038A` |
-| Hämatokrit | `32039A` |
-| Röntgen Thorax/Lunge 2 Ebenen | `34241` |
-| CT Wirbelsäulenabschnitt | `34311` |
-| CT mit Kontrastmittel | `34345` |
-| CT Kopf nativ | `34310` |
-| Röntgen Schulter 2 Ebenen | `34231` |
-| Röntgen HWS 2 Ebenen | `34221` |
-
-Die Zeitvarianten der Notfall-GOPs und der Zuschlag `01226` stehen ebenfalls ausschließlich im versionierten Regelwerk. `GET /api/rules` liefert die Regelwerk-ID und -Version sowie direkte, unverbindliche, zeitabhängige und abgeleitete Regeln.
+`GET /api/rules` liefert die Regelwerk-ID und -Version sowie unverbindliche, zeitabhängige und abgeleitete Regeln.
 
 ## API
 
@@ -224,7 +266,7 @@ Die Zeitvarianten der Notfall-GOPs und der Zuschlag `01226` stehen ebenfalls aus
 | --- | --- |
 | `GET /health` | Healthcheck |
 | `GET /api/catalog/status` | Katalogstatus |
-| `GET /api/catalog/search?q=...&quarter=2025/Q4` | EBM-/Hessen-GOP-Suche |
+| `GET /api/catalog/search?q=...` | EBM-/Hessen-GOP-Volltextsuche; ohne `quarter` der neueste Katalogstand |
 | `GET /api/admin/catalog/status` | Admin-Katalogstatus inklusive Backups |
 | `POST /api/admin/catalog/validate` | SQLite-Katalogdatei nur validieren |
 | `POST /api/admin/catalog/upload` | SQLite-Katalogdatei validieren, Backup anlegen und aktiv ersetzen |
@@ -232,7 +274,7 @@ Die Zeitvarianten der Notfall-GOPs und der Zuschlag `01226` stehen ebenfalls aus
 | `POST /api/admin/catalog/ebm/scrape` | KBV-EBM-Quartal als Hintergrundjob importieren |
 | `GET /api/admin/catalog/jobs/{job_id}` | Status eines Katalog- oder Regeljobs abrufen |
 | `POST /api/admin/rules/compile` | Katalogregeln kompilieren, nach Supabase migrieren und aktivieren |
-| `GET /api/rules` | aktive Regelwerk-Version sowie direkte, zeitabhängige und abgeleitete Regeln |
+| `GET /api/rules` | aktive Regelwerk-Version sowie unverbindliche, zeitabhängige und abgeleitete Regeln |
 | `POST /api/documents/analyze` | PDF hochladen und Rechnungsentwurf erzeugen |
 | `POST /api/documents/analyze/jobs` | PDF-Analyse als Hintergrundjob starten |
 | `GET /api/documents/analyze/jobs/{job_id}` | Status eines Analysejobs abrufen |

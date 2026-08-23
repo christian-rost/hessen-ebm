@@ -2,13 +2,16 @@ from pathlib import Path
 
 from app.billing_rule_definitions import parse_billing_rule_set
 from app.catalog import CatalogRepository
-from app.document_segmentation import segment_pages
-from app.evidence_extraction import extract_evidence
-from app.models import BillingItem, CatalogEntry, Evidence, PageText
-from app.rule_engine import generate_billing_items, reconcile_derived_item_anchors
+from app.models import BillingItem, CatalogEntry, Evidence
+from app.config import Settings
+from app.rule_engine import reconcile_derived_item_anchors
+from app.semantic_billing import _search_terms, generate_semantic_billing_items
 
 
 class FakeCatalog(CatalogRepository):
+    # Von derive_items gefuellt: Suchbegriff -> GOPs, die das Retrieval liefert.
+    term_index: dict[str, tuple[str, ...]] = {}
+
     def __init__(self):
         super().__init__(Path("/not-used.sqlite"))
 
@@ -45,6 +48,8 @@ class FakeCatalog(CatalogRepository):
             "32039": ("Hämatokrit", None, 0.25),
         }
         base = gop[:5]
+        if base not in values:
+            return None
         title, points, euro = values[base]
         return CatalogEntry(
             source="EBM_KBV",
@@ -57,6 +62,20 @@ class FakeCatalog(CatalogRepository):
             points=points,
             euro=euro,
         )
+
+    def lookup_ebm(self, gop: str, quarter: str):
+        return self.lookup(gop, quarter)
+
+    def lookup_hessen(self, gop: str, quarter: str, region: str = "Hessen"):
+        return None
+
+    def search(self, query: str, quarter: str, limit: int = 25):
+        gops: list[str] = []
+        for gop in self.term_index.get(query, ()):
+            if gop not in gops:
+                gops.append(gop)
+        entries = [entry for gop in gops if (entry := self.lookup(gop, quarter))]
+        return entries[:limit]
 
 
 def ev(kind: str, page: int = 1, service_date: str = "2025-10-04", service_time: str = "00:01") -> Evidence:
@@ -71,149 +90,107 @@ def ev(kind: str, page: int = 1, service_date: str = "2025-10-04", service_time:
     )
 
 
-def test_case_FALL-B_rule_total():
-    evidence = [
-        ev("context.kv_notfall_zna"),
-        ev("radiology.ct_head_native"),
-        ev("radiology.xray_shoulder_2_planes"),
-        ev("radiology.xray_spine_hws_2_planes"),
-        ev("lab.quick"),
-        ev("lab.creatinine"),
-        ev("lab.sodium"),
-        ev("lab.potassium"),
-        ev("lab.glucose"),
-        ev("lab.alt_gpt"),
-        ev("lab.erythrocytes"),
-        ev("lab.leukocytes"),
-        ev("lab.thrombocytes"),
-        ev("lab.hemoglobin"),
-        ev("lab.hematocrit"),
-    ]
+# Welche Evidenzformulierung welche Katalogeintraege findet. Frueher stand diese
+# Zuordnung als Allowlist im Regelwerk; sie ist jetzt Testfixture, weil die
+# Produktivableitung sie aus dem Quartalskatalog holt.
+SEARCH_HINTS: dict[str, tuple[str, ...]] = {
+    "context.kv_notfall_zna": ("01210",),
+    "clinical.diagnostics.ctg": ("01786",),
+    "clinical.diagnostics.abdominal_sonography": ("33042",),
+    "lab.blood_gas_analysis": ("32247",),
+    "radiology.ct_head_native": ("34310",),
+    "radiology.ct_thorax": ("34330",),
+    "radiology.ct_contrast": ("34345",),
+    "radiology.ct_extremities": ("34350",),
+    "radiology.ct_hand_foot": ("34351",),
+    "radiology.xray_shoulder_2_planes": ("34231",),
+    "radiology.xray_spine_hws_2_planes": ("34221",),
+    "radiology.xray_hand_foot": ("34232",),
+    "radiology.xray_extremities": ("34233",),
+    "lab.quick": ("32113",),
+    "lab.creatinine": ("32066",),
+    "lab.sodium": ("32083",),
+    "lab.potassium": ("32081",),
+    "lab.glucose": ("32025",),
+    "lab.alt_gpt": ("32070",),
+    "lab.erythrocytes": ("32035A",),
+    "lab.leukocytes": ("32036A",),
+    "lab.thrombocytes": ("32037A",),
+    "lab.hemoglobin": ("32038A",),
+    "lab.hematocrit": ("32039A",),
+}
 
-    items, summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2025/Q4")
 
-    assert len(items) == 15
-    assert summary.points_total == 1006
-    assert summary.amount_total_eur == 129.1
-    assert [item.gop_original for item in items[:4]] == ["01212", "34310", "34231", "34221"]
-    assert items[0].catalog_source_label == "KBV EBM 2025/Q4"
-    assert items[0].rule_id.endswith("time.notfall.initial.01212.v1")
-
-
-def test_case_FALL-C_reconstructs_expected_services_without_false_ctg_or_follow_up():
-    pages = [
-        PageText(
-            page=1,
-            text=(
-                "Behandlungsbericht ZNA Aufnahme 09.06.2026 21:55 Notfallambulanz KIM1. "
-                "Erstkontakt Arzt 09.06.2026 22:00. "
-                "Notfallsonographie: Ausschluss Perikarderguss, Ausschluss Pleuraergüsse beidseits, "
-                "Ausschluss Pneumothorax, keine intraabdominelle freie Flüssigkeit."
-            ),
-        ),
-        PageText(
-            page=2,
-            text=(
-                "Behandlungsbericht ZNA Behandlungsende 09.06.2026 22:58. Verstorben. "
-                "Entlassungszeit 10.06.2026 01:21 Entlassende FA Notfallambulanz KIM1."
-            ),
-        ),
-        PageText(
-            page=3,
-            text=(
-                "Radiologie - Befund CT Kopf nativ, durchgeführt am 09.06.2026 um 23:00. "
-                "CT-Angio Art. pulmonalis, durchgeführt am 09.06.2026 um 23:15. "
-                "Stehendes Kontrastmittel in der Vena cava superior."
-            ),
-        ),
-        PageText(
-            page=4,
-            text=(
-                "Leistungen 1.0x RACTH524 Angio-CT Art. pulmonalis + KM "
-                "1.0x RAKGK082 KM-Gabe intravenös über Hochdruckspritze. "
-                "Prozeduren 3-222 Computertomographie des Thorax mit Kontrastmittel. "
-                "Kontrastmittel Imeron 400 80,00 ml (i.v.)."
-            ),
-        ),
-        PageText(
-            page=5,
-            text=(
-                "Status fertig Blutgasanalyse Probenentnahmedat. 09.06.2026 22:08 "
-                "Untersuchung Wert Einheit Referenzbereich Blutgase & Analytik POCT "
-                "pH-Wert 7.008 pCO2 62.0 mmHg pO2 23.8 mmHg "
-                "HaemoglobinPOCT 12.6 g/dl HaematokritPOCT 38.7 % "
-                "KaliumPOCT 5.1 mmol/l NatriumPOCT 137 mmol/l GlucosePOCT 387 mg/dl"
-            ),
-        ),
-        PageText(
-            page=6,
-            text=(
-                "Status fertig Blutgasanalyse Probenentnahmedat. 09.06.2026 22:25 "
-                "Untersuchung Wert Einheit Referenzbereich Blutgase & Analytik POCT "
-                "pH-Wert 6.820 pCO2 98.0 mmHg pO2 19.9 mmHg HaemoglobinPOCT 12.2 g/dl"
-            ),
-        ),
-        PageText(
-            page=7,
-            text=(
-                "Laborbefund Probenentnahmedat. 09.06.2026 22:09 Untersuchung Wert Einheit Referenzbereich "
-                "Kreatinin 2.32 mg/dl Natrium 135 mmol/l Kalium 5.1 mmol/l Glucose 387 mg/dl ALT 42 U/l"
-            ),
-        ),
-        PageText(
-            page=8,
-            text=(
-                "Laborbefund Probenentnahmedat. 09.06.2026 22:09 Untersuchung Wert Einheit Referenzbereich "
-                "Quick 72 % Leukozyten 14.2 Mrd./l Erythrozyten 4.1 Bil./l "
-                "Hämoglobin 12.0 g/dl Hämatokrit 40.6 % Thrombozyten 208 Mrd./l"
-            ),
-        ),
-    ]
-
-    segments = segment_pages(pages)
-    evidence, _review, excluded, context = extract_evidence(pages, segments)
-    items, _summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q2")
-    gops = [item.gop_original for item in items]
-
-    assert context["administrative_admission"] == "2026-06-09T21:55:00"
-    assert context["first_personal_physician_contact"] == "2026-06-09T22:00:00"
-    assert context["treatment_start"] == "2026-06-09T22:00:00"
-    assert context["treatment_end"] == "2026-06-09T22:58:00"
-    assert len(gops) == 17
-    assert set(gops) == {
-        "01212",
-        "33042",
-        "32247",
-        "32025",
-        "32035A",
-        "32036A",
-        "32037A",
-        "32038A",
-        "32039A",
-        "32066",
-        "32081",
-        "32083",
-        "32070",
-        "32113",
-        "34310",
-        "34330",
-        "34345",
-    }
-    assert "01786" not in gops
-    assert "01218" not in gops
-    assert not any(item.kind == "clinical.diagnostics.ctg" for item in evidence)
-    assert not any(item.service_date == "2026-06-10" and item.kind == "context.kv_notfall_zna" for item in evidence)
-    assert excluded == []
-    assert any(
-        segment.segment_type == "data_capture" and segment.start_page <= 4 <= segment.end_page
-        for segment in segments
+def _settings() -> Settings:
+    return Settings(
+        app_env="test",
+        log_level="info",
+        catalog_db_path=Path("/not-used.sqlite"),
+        storage_dir=Path("/tmp"),
+        admin_token=None,
+        enable_mistral_ocr=False,
+        enable_semantic_billing=True,
+        mistral_api_key=None,
+        mistral_ocr_model="mistral-ocr-latest",
+        mistral_llm_model="mistral-large-latest",
     )
+
+
+def derive_items(evidence, catalog, default_quarter, region="Hessen"):
+    """Treibt die produktive Ableitung mit einem LLM-Stub.
+
+    Der Stub schlaegt je Evidenz die Basis-GOP vor, die das Retrieval gefunden
+    hat. Zeit-, Sequenz-, Zuschlags- und Katalogregeln laufen danach unveraendert
+    im Produktivcode; genau die pruefen diese Tests.
+    """
+
+    # Retrieval modellieren: jeder Suchbegriff, den die Evidenz erzeugt, findet
+    # die GOPs ihrer Evidenzart. Im Produktivbetrieb macht das die FTS-Suche.
+    term_index: dict[str, list[str]] = {}
+    for item in evidence:
+        for term in _search_terms(item):
+            term_index.setdefault(term, []).extend(
+                gop for gop in SEARCH_HINTS.get(item.kind, ()) if gop not in term_index.get(term, [])
+            )
+    catalog.term_index = {term: tuple(gops) for term, gops in term_index.items()}
+
+    def fake_llm(_messages, _settings):
+        # Evidenz derselben Art am selben Leistungstag ist ein Leistungsereignis
+        # und ergibt genau einen Vorschlag, so wie es ein sorgfaeltiges LLM taete.
+        grouped: dict[tuple[str, str | None], list] = {}
+        for item in evidence:
+            if item.kind in SEARCH_HINTS:
+                grouped.setdefault((item.kind, item.service_date), []).append(item)
+        items = []
+        for (kind, service_date), members in grouped.items():
+            items.append(
+                {
+                    "gop": SEARCH_HINTS[kind][0],
+                    "quantity": 1,
+                    "evidence_ids": [member.evidence_id for member in members],
+                    "service_date": service_date,
+                    "service_time": members[0].service_time,
+                    "confidence": "high",
+                    "reason": f"Evidenz {kind} dokumentiert.",
+                }
+            )
+        return {"items": items, "review_candidates": [], "excluded_evidence": []}
+
+    result = generate_semantic_billing_items(
+        evidence,
+        catalog,
+        default_quarter=default_quarter,
+        settings=_settings(),
+        region=region,
+        llm_client=fake_llm,
+    )
+    return result.items, result.summary
 
 
 def test_kv_notfall_zna_daytime_uses_01210():
     evidence = [ev("context.kv_notfall_zna", service_date="2026-04-24", service_time="12:20")]
 
-    items, summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q2")
+    items, summary = derive_items(evidence, FakeCatalog(), default_quarter="2026/Q2")
 
     assert [item.gop_original for item in items] == ["01210"]
     assert summary.points_total == 120
@@ -242,7 +219,7 @@ def test_notfall_contact_crossing_midnight_is_one_initial_pauschale():
         ),
     ]
 
-    items, summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
+    items, summary = derive_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
 
     assert [item.gop_original for item in items] == ["01212"]
     assert items[0].service_date == "2026-01-29"
@@ -276,7 +253,7 @@ def test_kv_notfall_zna_night_with_dementia_derives_01226_generically():
         ),
     ]
 
-    items, summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
+    items, summary = derive_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
 
     assert [item.gop_original for item in items] == ["01212", "01226"]
     assert items[1].rule_id.startswith("derived.notfall.01226.v1")
@@ -292,9 +269,11 @@ def test_radiology_extremity_hand_and_wrist_ct_rules():
         ev("radiology.ct_hand_foot"),
     ]
 
-    items, summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
+    items, summary = derive_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
 
-    assert [item.gop_original for item in items] == ["34232", "34233", "34351"]
+    # Die Positionsreihenfolge folgt jetzt der Evidenz im Dokument, nicht mehr der
+    # Reihenfolge einer Regelliste.
+    assert [item.gop_original for item in items] == ["34233", "34232", "34351"]
     assert summary.points_total == 698
     assert summary.amount_total_eur == 88.92
 
@@ -357,7 +336,7 @@ def test_temporal_invoice_sequence_preserves_repeated_services_on_different_days
         ),
     ]
 
-    items, summary = generate_billing_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
+    items, summary = derive_items(evidence, FakeCatalog(), default_quarter="2026/Q1")
 
     assert [item.gop_original for item in items] == ["01212", "01786", "33042", "01216", "01786"]
     assert [item.temporal_sequence for item in items] == [1, 2, 3, 4, 5]

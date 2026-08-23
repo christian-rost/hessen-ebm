@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+
+from .site_definitions import load_site_definition_set
 
 RULE_DEFINITIONS_PATH = Path(__file__).with_name("billing_rule_definitions.json")
 SUPPORTED_SCHEMA_VERSION = 1
@@ -34,18 +36,6 @@ SUPPORTED_CONDITION_OPERATORS = {
     "quarter_between",
     "metadata",
 }
-
-
-@dataclass(frozen=True)
-class EvidenceRuleDefinition:
-    rule_id: str
-    evidence_kind: str
-    gop: str
-    title_hint: str
-    confidence: str = "high"
-    valid_from: str | None = None
-    valid_to: str | None = None
-    regions: tuple[str, ...] = ("*",)
 
 
 @dataclass(frozen=True)
@@ -85,6 +75,10 @@ class EventSequenceRuleDefinition:
     evidence_kinds: tuple[str, ...]
     initial_gop: str
     subsequent_gop: str
+    # Alternativ zur Aufzaehlung: jede Evidenz, die eines dieser Metadaten-
+    # merkmale traegt, gehoert zur Sequenz. So muss eine neue Evidenzart nicht
+    # in jede Regel nachgetragen werden.
+    evidence_flags: tuple[str, ...] = ()
     session_gap_minutes: int = 90
     initial_role: str = "initial_contact"
     subsequent_role: str = "follow_up_contact"
@@ -128,7 +122,6 @@ class BillingRuleSet:
     schema_version: int
     rule_set_id: str
     version: str
-    evidence_rules: tuple[EvidenceRuleDefinition, ...]
     candidate_rules: tuple[CandidateRuleDefinition, ...]
     temporal_rules: tuple[TemporalRuleDefinition, ...]
     event_sequence_rules: tuple[EventSequenceRuleDefinition, ...]
@@ -136,6 +129,7 @@ class BillingRuleSet:
     event_settings: dict[str, Any]
     calendar_definitions: dict[str, Any]
     semantic_policy: dict[str, Any]
+    clause_policy: dict[str, Any] = field(default_factory=dict)
 
 
 def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
@@ -145,7 +139,6 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
             f"Nicht unterstützte Regelschema-Version {schema_version}; erwartet wird {SUPPORTED_SCHEMA_VERSION}."
         )
 
-    evidence_rules = tuple(_parse_evidence_rule(item) for item in _objects(payload.get("evidence_rules")))
     candidate_rules = tuple(_parse_candidate_rule(item) for item in _objects(payload.get("candidate_rules")))
     temporal_rules = tuple(_parse_temporal_rule(item) for item in _objects(payload.get("temporal_rules")))
     event_sequence_rules = tuple(
@@ -156,7 +149,6 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
         schema_version=schema_version,
         rule_set_id=_required_text(payload, "rule_set_id"),
         version=_required_text(payload, "version"),
-        evidence_rules=evidence_rules,
         candidate_rules=candidate_rules,
         temporal_rules=temporal_rules,
         event_sequence_rules=event_sequence_rules,
@@ -164,6 +156,7 @@ def parse_billing_rule_set(payload: dict[str, Any]) -> BillingRuleSet:
         event_settings=dict(payload.get("event_settings") or {}),
         calendar_definitions=dict(payload.get("calendar_definitions") or {}),
         semantic_policy=dict(payload.get("semantic_policy") or {}),
+        clause_policy=dict(payload.get("clause_policy") or {}),
     )
     _validate_unique_rule_ids(rule_set)
     return rule_set
@@ -175,12 +168,22 @@ def billing_rule_set_payload(rule_set: BillingRuleSet) -> dict[str, Any]:
 
 
 @lru_cache(maxsize=4)
-def load_billing_rule_set(path: str | Path | None = None) -> BillingRuleSet:
+def load_billing_rule_set(
+    path: str | Path | None = None,
+    site_path: str | Path | None = None,
+) -> BillingRuleSet:
     source = Path(path) if path else RULE_DEFINITIONS_PATH
     with source.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
         raise ValueError("Das Regelwerk muss ein JSON-Objekt sein.")
+
+    # Kandidatenregeln fuer hausinterne Leistungscodes kommen aus der Standortdatei.
+    site = load_site_definition_set(site_path)
+    if site.candidate_rules:
+        payload = dict(payload)
+        payload["candidate_rules"] = list(payload.get("candidate_rules") or []) + list(site.candidate_rules)
+        payload["version"] = f"{payload.get('version', '')}+site-{site.site_id}-{site.version}"
     return parse_billing_rule_set(payload)
 
 
@@ -202,19 +205,6 @@ def definition_is_applicable(
     lower = _quarter_index(valid_from) if valid_from else None
     upper = _quarter_index(valid_to) if valid_to else None
     return (lower is None or current >= lower) and (upper is None or current <= upper)
-
-
-def _parse_evidence_rule(item: dict[str, Any]) -> EvidenceRuleDefinition:
-    return EvidenceRuleDefinition(
-        rule_id=_required_text(item, "rule_id"),
-        evidence_kind=_required_text(item, "evidence_kind"),
-        gop=_required_gop(item, "gop"),
-        title_hint=_required_text(item, "title_hint"),
-        confidence=str(item.get("confidence") or "high"),
-        valid_from=_optional_text(item.get("valid_from")),
-        valid_to=_optional_text(item.get("valid_to")),
-        regions=_regions(item),
-    )
 
 
 def _parse_candidate_rule(item: dict[str, Any]) -> CandidateRuleDefinition:
@@ -260,8 +250,13 @@ def _parse_temporal_rule(item: dict[str, Any]) -> TemporalRuleDefinition:
 
 def _parse_event_sequence_rule(item: dict[str, Any]) -> EventSequenceRuleDefinition:
     evidence_kinds = tuple(str(value).strip() for value in _values(item.get("evidence_kinds")) if str(value).strip())
-    if not evidence_kinds:
-        raise ValueError(f"Ereignisregel {_required_text(item, 'rule_id')} enthält keine Evidenzarten.")
+    evidence_flags = tuple(
+        str(value).strip() for value in _values(item.get("evidence_flags", [])) if str(value).strip()
+    )
+    if not evidence_kinds and not evidence_flags:
+        raise ValueError(
+            f"Ereignisregel {_required_text(item, 'rule_id')} enthält weder Evidenzarten noch Evidenzmerkmale."
+        )
     session_gap_minutes = int(item.get("session_gap_minutes") or 90)
     if session_gap_minutes < 1:
         raise ValueError("Der Sitzungsabstand einer Ereignisregel muss mindestens eine Minute betragen.")
@@ -269,6 +264,7 @@ def _parse_event_sequence_rule(item: dict[str, Any]) -> EventSequenceRuleDefinit
         rule_id=_required_text(item, "rule_id"),
         name=_required_text(item, "name"),
         evidence_kinds=evidence_kinds,
+        evidence_flags=evidence_flags,
         initial_gop=_required_gop(item, "initial_gop"),
         subsequent_gop=_required_gop(item, "subsequent_gop"),
         session_gap_minutes=session_gap_minutes,
@@ -314,8 +310,7 @@ def _parse_derived_rule(item: dict[str, Any]) -> DerivedRuleDefinition:
 
 
 def _validate_unique_rule_ids(rule_set: BillingRuleSet) -> None:
-    ids = [rule.rule_id for rule in rule_set.evidence_rules]
-    ids.extend(rule.rule_id for rule in rule_set.candidate_rules)
+    ids = [rule.rule_id for rule in rule_set.candidate_rules]
     ids.extend(rule.rule_id for rule in rule_set.temporal_rules)
     ids.extend(outcome.rule_id for rule in rule_set.temporal_rules for outcome in rule.outcomes)
     ids.extend(rule.rule_id for rule in rule_set.event_sequence_rules)

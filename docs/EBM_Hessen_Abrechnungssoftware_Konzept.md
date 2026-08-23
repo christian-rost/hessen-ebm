@@ -1,6 +1,6 @@
 # Konzept: EBM-/Hessen-GOP-Abrechnungssoftware
 
-Dieses Konzept beschreibt eine Abrechnungssoftware, die aus klinischer Evidenz, z. B. `FALL-A.pdf`, abrechenbare GOP-Kandidaten ableitet, diese gegen den passenden quartalsversionierten EBM- und ggf. regionalen Hessen-GOP-Katalog prüft und daraus eine nachvollziehbare Rechnung erzeugt.
+Dieses Konzept beschreibt eine Abrechnungssoftware, die aus klinischer Evidenz abrechenbare GOP-Kandidaten ableitet, diese gegen den passenden quartalsversionierten EBM- und ggf. regionalen Hessen-GOP-Katalog prüft und daraus eine nachvollziehbare Rechnung erzeugt.
 
 Als technische Referenz wurde das Repository `christian-rost/abrechnungssoftware` auf Branch `codex/goae-mvp` verwendet. Das Referenzprojekt ist ein GOÄ-MVP mit React/Vite-Frontend, FastAPI-Backend, Supabase/Postgres, Redis/Worker-Struktur, Mistral OCR/LLM, Kandidatenworkflow, Regelprüfung, User-Management und Coolify-Docker-Compose-Deployment. Das hier beschriebene System überträgt dieses Muster auf EBM und regionale GOP-Kataloge.
 
@@ -140,7 +140,7 @@ Datenschutz:
 
 ## PDF-Eingangskanal und Dokumentsegmentierung
 
-Der primäre Eingangskanal ist der Upload genau einer PDF-Datei pro Fall oder Vorgang. Diese PDF kann mehrere fachlich unterschiedliche Dokumente enthalten. Im Beispiel `FALL-A.pdf` sind u. a. enthalten:
+Der primäre Eingangskanal ist der Upload genau einer PDF-Datei pro Fall oder Vorgang. Diese PDF kann mehrere fachlich unterschiedliche Dokumente enthalten. In einem typischen ZNA-Fall sind u. a. enthalten:
 
 - Indikationsprüfungen
 - Radiologieanforderungen
@@ -430,9 +430,9 @@ rule_match_ids[]
 candidate_json
 ```
 
-## Beispielregeln aus Fall FALL-A
+## Beispielregeln aus einem Notfallbehandlungsfall
 
-Aus `FALL-A.pdf` und `Rechnung FALL-A.txt` ergeben sich direkt nutzbare Regeln:
+Aus einem ZNA-Behandlungsfall mit zugehöriger technischer Abrechnungsdatei ergeben sich direkt nutzbare Regeln:
 
 | Evidenz | Kandidat | Begründung |
 | --- | --- | --- |
@@ -483,7 +483,7 @@ encounter.region -> region
    Quelle, Regel, Kontext und Sachbearbeiterentscheidung speichern.
 ```
 
-Für Fall `FALL-A`:
+Für einen Behandlungsfall vom 15.10.2025 in Hessen:
 
 ```text
 service_date = 15.10.2025
@@ -533,7 +533,7 @@ Für den MVP sollte der Export als versioniertes Profil modelliert werden:
 export_profile = EBM_KVDT_ADT_LIKE_V1
 ```
 
-Das Profil ist bewusst als Platzhalter benannt, bis das verbindliche Zielsystem und die exakte Spezifikation feststehen. Naheliegend ist ein KVDT-/ADT-artiges Format, weil die vorhandene Datei `Rechnung FALL-A.txt` bereits eine solche feldkennungsbasierte Struktur zeigt.
+Das Profil ist bewusst als Platzhalter benannt, bis das verbindliche Zielsystem und die exakte Spezifikation feststehen. Naheliegend ist ein KVDT-/ADT-artiges Format, weil die vorliegenden technischen Abrechnungsdateien bereits eine solche feldkennungsbasierte Struktur zeigen.
 
 ### Exportstufen
 
@@ -699,7 +699,6 @@ Bestehende lokale Datenquellen:
 | `ebm_kbv.sqlite` | Quelle für `EBM_KBV`-Katalogsnapshots |
 | `scripts/scrape_ebm_kbv.py` | Import/Refresh bundesweiter EBM-Quartale |
 | `scripts/import_hessen_gop_pdf.py` | Import regionaler Hessen-GOP-Kataloge |
-| `Rechnung_FALL-A_Regelableitung.md` | erster Goldstandard/Regelkandidat |
 
 ## Validierung
 
@@ -727,7 +726,7 @@ Metriken:
 | Rule Accuracy | wurden Fehler/Warnungen korrekt erkannt? |
 | Explainability | hat jeder Kandidat Evidenz und Regelbezug? |
 
-Fall `FALL-A` wird erster Goldstandard:
+Der erste Goldstandardfall liefert folgende erwartete GOPs:
 
 ```text
 expected GOPs:
@@ -758,7 +757,7 @@ expected GOPs:
 
 ### Phase 3: Regelbasierte Kandidaten
 
-- Regeldefinitionen für Fall `FALL-A`
+- Regeldefinitionen für den ersten Goldstandardfall
 - Kandidatengenerierung
 - Katalogvalidierung nach Quartal/Region
 - Kandidatenworkflow: annehmen, ablehnen, bearbeiten

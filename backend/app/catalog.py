@@ -68,6 +68,40 @@ def _regional_catalog_label(source_system: str | None, region: str | None, quart
     return " ".join(parts) if parts else f"Regionaler Katalog {quarter}"
 
 
+# Retrieval-Parameter. Rein sprachlich, kein Abrechnungswissen: der Katalog
+# formuliert Legenden ("Übersichtsaufnahme der Brustorgane"), die klinische
+# Dokumentation benutzt andere Worte ("Röntgen Thorax"). Ein Substring-LIKE
+# findet solche Treffer nicht, eine tokenweise Volltextsuche schon.
+FTS_TABLE = "search"
+FTS_MIN_TOKEN_LENGTH = 3
+FTS_STOPWORDS = frozenset(
+    {
+        "als", "am", "an", "auf", "aus", "bei", "das", "dem", "den", "der", "des", "die",
+        "ein", "eine", "einer", "eines", "fuer", "für", "im", "in", "je", "mit", "nach",
+        "oder", "sowie", "und", "von", "vom", "zum", "zur", "über",
+    }
+)
+_FTS_TOKEN_RE = re.compile(r"[0-9A-Za-zÄÖÜäöüß]+")
+
+
+def build_fts_query(query: str) -> str | None:
+    """Freitext in eine FTS5-Abfrage übersetzen.
+
+    Die Tokens werden ODER-verknüpft und als Präfix gesucht. Damit trifft
+    "Röntgen Thorax 2 Ebenen" auch eine Legende, die nur "Ebenen" und
+    "Brustorgane" enthält; bm25 sortiert die beste Überdeckung nach oben.
+    Rückgabe `None`, wenn nichts Brauchbares übrig bleibt.
+    """
+    tokens = [
+        token
+        for token in _FTS_TOKEN_RE.findall(query or "")
+        if len(token) >= FTS_MIN_TOKEN_LENGTH and token.casefold() not in FTS_STOPWORDS
+    ]
+    if not tokens:
+        return None
+    return " OR ".join(f'"{token}"*' for token in dict.fromkeys(tokens))
+
+
 class CatalogRepository:
     def __init__(self, db_path: Path):
         self.db_path = db_path
@@ -125,6 +159,22 @@ class CatalogRepository:
             "snapshots": snapshots,
             "regional_catalogs": regional_catalogs,
         }
+
+    def latest_quarter(self) -> str | None:
+        """Neuestes im aktiven Katalog vorhandenes Quartal.
+
+        Dient als Rückfallebene, wenn sich aus der Evidenz kein Leistungsquartal
+        ableiten lässt. So steht kein fest verdrahtetes Quartal im Code.
+        """
+        if not self.available:
+            return None
+        with self._connect() as conn:
+            if "snapshots" not in self._tables(conn):
+                return None
+            row = conn.execute(
+                "select quarter from snapshots order by quarter desc limit 1"
+            ).fetchone()
+        return str(row["quarter"]) if row and row["quarter"] else None
 
     def lookup_ebm(self, gop: str, quarter: str) -> CatalogEntry | None:
         if not self.available:
@@ -371,6 +421,83 @@ class CatalogRepository:
         ]
         return ", ".join(labels)
 
+    def _fts_ranked_gops(self, conn: sqlite3.Connection, query: str, quarter: str, limit: int) -> list[str]:
+        """GOPs des Quartals nach bm25-Relevanz, beste zuerst. Leer, wenn kein Index da ist."""
+        if FTS_TABLE not in self._tables(conn):
+            return []
+        match = build_fts_query(query)
+        if not match:
+            return []
+        try:
+            rows = conn.execute(
+                f"select gop, bm25({FTS_TABLE}) as score from {FTS_TABLE} "
+                f"where {FTS_TABLE} match ? and quarter = ? order by score limit ?",
+                (match, quarter, limit),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # Beschaedigter oder inkompatibler Index darf die Suche nicht sprengen.
+            return []
+        return list(dict.fromkeys(str(row["gop"]) for row in rows if row["gop"]))
+
+    def _fts_ebm_rows(
+        self,
+        conn: sqlite3.Connection,
+        tables: set[str],
+        detail_columns: set[str],
+        query: str,
+        quarter: str,
+        limit: int,
+    ) -> list[sqlite3.Row]:
+        """EBM-Detailzeilen in bm25-Reihenfolge; leer, wenn der Index nichts liefert."""
+        ranked_gops = self._fts_ranked_gops(conn, query, quarter, limit)
+        if not ranked_gops:
+            return []
+        detail_text_expr = "d.text" if "text" in detail_columns else "null"
+        data_stand_expr = "s.data_stand" if "snapshots" in tables else "null as data_stand"
+        join_expr = "left join snapshots s on s.quarter = d.quarter " if "snapshots" in tables else ""
+        placeholders = ",".join("?" for _ in ranked_gops)
+        fetched = {
+            str(row["gop"]): row
+            for row in conn.execute(
+                f"select d.gop, d.title, d.points, d.euro, {data_stand_expr}, {detail_text_expr} as rule_text "
+                f"from details d {join_expr}"
+                f"where d.quarter = ? and d.gop in ({placeholders})",
+                (quarter, *ranked_gops),
+            )
+        }
+        # Exakte GOP-Eingabe bleibt vorne, sonst gilt die Relevanzreihenfolge.
+        exact = query.strip().upper()
+        ordered = sorted(ranked_gops, key=lambda gop: 0 if gop.upper() == exact else 1)
+        return [fetched[gop] for gop in ordered if gop in fetched]
+
+    def _like_ebm_rows(
+        self,
+        conn: sqlite3.Connection,
+        tables: set[str],
+        detail_columns: set[str],
+        query: str,
+        quarter: str,
+        limit: int,
+    ) -> list[sqlite3.Row]:
+        term = f"%{query.strip()}%"
+        detail_text_expr = "d.text" if "text" in detail_columns else "null"
+        detail_text_filter = " or d.text like ?" if "text" in detail_columns else ""
+        data_stand_expr = "s.data_stand" if "snapshots" in tables else "null as data_stand"
+        join_expr = "left join snapshots s on s.quarter = d.quarter " if "snapshots" in tables else ""
+        params: tuple[Any, ...]
+        if "text" in detail_columns:
+            params = (quarter, term, term, term, query.strip(), f"{query.strip()}%", limit)
+        else:
+            params = (quarter, term, term, query.strip(), f"{query.strip()}%", limit)
+        return conn.execute(
+            f"select d.gop, d.title, d.points, d.euro, {data_stand_expr}, {detail_text_expr} as rule_text "
+            f"from details d {join_expr}"
+            f"where d.quarter = ? and (d.gop like ? or d.title like ?{detail_text_filter}) "
+            "order by case when d.gop = ? then 0 when d.gop like ? then 1 else 2 end, d.gop "
+            "limit ?",
+            params,
+        ).fetchall()
+
     def search(self, query: str, quarter: str, limit: int = 25) -> list[CatalogEntry]:
         if not self.available:
             return []
@@ -378,35 +505,10 @@ class CatalogRepository:
         with self._connect() as conn:
             tables = self._tables(conn)
             detail_columns = self._columns(conn, "details") if "details" in tables else set()
-            detail_text_expr = "d.text" if "text" in detail_columns else "null"
-            detail_text_filter = " or d.text like ?" if "text" in detail_columns else ""
-            if "snapshots" in tables:
-                params: tuple[Any, ...]
-                if "text" in detail_columns:
-                    params = (quarter, term, term, term, query.strip(), f"{query.strip()}%", limit)
-                else:
-                    params = (quarter, term, term, query.strip(), f"{query.strip()}%", limit)
-                ebm_rows = conn.execute(
-                    f"select d.gop, d.title, d.points, d.euro, s.data_stand, {detail_text_expr} as rule_text "
-                    "from details d left join snapshots s on s.quarter = d.quarter "
-                    f"where d.quarter = ? and (d.gop like ? or d.title like ?{detail_text_filter}) "
-                    "order by case when d.gop = ? then 0 when d.gop like ? then 1 else 2 end, d.gop "
-                    "limit ?",
-                    params,
-                ).fetchall()
-            else:
-                if "text" in detail_columns:
-                    params = (quarter, term, term, term, query.strip(), f"{query.strip()}%", limit)
-                else:
-                    params = (quarter, term, term, query.strip(), f"{query.strip()}%", limit)
-                ebm_rows = conn.execute(
-                    f"select d.gop, d.title, d.points, d.euro, null as data_stand, {detail_text_expr} as rule_text "
-                    "from details d "
-                    f"where d.quarter = ? and (d.gop like ? or d.title like ?{detail_text_filter}) "
-                    "order by case when d.gop = ? then 0 when d.gop like ? then 1 else 2 end, d.gop "
-                    "limit ?",
-                    params,
-                ).fetchall()
+            # Bevorzugt der Volltextindex, sonst das bisherige LIKE.
+            ebm_rows = self._fts_ebm_rows(conn, tables, detail_columns, query, quarter, limit)
+            if not ebm_rows:
+                ebm_rows = self._like_ebm_rows(conn, tables, detail_columns, query, quarter, limit)
             regional_rows = []
             if "regional_gops" in tables:
                 regional_columns = self._columns(conn, "regional_gops")

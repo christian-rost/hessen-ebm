@@ -9,7 +9,8 @@ from .billing_rule_definitions import (
     EventSequenceRuleDefinition,
     definition_is_applicable,
 )
-from .billing_rule_store import get_runtime_billing_rule_set
+from .billing_rule_store import get_runtime_billing_rule_set, get_runtime_clinical_definition_set
+from .clinical_definitions import kinds_with_flags
 from .models import BillingItem, Evidence
 
 
@@ -56,6 +57,7 @@ def build_billing_events(
         for rule in sequence_rules
         for kind in rule.evidence_kinds
     }
+    flag_rules = [(frozenset(rule.evidence_flags), rule) for rule in sequence_rules if rule.evidence_flags]
 
     events: list[BillingEvent] = []
     by_kind: dict[str, list[Evidence]] = {}
@@ -63,7 +65,19 @@ def build_billing_events(
         by_kind.setdefault(item.kind, []).append(item)
 
     for kind, matches in by_kind.items():
-        gap = rule_by_kind.get(kind).session_gap_minutes if kind in rule_by_kind else default_session_gap
+        sequence_rule = rule_by_kind.get(kind)
+        if sequence_rule is None and flag_rules:
+            present = frozenset().union(*(evidence_flags(item) for item in matches)) if matches else frozenset()
+            clinical = get_runtime_clinical_definition_set()
+            sequence_rule = next(
+                (
+                    rule
+                    for wanted, rule in flag_rules
+                    if (present & wanted) or kind in kinds_with_flags(clinical, wanted)
+                ),
+                None,
+            )
+        gap = sequence_rule.session_gap_minutes if sequence_rule else default_session_gap
         for cluster in _cluster_evidence(matches, gap, definitions.event_settings):
             selected = _select_event_anchor(cluster, definitions.event_settings)
             events.append(
@@ -187,14 +201,38 @@ def _same_session(
     return abs((item_datetime - anchor_datetime).total_seconds()) <= gap_minutes * 60
 
 
+def evidence_flags(item: Evidence) -> frozenset[str]:
+    """Metadatenmerkmale einer Evidenz, z. B. `emergency_contact`."""
+    metadata = item.metadata if isinstance(item.metadata, dict) else {}
+    return frozenset(str(key) for key, value in metadata.items() if value is True)
+
+
+def event_matches_sequence(event: BillingEvent, rule: EventSequenceRuleDefinition) -> bool:
+    """Gehoert das Ereignis zur Kontaktsequenz?
+
+    Entweder ist seine Evidenzart ausdruecklich genannt, oder eine seiner
+    Evidenzen traegt eines der geforderten Merkmale. Das Merkmal ist der
+    generische Weg: eine neue Evidenzart, die denselben Sachverhalt bedeutet,
+    wird damit erfasst, ohne dass die Regel geaendert werden muss.
+    """
+    if event.kind in rule.evidence_kinds:
+        return True
+    if not rule.evidence_flags:
+        return False
+    wanted = frozenset(rule.evidence_flags)
+    if event.kind in kinds_with_flags(get_runtime_clinical_definition_set(), wanted):
+        return True
+    return any(evidence_flags(item) & wanted for item in event.evidence)
+
+
 def _apply_sequence_rule(events: list[BillingEvent], rule: EventSequenceRuleDefinition) -> None:
-    episode_ids = {event.episode_id for event in events if event.kind in rule.evidence_kinds}
+    episode_ids = {event.episode_id for event in events if event_matches_sequence(event, rule)}
     for episode_id in episode_ids:
         matching = sorted(
             (
                 event
                 for event in events
-                if event.kind in rule.evidence_kinds and event.episode_id == episode_id
+                if event_matches_sequence(event, rule) and event.episode_id == episode_id
             ),
             key=_event_sort_key,
         )
@@ -239,11 +277,13 @@ def _assign_episodes(
         else:
             episodes.append([event])
 
-    billable_kinds = {rule.evidence_kind for rule in rule_set.evidence_rules}
+    # Frueher wurde nach "wie viele Ereignisse sind abrechenbar" sortiert. Mit dem
+    # Wegfall der Allowlist ist das vor der Katalogpruefung nicht mehr bekannt;
+    # massgeblich sind jetzt Umfang und Belegdichte des Behandlungsabschnitts.
     ranked = sorted(
         enumerate(episodes),
         key=lambda value: (
-            sum(event.kind in billable_kinds for event in value[1]),
+            len(value[1]),
             len({page for event in value[1] for page in event.evidence_pages}),
             -value[0],
         ),

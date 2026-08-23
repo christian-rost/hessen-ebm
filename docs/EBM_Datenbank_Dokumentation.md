@@ -81,7 +81,6 @@ Aktuell enthaltene regionale Zusatzkataloge:
 | `scripts/scrape_ebm_kbv.py` | Wiederverwendbarer Scraper zum Import weiterer Quartale |
 | `scripts/import_hessen_gop_pdf.py` | Importer fuer hessenspezifische GOP-PDFs in regionale Tabellen |
 | `EBM_Hessen_Abrechnungssoftware_Konzept.md` | Zielkonzept fuer PDF-Upload, Mistral-OCR, Dokumentsegmentierung, Evidenzsuche, EBM/Hessen-GOP-Ableitung und Standardexport |
-| `Rechnung_FALL-A_Regelableitung.md` | Aus dem Beispielbehandlungsfall abgeleitete erste Abrechnungsregeln |
 | `ebm_kbv_pre_versioning_backup.sqlite` | Sicherung des alten nicht-versionierten Stands |
 | `ebm_kbv_before_2025Q4_import.sqlite` | Sicherung des versionierten Stands vor Import von `2025/Q4` |
 | `ebm_kbv_before_hessen_gop_import.sqlite` | Sicherung vor dem Import der hessenspezifischen GOP |

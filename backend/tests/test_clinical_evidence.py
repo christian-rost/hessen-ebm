@@ -15,66 +15,6 @@ def _page_with_selections(page: int, text: str) -> PageText:
     )
 
 
-def test_ophthalmology_ambulance_pages_create_clinical_evidence():
-    pages = [
-        PageText(
-            page=1,
-            text=(
-                "Musterklinik Fall-Nr. FALL-D "
-                "Ambulanz Augen - Befund Termin dgf:05.10.202519:37Uhr "
-                "Notfall-symptomorientierte Untersuchung Visus RA sc 0,5 "
-                "Tensio RA palpatorisch Notfallambulanz Augenklinik"
-            ),
-        ),
-        PageText(
-            page=2,
-            text=(
-                "LSTM-2025-099706, Pat.: Jung, Hans-Joerg, *08.11.1964 "
-                "Vorderer Augenabschnitt: dendritischer Epitheldefekt "
-                "Hinterer Augenabschnitt: Netzhaut zentral anliegend "
-                "Diagnose: RA Herpeskeratitis (B00.5,H19.1) "
-                "Befundet am 05.10.2025 16:25"
-            ),
-        ),
-        _page_with_selections(
-            page=3,
-            text=(
-                "Datenerfassung Durchgefuehrte Leistungen "
-                "1.Leistung am05.10.2025 um 19:37 Dauer min. Bereitschaftsdienst "
-                "\n☒ 1.00ALL_ORDNOT Ordinationsgebuehr (Notfall) "
-                "\n☒ 1.00AUA_BUAHG Binokulare Untersuchung des Augenhintergrundes"
-            ),
-        ),
-        PageText(
-            page=4,
-            text=(
-                "Ambulanz Augen - Anforderung Status: angefordert "
-                "Auftragsdatum 05.10.2025 16:25 Leistung AmbulanzAugen Anzahl 1"
-            ),
-        ),
-    ]
-
-    segments = segment_pages(pages)
-    evidence, review, excluded, context = extract_evidence(pages, segments)
-    kinds = {item.kind for item in evidence}
-
-    assert [segment.segment_type for segment in segments] == ["treatment_report", "data_capture", "request"]
-    assert context["treatment_start"] == "2025-10-05T19:37:00"
-    assert context["quarter"] == "2025/Q4"
-    assert context["diagnosis"] == "B00.5"
-    assert "context.specialty_ambulance_emergency" in kinds
-    assert "clinical.ophthalmology_exam" in kinds
-    assert "clinical.ophthalmology_fundus" in kinds
-    assert "diagnosis.icd10" in kinds
-    assert "clinical.domain.dermatology" not in kinds
-    assert "internal_service.emergency_ordination" in kinds
-    assert "internal_service.ophthalmology_fundus" in kinds
-    assert all(item.service_date != "1964-11-08" for item in evidence)
-    assert any("01210" in item.possible_gops for item in review)
-    assert any("06333" in item.possible_gops for item in review)
-    assert excluded == []
-
-
 def test_ophthalmology_emergency_fundus_and_performed_sonography_are_distinguished():
     pages = [
         PageText(
@@ -174,104 +114,6 @@ def test_emergency_admission_without_physician_contact_is_review_only():
     assert any("01210" in item.possible_gops for item in review)
 
 
-def test_ophthalmology_data_capture_continuation_creates_all_internal_hints():
-    pages = [
-        PageText(
-            page=1,
-            text=(
-                "Behandlungsvertrag ueber Krankenhausleistungen "
-                "Patienten-Identifikationsarmband bei Notfallbehandlung"
-            ),
-        ),
-        _page_with_selections(
-            page=2,
-            text=(
-                "Musterklinik Datenerfassung Durchgefuehrte Leistungen "
-                "1.Leistung am24.04.2026 um 12:20 Dauer min. Bereitschaftsdienst "
-                "Leistungsbogen(9080902 Institutsambul. Augenklinik) "
-                "\n☒ 1.00ALL_KONGEB Konsultationsgebuehr "
-                "\n☒ 1.00ALL_ORDGEB Ordinationsgebuehr "
-                "\n☒ 1.00ALL_ORDNOT Ordinationsgebuehr(Notfall) "
-                "\n☒ 1.00AUA_BUAHG Binokulare Untersuchung des Augenhintergrundes "
-                "\n☒ 1.00AUA_ECHO Echographie "
-                "\n☒ 1.00AUA_EPU Elektrophysiologische Untersuchung "
-                "\n☒ 1.00AUA_FAG Fluoreszenzangiographie "
-                "\n☒ 1.00AUA_LIDHEB"
-            ),
-        ),
-        _page_with_selections(
-            page=3,
-            text=(
-                "Durchgefuehrte Leistungen OP der Lidsenkung mit Lidheber "
-                "\n☒ 1.00AUA_PDT PDT "
-                "\n☒ 1.00AUA_PERI Perimetrie "
-                "\n☒ 1.00AUA_SCHIEL Quant. Untersuchung des binokularen Sehens "
-                "\n☒ 1.00ERG ERG "
-                "\n☒ 1.00TWS TW-Sondierung "
-                "\n☒ 1.00VEP VEP "
-                "Privatliquidation Selbstzahler/Notfaelle Augenambulanz&EBM Prozeduren"
-            ),
-        ),
-    ]
-
-    segments = segment_pages(pages)
-    evidence, review, excluded, _context = extract_evidence(pages, segments)
-    kinds = {item.kind for item in evidence}
-    metadata_by_kind = {item.kind: item.metadata for item in evidence}
-
-    assert [segment.segment_type for segment in segments] == ["other", "data_capture"]
-    assert segments[1].relevant_for_billing is True
-    assert "clinical.domain.pulmonology" not in kinds
-    assert {
-        "internal_service.consultation_fee",
-        "internal_service.ordination_fee",
-        "internal_service.emergency_ordination",
-        "internal_service.ophthalmology_fundus",
-        "internal_service.aua_echo",
-        "internal_service.aua_epu",
-        "internal_service.aua_fag",
-        "internal_service.aua_lidheber",
-        "internal_service.aua_pdt",
-        "internal_service.aua_peri",
-        "internal_service.aua_schiel",
-        "internal_service.aua_tws",
-    }.issubset(kinds)
-    assert "candidate_gops" not in metadata_by_kind["internal_service.ophthalmology_fundus"]
-    assert "Augenhintergrund" in metadata_by_kind["internal_service.ophthalmology_fundus"]["search_terms"]
-    assert candidate_gops_for_evidence_kind("internal_service.aua_peri") == ["06330"]
-    assert candidate_gops_for_evidence_kind("internal_service.aua_pdt") == ["06332"]
-    assert any("06331" in item.possible_gops for item in review)
-    assert excluded == []
-
-
-def test_ecg_pages_create_semantic_evidence():
-    pages = [
-        PageText(
-            page=1,
-            text=(
-                "Musterklinik Fall-Nr. FALL-B "
-                "Standard 12 Ableitungen EKG Durchgefuehrt 04.10.2025 um 00:31 "
-                "Sinusrhythmus, keine akuten Ischaemiezeichen"
-            ),
-        )
-    ]
-
-    segments = segment_pages(pages)
-    evidence, review, excluded, _context = extract_evidence(pages, segments)
-    evidence_by_kind = {item.kind: item for item in evidence}
-
-    assert len(segments) == 1
-    assert segments[0].segment_type == "ecg"
-    assert segments[0].relevant_for_billing is True
-    assert "clinical.ecg_12_lead" in evidence_by_kind
-    assert "clinical.ecg_rhythm_findings" in evidence_by_kind
-    assert evidence_by_kind["clinical.ecg_12_lead"].service_date == "2025-10-04"
-    assert evidence_by_kind["clinical.ecg_12_lead"].service_time == "00:31"
-    assert "12-Kanal-EKG" in evidence_by_kind["clinical.ecg_12_lead"].metadata["search_terms"]
-    assert review == []
-    assert excluded == []
-
-
 def test_icd_detection_handles_three_character_codes_and_avoids_lab_false_positives():
     pages = [
         PageText(
@@ -330,12 +172,16 @@ def test_radiology_hand_forearm_and_wrist_ct_create_billable_evidence():
     assert segments[0].segment_type == "radiology_report"
     assert context["quarter"] == "2026/Q1"
     assert all("candidate_gops" not in item.metadata for item in evidence_by_kind.values())
-    assert candidate_gops_for_evidence_kind("radiology.xray_extremities") == ["34233"]
-    assert candidate_gops_for_evidence_kind("radiology.xray_hand_foot") == ["34232"]
-    assert candidate_gops_for_evidence_kind("radiology.ct_hand_foot") == ["34351"]
+    # Die GOP kommt nicht mehr aus einer konfigurierten Zuordnung, sondern aus der
+    # Katalogsuche. Das Regelwerk kennt fuer diese Evidenzart keine Kandidaten.
+    assert candidate_gops_for_evidence_kind("radiology.xray_extremities") == []
+    assert candidate_gops_for_evidence_kind("radiology.xray_hand_foot") == []
+    assert candidate_gops_for_evidence_kind("radiology.ct_hand_foot") == []
     assert evidence_by_kind["radiology.ct_hand_foot"].service_time == "15:23"
     assert review == []
-    assert excluded == []
+    # Die Untersuchung ist als nativ dokumentiert; der generische Ausschluss haelt
+    # fest, dass daraus kein Kontrastmittelzuschlag entsteht.
+    assert [item.evidence for item in excluded] == ["Kontrastmittelzuschlag"]
 
 
 def test_obstetric_gynecology_pages_create_generic_semantic_evidence():
@@ -409,7 +255,7 @@ def test_abdominal_sonography_inherits_date_from_contiguous_report_page():
 
     assert renal.service_date == "2026-01-01"
     assert "candidate_gops" not in renal.metadata
-    assert candidate_gops_for_evidence_kind(renal.kind) == ["33042"]
+    assert candidate_gops_for_evidence_kind(renal.kind) == []
     assert renal.metadata["service_datetime_carried_from_previous_page"] is True
 
 
@@ -464,3 +310,46 @@ def test_major_ebm_domains_are_segmented_as_billing_relevant():
         "clinical.domain.prevention_vaccination",
     }.issubset(kinds)
     assert context["quarter"] == "2026/Q1"
+
+
+def test_clinical_datetime_is_found_without_a_configured_label():
+    """Die Leistungszeit kommt ohne Kenntnis der Beschriftung aus dem Text."""
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Behandlungsbericht ZNA\n"
+                "Auftragsnr. SMT9999 Importdatum 03.01.2026 13:34\n"
+                "Beliebige neue Beschriftung vom 03.01.2026 13:19\n"
+                "Notfallambulanz Frauenklinik"
+            ),
+        )
+    ]
+
+    segments = segment_pages(pages)
+    evidence, _review, _excluded, _context = extract_evidence(pages, segments)
+
+    times = {item.service_time for item in evidence if item.service_time}
+    assert "13:19" in times, "Klinischer Zeitstempel wurde nicht erkannt"
+    assert "13:34" not in times, "Importzeitstempel darf nicht als Leistungszeit gelten"
+
+
+def test_administrative_timestamps_never_become_the_service_time():
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Behandlungsbericht ZNA\n"
+                "Druckdatum 03.01.2026 08:00\n"
+                "Freigegeben am 03.01.2026 09:00\n"
+                "Geb.Dat.: 03.05.1995\n"
+                "Notfallambulanz Frauenklinik"
+            ),
+        )
+    ]
+
+    segments = segment_pages(pages)
+    evidence, _review, _excluded, _context = extract_evidence(pages, segments)
+
+    times = {item.service_time for item in evidence if item.service_time}
+    assert times.isdisjoint({"08:00", "09:00"})

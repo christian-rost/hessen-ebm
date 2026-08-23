@@ -25,7 +25,6 @@ import pdfplumber
 
 DEFAULT_SOURCE_SYSTEM = "KV_HESSEN_GOP"
 DEFAULT_REGION = "Hessen"
-DEFAULT_QUARTER = "2025/Q4"
 DEFAULT_CATALOG_ID = "kv_hessen_gop_2025_q4"
 BULLET = "\uf0a7"
 EURO = "\u20ac"
@@ -48,7 +47,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--catalog-id", default=DEFAULT_CATALOG_ID)
     parser.add_argument("--source-system", default=DEFAULT_SOURCE_SYSTEM)
     parser.add_argument("--region", default=DEFAULT_REGION)
-    parser.add_argument("--quarter", default=DEFAULT_QUARTER)
+    parser.add_argument("--quarter", required=True, help="Leistungsquartal des PDF-Katalogs, z. B. 2026/Q3")
     parser.add_argument("--replace", action="store_true", help="Replace an existing matching catalog")
     args = parser.parse_args(argv)
 

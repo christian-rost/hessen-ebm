@@ -28,6 +28,8 @@ class Settings:
     supabase_key: str | None = None
     supabase_schema: str = "public"
     billing_rules_source: str = "auto"
+    # Pfad zu den mandantenspezifischen Leistungskennungen. Leer = gebündelte Datei.
+    site_definitions_path: Path | None = None
 
 
 @lru_cache
@@ -41,6 +43,9 @@ def get_settings() -> Settings:
         supabase_key=os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY") or None,
         supabase_schema=os.getenv("SUPABASE_SCHEMA", "public"),
         billing_rules_source=os.getenv("BILLING_RULES_SOURCE", "auto"),
+        site_definitions_path=(
+            Path(os.environ["SITE_DEFINITIONS_PATH"]) if os.getenv("SITE_DEFINITIONS_PATH") else None
+        ),
         admin_token=os.getenv("ADMIN_TOKEN") or None,
         enable_mistral_ocr=_as_bool(os.getenv("ENABLE_MISTRAL_OCR"), False),
         enable_semantic_billing=_as_bool(os.getenv("ENABLE_SEMANTIC_BILLING"), True),

@@ -1,0 +1,644 @@
+{
+  "schema_version": 1,
+  "site_id": "varisano-hessen",
+  "version": "2026.1",
+  "description": "Hausinterne Leistungskennungen eines Standorts. Nicht aus EBM-Katalog oder klinischer Sprache ableitbar; bei einem anderen KIS wird ausschliesslich diese Datei ersetzt.",
+  "evidence_rules": [
+    {
+      "rule_id": "evidence.internal.consultation_fee.v1",
+      "kind": "internal_service.consultation_fee",
+      "label": "Interner Hinweis Konsultationsgebühr",
+      "confidence": 0.64,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Konsultationsgebühr",
+      "search_terms": [
+        "Konsultationspauschale"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "ALL_KONGEB"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    },
+    {
+      "rule_id": "evidence.internal.ordination_fee.v1",
+      "kind": "internal_service.ordination_fee",
+      "label": "Interner Hinweis Ordinationsgebühr",
+      "confidence": 0.66,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Ordinationsgebühr",
+      "search_terms": [
+        "Augenärztliche Grundpauschale",
+        "Grundpauschale Augen"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "ALL_ORDGEB"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    },
+    {
+      "rule_id": "evidence.internal.emergency_ordination.v1",
+      "kind": "internal_service.emergency_ordination",
+      "label": "Interner Hinweis Ordinationsgebühr Notfall",
+      "confidence": 0.7,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Ordinationsgebühr Notfall",
+      "search_terms": [
+        "Notfallpauschale",
+        "Notfall",
+        "Ordinationsgebühr",
+        "Grundpauschale"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "ALL_ORDNOT"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    },
+    {
+      "rule_id": "evidence.internal.ophthalmology_fundus.v1",
+      "kind": "internal_service.ophthalmology_fundus",
+      "label": "Interner Hinweis Augenhintergrund",
+      "confidence": 0.68,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält binokulare Untersuchung des Augenhintergrundes",
+      "search_terms": [
+        "Augenhintergrund",
+        "Fundus",
+        "Binokulare Untersuchung des Augenhintergrundes"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "AUA_BUAHG"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    },
+    {
+      "rule_id": "evidence.internal.aua_echo.v1",
+      "kind": "internal_service.aua_echo",
+      "label": "Interner Hinweis Echographie Auge",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Echographie",
+      "search_terms": [
+        "Sonographie des Auges",
+        "Ultraschall-Biometrie des Auges",
+        "Ultraschall-Pachymetrie"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "AUA_ECHO"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    },
+    {
+      "rule_id": "evidence.internal.aua_epu.v1",
+      "kind": "internal_service.aua_epu",
+      "label": "Interner Hinweis elektrophysiologische Untersuchung",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält elektrophysiologische Augen-Diagnostik",
+      "search_terms": [
+        "Elektrophysiologische Untersuchung",
+        "Elektroretinographie",
+        "VEP"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "AUA_EPU",
+                "ERG",
+                "VEP"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    },
+    {
+      "rule_id": "evidence.internal.aua_fag.v1",
+      "kind": "internal_service.aua_fag",
+      "label": "Interner Hinweis Fluoreszenzangiographie",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Fluoreszenzangiographie",
+      "search_terms": [
+        "Fluoreszenzangiographie",
+        "Angiographie Auge"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "AUA_FAG"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    },
+    {
+      "rule_id": "evidence.internal.aua_pdt.v1",
+      "kind": "internal_service.aua_pdt",
+      "label": "Interner Hinweis PDT",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält PDT",
+      "search_terms": [
+        "PDT",
+        "Photodynamische Therapie"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "AUA_PDT"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    },
+    {
+      "rule_id": "evidence.internal.aua_peri.v1",
+      "kind": "internal_service.aua_peri",
+      "label": "Interner Hinweis Perimetrie",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Perimetrie",
+      "search_terms": [
+        "Perimetrie",
+        "Gesichtsfeld"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "AUA_PERI"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    },
+    {
+      "rule_id": "evidence.internal.aua_schiel.v1",
+      "kind": "internal_service.aua_schiel",
+      "label": "Interner Hinweis Schielbehandlung",
+      "confidence": 0.62,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält quantitative Untersuchung des binokularen Sehens",
+      "search_terms": [
+        "Schielbehandlung",
+        "Quantitative Untersuchung des binokularen Sehens"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "AUA_SCHIEL"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    },
+    {
+      "rule_id": "evidence.internal.aua_tws.v1",
+      "kind": "internal_service.aua_tws",
+      "label": "Interner Hinweis Tränenweg-Sondierung",
+      "confidence": 0.58,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Tränenweg-Sondierung",
+      "search_terms": [
+        "Tränenweg",
+        "Tränenwege",
+        "Sondierung",
+        "Kleinchirurgischer Eingriff am Auge"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "TWS"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    },
+    {
+      "rule_id": "evidence.internal.aua_lidheber.v1",
+      "kind": "internal_service.aua_lidheber",
+      "label": "Interner Hinweis Lidheber-Operation",
+      "confidence": 0.58,
+      "text_mode": "fixed",
+      "text": "Interner Leistungsbogen enthält Lidheber-Operation",
+      "search_terms": [
+        "Lidheber",
+        "Lidoperation",
+        "Kleinchirurgischer Eingriff am Auge"
+      ],
+      "when": {
+        "all": [
+          {
+            "segment_any": [
+              "data_capture"
+            ]
+          },
+          {
+            "selection_code_any": {
+              "states": [
+                "checked"
+              ],
+              "values": [
+                "AUA_LIDHEB"
+              ]
+            }
+          }
+        ]
+      },
+      "also_review": {
+        "reason": "Interner Leistungsbogenhinweis; klinische Evidenz und Abrechnungsfähigkeit prüfen."
+      }
+    }
+  ],
+  "marker_extensions": {
+    "evidence.radiology.ct_head.v1": {
+      "text_any": [
+        "racth",
+        "racko",
+        "rakgk"
+      ]
+    },
+    "evidence.radiology.ct_thorax.v1": {
+      "text_any": [
+        "racth524",
+        "racth",
+        "racko",
+        "rakgk"
+      ]
+    },
+    "evidence.radiology.xray_shoulder.v1": {
+      "text_any": [
+        "racth",
+        "racko",
+        "rakgk"
+      ]
+    },
+    "evidence.radiology.xray_spine.v1": {
+      "text_any": [
+        "racth",
+        "racko",
+        "rakgk"
+      ]
+    },
+    "evidence.radiology.ct_spine.v1": {
+      "text_any": [
+        "racth",
+        "racko",
+        "rakgk"
+      ]
+    },
+    "evidence.radiology.xray_hand_foot.v1": {
+      "text_any": [
+        "racth",
+        "racko",
+        "rakgk"
+      ]
+    },
+    "evidence.radiology.xray_extremities.v1": {
+      "text_any": [
+        "racth",
+        "racko",
+        "rakgk"
+      ]
+    },
+    "evidence.radiology.ct_hand_foot.v1": {
+      "text_any": [
+        "racth",
+        "racko",
+        "rakgk"
+      ]
+    },
+    "evidence.radiology.ct_extremities.v1": {
+      "text_any": [
+        "racth",
+        "racko",
+        "rakgk"
+      ]
+    },
+    "evidence.radiology.ct_contrast.v1": {
+      "text_any": [
+        "racth524",
+        "racth",
+        "racko",
+        "rakgk"
+      ]
+    }
+  },
+  "candidate_rules": [
+    {
+      "rule_id": "candidate.internal.consultation_fee.v1",
+      "evidence_kind": "internal_service.consultation_fee",
+      "gops": [
+        "01436"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.internal.ordination_fee.v1",
+      "evidence_kind": "internal_service.ordination_fee",
+      "gops": [
+        "06210",
+        "06211",
+        "06212"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.internal.emergency_ordination.v1",
+      "evidence_kind": "internal_service.emergency_ordination",
+      "gops": [
+        "01210",
+        "01212",
+        "01214",
+        "01216",
+        "01218"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.internal.ophthalmology_fundus.v1",
+      "evidence_kind": "internal_service.ophthalmology_fundus",
+      "gops": [
+        "06333"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.internal.aua_echo.v1",
+      "evidence_kind": "internal_service.aua_echo",
+      "gops": [
+        "33000",
+        "33001",
+        "33002"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.internal.aua_epu.v1",
+      "evidence_kind": "internal_service.aua_epu",
+      "gops": [
+        "06312"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.internal.aua_fag.v1",
+      "evidence_kind": "internal_service.aua_fag",
+      "gops": [
+        "06331"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.internal.aua_pdt.v1",
+      "evidence_kind": "internal_service.aua_pdt",
+      "gops": [
+        "06332"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.internal.aua_peri.v1",
+      "evidence_kind": "internal_service.aua_peri",
+      "gops": [
+        "06330"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.internal.aua_schiel.v1",
+      "evidence_kind": "internal_service.aua_schiel",
+      "gops": [
+        "06320",
+        "06321"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.internal.aua_tws.v1",
+      "evidence_kind": "internal_service.aua_tws",
+      "gops": [
+        "06352"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    },
+    {
+      "rule_id": "candidate.internal.aua_lidheber.v1",
+      "evidence_kind": "internal_service.aua_lidheber",
+      "gops": [
+        "06350",
+        "06351",
+        "06352"
+      ],
+      "valid_from": "2025/Q1",
+      "regions": [
+        "*"
+      ]
+    }
+  ]
+}
