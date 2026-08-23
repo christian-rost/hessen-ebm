@@ -11,7 +11,7 @@ QUARTER_LITERAL_RE = re.compile(r"\s*(?:19|20)\d{2}/Q[1-4]\s*")
 APP_DIR = Path(__file__).resolve().parents[1] / "app"
 
 # Vierstellige Zahlen sind meist Puffergroessen oder Limits, keine GOPs.
-ALLOWED_INT_LITERALS = {1024, 2000, 3000, 4096, 8192, 65536}
+ALLOWED_INT_LITERALS = {1024, 2000, 3000, 4096, 8000, 8192, 65536}
 
 
 def _source_files() -> list[Path]:

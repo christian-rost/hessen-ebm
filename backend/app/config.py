@@ -12,6 +12,9 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+DEFAULT_LLM_MAX_TOKENS = 8000
+
+
 @dataclass(frozen=True)
 class Settings:
     app_env: str
@@ -24,6 +27,10 @@ class Settings:
     mistral_api_key: str | None
     mistral_ocr_model: str
     mistral_llm_model: str
+    # Obergrenze der Modellantwort. Bei 3000 brach ein vollstaendiger Entwurf mitten
+    # im JSON ab; der Wiederholungsversuch war nur deshalb gueltig, weil er weniger
+    # Positionen enthielt. Die Grenze begrenzt also den Rechnungsumfang, nicht die Kosten.
+    mistral_llm_max_tokens: int = DEFAULT_LLM_MAX_TOKENS
     supabase_url: str | None = None
     supabase_key: str | None = None
     supabase_schema: str = "public"
@@ -52,4 +59,7 @@ def get_settings() -> Settings:
         mistral_api_key=os.getenv("MISTRAL_API_KEY") or None,
         mistral_ocr_model=os.getenv("MISTRAL_OCR_MODEL", "mistral-ocr-latest"),
         mistral_llm_model=os.getenv("MISTRAL_LLM_MODEL", "mistral-large-latest"),
+        mistral_llm_max_tokens=int(
+            os.getenv("MISTRAL_LLM_MAX_TOKENS", str(DEFAULT_LLM_MAX_TOKENS))
+        ),
     )

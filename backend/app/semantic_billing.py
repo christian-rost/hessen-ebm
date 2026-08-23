@@ -348,6 +348,12 @@ def _build_messages(
         "Nennt die Kataloglegende einen obligaten Leistungsinhalt, führe in covered_content jedes "
         "geforderte Element wörtlich auf, das die Evidenz belegt. Lass ein Element weg, wenn die Evidenz "
         "es nicht belegt; erfinde keine Belege. "
+        "Zu items schreibst du keinen Begründungstext. Die Herleitung formuliert der Server aus "
+        "Katalog, Regelwerk und Evidenz; freier Text würde sie nur wiederholen oder ihr "
+        "widersprechen. Belege stattdessen über evidence_ids und covered_content. Bei "
+        "review_candidates und excluded_evidence ist reason erwünscht - dort beschreibst du "
+        "deine eigene Unsicherheit, die der Server nicht kennt. "
+        "Nenne jede belegte Leistung, auch wenn die Antwort dadurch länger wird. "
         "Antworte ausschließlich als JSON-Objekt."
     )
     user = {
@@ -364,7 +370,6 @@ def _build_messages(
                     "service_date": "YYYY-MM-DD oder null",
                     "service_time": "HH:MM oder null",
                     "confidence": "high|medium|low",
-                    "reason": "kurze fachliche Herleitung",
                     "covered_content": ["wörtliches Element des obligaten Leistungsinhalts, das belegt ist"],
                 }
             ],
@@ -402,7 +407,7 @@ def _call_mistral_chat_json(messages: list[dict[str, str]], settings: Settings) 
         "model": settings.mistral_llm_model,
         "messages": messages,
         "temperature": 0,
-        "max_tokens": 3000,
+        "max_tokens": settings.mistral_llm_max_tokens,
         "response_format": {"type": "json_object"},
     }
     request = urllib.request.Request(
@@ -477,8 +482,8 @@ def _request_payload_with_retry(
                         f"Der vorherige Versuch war unbrauchbar: {exc} "
                         "Antworte ausschließlich mit einem einzigen JSON-Objekt nach dem angegebenen Schema, "
                         "ohne einleitenden Text, ohne Markdown-Codeblock und ohne Kommentare. "
-                        "Das Feld items muss vorhanden sein; enthält der Fall keine abrechenbare Leistung, "
-                        "gib items als leere Liste zurück."
+                        "Das Feld items muss vorhanden sein. Lass dabei keine belegte Leistung weg - "
+                        "die Antwort soll gültig sein, nicht kurz."
                     ),
                 }
             ]
@@ -511,6 +516,37 @@ def _json_from_text(text: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise SemanticBillingError("Die JSON-Antwort des LLM muss ein Objekt sein.")
     return payload
+
+
+def _server_reason(
+    title: str | None,
+    event: BillingEvent | None,
+    selected: Evidence | None,
+    covered: list[str],
+    fallback: str | None,
+) -> str | None:
+    """Herleitung aus Serverwissen formulieren.
+
+    Frueher schrieb das Modell diesen Text. Er wiederholte die Kataloglegende, die
+    ihm im Prompt vorlag, und widersprach mehrfach der Regel, die er zitierte -
+    ein Feiertag als Werktag, eine falsche Uhrzeit, eine nicht vorhandene
+    Dokumentation. Alles, was hier steht, ist dagegen nachpruefbar: Katalogtitel,
+    belegende Evidenz mit Seite und die als belegt gemeldeten Pflichtelemente.
+    """
+    parts: list[str] = []
+    if title:
+        parts.append(str(title))
+    if selected is not None:
+        beleg = selected.label or selected.kind
+        parts.append(f"belegt durch {beleg} (Seite {selected.page})")
+    elif event is not None and event.evidence:
+        first = event.evidence[0]
+        parts.append(f"belegt durch {first.label or first.kind} (Seite {first.page})")
+    if covered:
+        parts.append("Pflichtinhalt belegt: " + "; ".join(element[:80] for element in covered))
+    if not parts:
+        return fallback
+    return ". ".join(parts) + "."
 
 
 def _billing_items_from_payload(
@@ -679,6 +715,7 @@ def _billing_items_from_payload(
         if sequence_key:
             used_sequence_events.add(sequence_key)
 
+        covered = [str(value) for value in (proposal.get("covered_content") or []) if str(value).strip()]
         entry = _lookup_candidate_entry(catalog, gop, item_quarter, region, candidate)
         if not entry:
             validation_status = "catalog_missing"
@@ -749,9 +786,7 @@ def _billing_items_from_payload(
                 temporal_role=event.temporal_role if event else "service_event",
                 temporal_reason=event.temporal_reason if event else None,
                 temporal_rule_id=temporal_decision.temporal_rule_id,
-                covered_service_content=[
-                    str(value) for value in (proposal.get("covered_content") or []) if str(value).strip()
-                ],
+                covered_service_content=covered,
                 quantity=quantity,
                 points=points,
                 amount_eur=amount,
@@ -764,7 +799,7 @@ def _billing_items_from_payload(
                 validation_status=validation_status,  # type: ignore[arg-type]
                 validation_notes=validation_notes,
                 derivation_source="semantic_llm",
-                semantic_reason=proposal_reason,
+                semantic_reason=_server_reason(title, event, selected, covered, proposal_reason),
                 semantic_catalog_candidates=[candidate["candidate_id"]],
             )
         )
@@ -799,6 +834,12 @@ def _semantic_acceptance_failure(
     Das Abrechnungstor sind die Katalogklauseln des Quartals, nicht mehr die
     Herkunft des Kandidaten. Hier faellt nur heraus, was die LLM-Begruendung
     selbst als nicht erfuellte Voraussetzung beschreibt.
+
+    Seit items kein reason mehr fuehren, laeuft dieser Filter im Regelfall leer:
+    ohne Text gibt es nichts zu pruefen. Er bleibt fuer aeltere Antworten und fuer
+    den Fall stehen, dass ein Modell das Feld unaufgefordert mitschickt. Den
+    fachlichen Zweifel soll das Modell stattdessen ueber review_candidates
+    ausdruecken - dort ist reason weiterhin verlangt.
     """
     if not proposal_reason:
         return None
