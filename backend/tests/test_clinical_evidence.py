@@ -353,3 +353,54 @@ def test_administrative_timestamps_never_become_the_service_time():
 
     times = {item.service_time for item in evidence if item.service_time}
     assert times.isdisjoint({"08:00", "09:00"})
+
+
+def test_treatment_context_is_recognized_with_a_page_reference():
+    """Kontext ohne Belegstelle wäre eine Annahme, keine Feststellung."""
+    pages = [
+        PageText(page=1, text="Aufnahmebogen"),
+        PageText(page=2, text="Notfallambulanz Frauenklinik, Vorstellung im Notfalldienst."),
+    ]
+
+    _evidence, _review, _excluded, context = extract_evidence(pages, segment_pages(pages))
+
+    care = context["treatment_context"]["care_setting"]
+    assert care["value"] == "organisierter_notfalldienst"
+    assert care["page"] == 2
+
+
+def test_the_more_confident_context_value_wins():
+    pages = [
+        PageText(page=1, text="Ambulanz, allgemeine Sprechstunde"),
+        PageText(page=2, text="Vorstellung im organisierten Notfalldienst"),
+    ]
+
+    _evidence, _review, _excluded, context = extract_evidence(pages, segment_pages(pages))
+
+    assert context["treatment_context"]["care_setting"]["value"] == "organisierter_notfalldienst"
+
+
+def test_no_context_is_reported_when_nothing_is_documented():
+    pages = [PageText(page=1, text="Seite ohne jede Kontextangabe.")]
+
+    _evidence, _review, _excluded, context = extract_evidence(pages, segment_pages(pages))
+
+    assert "care_setting" not in context["treatment_context"]
+
+
+def test_specialty_is_derived_from_existing_domain_evidence():
+    """Kein zweites Regelwerk für eine Aussage, die schon in der Evidenz steht."""
+    pages = [
+        PageText(
+            page=1,
+            text="Behandlungsbericht ZNA Gynäkologie und Geburtshilfe, Schwangerschaft, Fundusstand.",
+        )
+    ]
+
+    evidence, _review, _excluded, context = extract_evidence(pages, segment_pages(pages))
+
+    domains = [item for item in evidence if item.kind.startswith("clinical.domain.")]
+    if domains:
+        specialty = context["treatment_context"]["specialty"]
+        assert specialty["page"] == domains[0].page
+        assert specialty["dimension_label"] == "Fachrichtung"

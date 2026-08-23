@@ -29,6 +29,7 @@ def extract_evidence(
     evidence: list[Evidence] = []
     review: list[ReviewCandidate] = []
     excluded: list[ExcludedEvidence] = []
+    treatment_context: dict[str, dict[str, Any]] = {}
     case_context: dict[str, str | None] = {
         "treatment_start": None,
         "treatment_end": None,
@@ -62,6 +63,7 @@ def extract_evidence(
 
         _update_datetime_state(rule_set, match_context, datetime_state)
         _apply_context_updates(rule_set, match_context, case_context)
+        _treatment_context(rule_set, page, match_context, treatment_context)
 
         page_evidence: list[Evidence] = []
         if page.page in relevant_pages:
@@ -114,6 +116,9 @@ def extract_evidence(
         service_dates = sorted(item.service_date for item in evidence if item.service_date)
         if service_dates:
             case_context["quarter"] = quarter_from_date(service_dates[0])
+
+    _derive_context_from_evidence(rule_set, evidence, treatment_context)
+    case_context["treatment_context"] = treatment_context
 
     return _dedupe_evidence(evidence), _dedupe_review(review), _dedupe_excluded(excluded), case_context
 
@@ -384,6 +389,66 @@ def _update_datetime_state(
         value = (context.datetimes or {}).get(role, (None, None))
         if value[0]:
             state[str(track["name"])] = value
+
+
+def _derive_context_from_evidence(
+    definitions: ClinicalDefinitionSet,
+    evidence: list[Evidence],
+    found: dict[str, dict[str, Any]],
+) -> None:
+    """Kontextdimensionen, die sich aus bereits erkannter Evidenz ergeben.
+
+    Die Fachrichtung steht schon in den Domaenenevidenzen; sie noch einmal ueber
+    eigene Textmarker zu erkennen waere ein zweites Regelwerk fuer dieselbe Aussage.
+    Welche Evidenzarten eine Dimension tragen, steht in den Definitionen.
+    """
+    for dimension, definition in definitions.treatment_context.items():
+        prefix = str(definition.get("from_evidence_prefix") or "")
+        if not prefix or dimension in found:
+            continue
+        matching = [item for item in evidence if item.kind.startswith(prefix)]
+        if not matching:
+            continue
+        leading = max(matching, key=lambda item: item.confidence)
+        found[dimension] = {
+            "dimension": dimension,
+            "dimension_label": str(definition.get("label") or dimension),
+            "value": leading.kind[len(prefix) :] or leading.kind,
+            "label": leading.label,
+            "confidence": leading.confidence,
+            "page": leading.page,
+        }
+
+
+def _treatment_context(
+    definitions: ClinicalDefinitionSet,
+    page: PageText,
+    context: MatchContext,
+    found: dict[str, dict[str, Any]],
+) -> None:
+    """Behandlungskontext je Dimension bestimmen - nie ohne Belegstelle.
+
+    Der Versorgungszusammenhang entscheidet mit darueber, welche Katalogbereiche
+    ueberhaupt in Frage kommen. Eine Angabe ohne Fundstelle waere eine Annahme,
+    keine Feststellung, und wird deshalb nicht uebernommen. Bei mehreren Treffern
+    gewinnt der mit der hoeheren Zuversicht, bei Gleichstand der fruehere.
+    """
+    for dimension, definition in definitions.treatment_context.items():
+        for value in definition.get("values") or []:
+            if not condition_matches(value.get("when") or {}, context):
+                continue
+            confidence = float(value.get("confidence") or 0.5)
+            previous = found.get(dimension)
+            if previous and previous["confidence"] >= confidence:
+                continue
+            found[dimension] = {
+                "dimension": dimension,
+                "dimension_label": str(definition.get("label") or dimension),
+                "value": str(value.get("value")),
+                "label": str(value.get("label") or value.get("value")),
+                "confidence": confidence,
+                "page": page.page,
+            }
 
 
 def _apply_context_updates(

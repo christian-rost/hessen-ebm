@@ -29,6 +29,7 @@ class ClinicalDefinitionSet:
     selection_extraction: dict[str, Any]
     clause_facts: dict[str, dict[str, Any]]
     datetime_extraction: dict[str, Any]
+    treatment_context: dict[str, dict[str, Any]]
     formats: dict[str, Any]
 
 
@@ -49,6 +50,7 @@ def clinical_definition_set_payload(definitions: ClinicalDefinitionSet) -> dict[
         "selection_extraction": definitions.selection_extraction,
         "clause_facts": definitions.clause_facts,
         "datetime_extraction": definitions.datetime_extraction,
+        "treatment_context": definitions.treatment_context,
     }
 
 
@@ -94,6 +96,7 @@ def parse_clinical_definition_set(payload: dict[str, Any]) -> ClinicalDefinition
         selection_extraction=_optional_object(payload.get("selection_extraction"), "selection_extraction"),
         clause_facts=_object_map(payload.get("clause_facts") or {}, "clause_facts"),
         datetime_extraction=_optional_object(payload.get("datetime_extraction"), "datetime_extraction"),
+        treatment_context=_object_map(payload.get("treatment_context") or {}, "treatment_context"),
         formats=dict(payload.get("formats") or {}),
     )
 

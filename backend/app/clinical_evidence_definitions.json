@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "definition_set_id": "hessen-ebm-clinical-evidence",
-  "version": "2027.3",
+  "version": "2027.4",
   "formats": {
     "fallback_segment_type": "other",
     "fallback_reason": "Kein spezifischer Dokumentmarker gefunden",
@@ -23,6 +23,59 @@
       ".{0,100}?durchgefuhrt(?:am)?(\\d{2}\\.\\d{2}\\.\\d{4})um(\\d{2}:\\d{2})",
       ".{0,100}?durchgefuhrt(?:am)?(\\d{2}\\.\\d{2}\\.\\d{4})"
     ]
+  },
+  "treatment_context": {
+    "care_setting": {
+      "label": "Versorgungszusammenhang",
+      "values": [
+        {
+          "value": "organisierter_notfalldienst",
+          "label": "Organisierter Notfalldienst",
+          "confidence": 0.95,
+          "when": {"text_any": ["notfalldienst", "notdienst", "bereitschaftsdienst", "notfallambulanz", "notaufnahme", "akutambulanz", "kvabrechnungnotfall"]}
+        },
+        {
+          "value": "belegaerztlich",
+          "label": "Belegärztliche Versorgung",
+          "confidence": 0.9,
+          "when": {"text_any": ["belegarzt", "belegarztlich", "belegabteilung", "beleghebamme"]}
+        },
+        {
+          "value": "praeventiv",
+          "label": "Präventive Versorgung",
+          "confidence": 0.85,
+          "when": {"text_any": ["fruherkennungsuntersuchung", "vorsorgeuntersuchung", "screeninguntersuchung", "gesundheitsuntersuchung"]}
+        },
+        {
+          "value": "kurativ_ambulant",
+          "label": "Kurativ-ambulante Behandlung",
+          "confidence": 0.6,
+          "when": {"text_any": ["ambulantebehandlung", "sprechstunde", "ambulanz", "poliklinik"]}
+        }
+      ]
+    },
+    "specialty": {
+      "label": "Fachrichtung",
+      "from_evidence_prefix": "clinical.domain.",
+      "values": []
+    },
+    "scheinart": {
+      "label": "Scheinart",
+      "values": [
+        {
+          "value": "notfallschein",
+          "label": "Notfall-/Vertretungsschein",
+          "confidence": 0.9,
+          "when": {"text_any": ["notfallschein", "vertretungsschein", "notfallvertretung"]}
+        },
+        {
+          "value": "ueberweisung",
+          "label": "Überweisung",
+          "confidence": 0.85,
+          "when": {"text_any": ["uberweisungsschein", "uberweisungdurch", "auftragsleistung"]}
+        }
+      ]
+    }
   },
   "clause_facts": {
     "personal_contact": {
