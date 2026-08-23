@@ -187,6 +187,22 @@ Wichtig für die Einordnung: Das Tor greift nur dort, wo der Katalog eine Beding
 
 Ohne `MISTRAL_API_KEY` entstehen keine Rechnungspositionen: die semantische Zuordnung ist der einzige Weg von Evidenz zu GOP. Die Analyse liefert dann Segmente, Zeitleiste und Evidenzen, und der Grund steht in `catalog_context.analysis_warnings`.
 
+## Zeitstempel und Kontaktsequenzen
+
+Die Leistungszeit wird label-unabhängig erkannt. Klinische Dokumentation beschriftet Zeitstempel beliebig — „Notiz vom", „Vitalwerte vom", „CTG-Streifen vom" —, und eine Liste solcher Beschriftungen wäre nie vollständig. Aufgezählt werden deshalb nur die wenigen **administrativen** Beschriftungen, die kein Leistungszeitpunkt sind: Import-, Export-, Druck-, Scan-, Freigabe- und Validierungszeitpunkte sowie Stammdaten. Alles Übrige gilt als dokumentierter Leistungszeitpunkt. Die Konfiguration steht in `datetime_extraction` in `backend/app/clinical_evidence_definitions.json`.
+
+Zurückgeblickt wird nur bis zum vorherigen Zeitstempel, sonst würde dessen Beschriftung dem nächsten Treffer zugerechnet — bei `Importdatum 13:34 Notiz vom 13:19` sonst beiden.
+
+Notfallkontakte werden über ein Merkmal erkannt, nicht über eine Liste von Evidenzarten: Jede Evidenzregel, deren Metadaten `emergency_contact` setzen, gehört zur Kontaktsequenz. Eine neue Evidenzart mit derselben Bedeutung — etwa eine Fachambulanz statt einer ZNA — wird damit erfasst, ohne dass die Sequenzregel geändert werden muss.
+
+### Sitzungen über die Tagesgrenze
+
+Eine Sitzung wird nach absolutem Zeitabstand gebildet, nicht nach Kalendertag. Beginnt ein Notfallkontakt um 23:40 und wird um 00:30 eine Leistung erbracht, ist das **eine** Sitzung: Der Zeitstempel um 00:30 belegt eine Leistung innerhalb der Sitzung, keinen neuen Kontakt. Eine zweite Basispauschale entsteht daraus nicht, auch wenn 00:30 für sich genommen wieder im Nachtfenster liegt. Zwei unabhängige Prüfungen halten das: eine Basispauschale je Sequenzereignis, und eine GOP-Basis je Leistungsereignis.
+
+### Vorrang der Zeitregel vor unvollständigen Katalogklauseln
+
+Die aus dem Katalogtext kompilierten `time_window`-Klauseln bilden häufig nur die Uhrzeit-Hälfte einer Bedingung ab, nicht die Alternative „oder an Samstagen, Sonntagen, Feiertagen". Hat eine Zeitregel des Regelwerks die Variante bereits aus Datum, Uhrzeit, Wochentag und Feiertag bestimmt, überstimmt eine solche Klausel diese Entscheidung nicht mehr; sie bleibt als Prüfhinweis an der Position. Die maßgeblichen Regel-Präfixe stehen in `clause_policy.temporal_rule_id_prefixes`.
+
 ## Mandantenspezifische Leistungskennungen
 
 Klinikinterne Leistungscodes stammen aus dem KIS eines Standorts. Sie sind weder aus dem EBM-Katalog noch aus klinischer Sprache ableitbar und stehen deshalb getrennt in `backend/app/site_service_codes.json`:

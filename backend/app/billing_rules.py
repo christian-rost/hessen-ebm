@@ -15,7 +15,8 @@ from .billing_rule_definitions import (
     TemporalRuleDefinition,
     definition_is_applicable,
 )
-from .billing_rule_store import get_runtime_billing_rule_set
+from .billing_rule_store import get_runtime_billing_rule_set, get_runtime_clinical_definition_set
+from .clinical_definitions import kinds_with_flags
 
 
 @dataclass(frozen=True)
@@ -82,7 +83,14 @@ def candidate_gops_for_evidence_kind(
     quarter: str | None = None,
     region: str = "Hessen",
     rule_set: BillingRuleSet | None = None,
+    evidence_flags: frozenset[str] = frozenset(),
 ) -> list[str]:
+    """GOP-Kandidaten einer Evidenzart.
+
+    `evidence_flags` sind die Metadatenmerkmale der konkreten Evidenz. Eine
+    Sequenzregel greift, wenn die Art genannt ist oder eines ihrer Merkmale
+    passt; damit erreichen Kontaktpauschalen auch neue Evidenzarten.
+    """
     definitions = rule_set or get_runtime_billing_rule_set(quarter, region)
     configured_candidates = [
         gop
@@ -93,7 +101,12 @@ def candidate_gops_for_evidence_kind(
     sequence_candidates = [
         gop
         for rule in definitions.event_sequence_rules
-        if evidence_kind in rule.evidence_kinds and _definition_applies(rule, quarter, region)
+        if (
+            evidence_kind in rule.evidence_kinds
+            or (evidence_flags & frozenset(rule.evidence_flags))
+            or evidence_kind in kinds_with_flags(get_runtime_clinical_definition_set(), rule.evidence_flags)
+        )
+        and _definition_applies(rule, quarter, region)
         for gop in (rule.initial_gop, rule.subsequent_gop)
     ]
     candidates = configured_candidates + sequence_candidates
@@ -172,21 +185,35 @@ def apply_temporal_gop_rule(
         for field in temporal_rule.required_context
         if not {"service_date": service_date, "service_time": service_time, "region": region}.get(field)
     ]
+
+    facts = _facts((), (), service_date, service_time, region, effective_quarter)
     if missing:
+        # Fehlender Kontext blockiert nicht pauschal: manche Ergebnisse sind allein
+        # aus dem Datum entscheidbar, etwa eine Pauschale, die an einem Feiertag
+        # unabhaengig von der Uhrzeit gilt. Nur wenn kein Ergebnis eindeutig
+        # zutrifft, geht die GOP in die manuelle Pruefung.
+        decidable = [outcome for outcome in temporal_rule.outcomes if _matches_condition(outcome.when, facts)]
+        if len(decidable) == 1:
+            outcome = decidable[0]
+            notes = (outcome.note,)
+            if outcome.gop != normalized:
+                notes = (
+                    f"Zeitregel {temporal_rule.name}: GOP {normalized} wurde anhand des Leistungsdatums auf "
+                    f"{outcome.gop} korrigiert.",
+                    outcome.note,
+                )
+            return GopRuleDecision(outcome.gop, outcome.rule_id, notes)
         labels = {"service_date": "Datum", "service_time": "Uhrzeit", "region": "Region"}
         missing_labels = ", ".join(labels.get(field, field) for field in missing)
         return GopRuleDecision(
             None,
             f"{temporal_rule.rule_id}.missing",
             (
-                "Datum oder Uhrzeit fehlt; die zeitabhängige GOP muss manuell geprüft werden."
-                if set(missing).intersection({"service_date", "service_time"})
-                else f"{missing_labels} fehlt; die zeitabhängige GOP muss manuell geprüft werden."
+                f"{missing_labels} fehlt und das Leistungsdatum allein ergibt keine eindeutige Variante; "
+                "die zeitabhängige GOP muss manuell geprüft werden."
             ,),
             review_required=True,
         )
-
-    facts = _facts((), (), service_date, service_time, region, effective_quarter)
     for outcome in temporal_rule.outcomes:
         if not _matches_condition(outcome.when, facts):
             continue

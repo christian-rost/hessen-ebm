@@ -28,6 +28,7 @@ class ClinicalDefinitionSet:
     exclusion_rules: tuple[dict[str, Any], ...]
     selection_extraction: dict[str, Any]
     clause_facts: dict[str, dict[str, Any]]
+    datetime_extraction: dict[str, Any]
     formats: dict[str, Any]
 
 
@@ -47,6 +48,7 @@ def clinical_definition_set_payload(definitions: ClinicalDefinitionSet) -> dict[
         "exclusion_rules": list(definitions.exclusion_rules),
         "selection_extraction": definitions.selection_extraction,
         "clause_facts": definitions.clause_facts,
+        "datetime_extraction": definitions.datetime_extraction,
     }
 
 
@@ -91,6 +93,7 @@ def parse_clinical_definition_set(payload: dict[str, Any]) -> ClinicalDefinition
         exclusion_rules=tuple(exclusion_rules),
         selection_extraction=_optional_object(payload.get("selection_extraction"), "selection_extraction"),
         clause_facts=_object_map(payload.get("clause_facts") or {}, "clause_facts"),
+        datetime_extraction=_optional_object(payload.get("datetime_extraction"), "datetime_extraction"),
         formats=dict(payload.get("formats") or {}),
     )
 
@@ -181,3 +184,21 @@ def _required_text(item: dict[str, Any], field: str) -> str:
     if not value:
         raise ValueError(f"Pflichtfeld {field!r} fehlt.")
     return value
+
+
+def kinds_with_flags(definitions: ClinicalDefinitionSet, flags: Any) -> frozenset[str]:
+    """Evidenzarten, deren Definition eines der Merkmale setzt.
+
+    Das Merkmal steht in den Definitionen, nicht in jeder einzelnen Evidenz.
+    Damit greift eine merkmalsbasierte Regel auch dann, wenn eine Evidenz ohne
+    ausgefuellte Metadaten vorliegt.
+    """
+    wanted = {str(flag) for flag in flags}
+    if not wanted:
+        return frozenset()
+    return frozenset(
+        str(rule.get("kind"))
+        for rule in definitions.evidence_rules
+        if any((rule.get("metadata") or {}).get(flag) is True for flag in wanted)
+        and rule.get("kind")
+    )

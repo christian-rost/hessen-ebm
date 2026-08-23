@@ -310,3 +310,46 @@ def test_major_ebm_domains_are_segmented_as_billing_relevant():
         "clinical.domain.prevention_vaccination",
     }.issubset(kinds)
     assert context["quarter"] == "2026/Q1"
+
+
+def test_clinical_datetime_is_found_without_a_configured_label():
+    """Die Leistungszeit kommt ohne Kenntnis der Beschriftung aus dem Text."""
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Behandlungsbericht ZNA\n"
+                "Auftragsnr. SMT9999 Importdatum 03.01.2026 13:34\n"
+                "Beliebige neue Beschriftung vom 03.01.2026 13:19\n"
+                "Notfallambulanz Frauenklinik"
+            ),
+        )
+    ]
+
+    segments = segment_pages(pages)
+    evidence, _review, _excluded, _context = extract_evidence(pages, segments)
+
+    times = {item.service_time for item in evidence if item.service_time}
+    assert "13:19" in times, "Klinischer Zeitstempel wurde nicht erkannt"
+    assert "13:34" not in times, "Importzeitstempel darf nicht als Leistungszeit gelten"
+
+
+def test_administrative_timestamps_never_become_the_service_time():
+    pages = [
+        PageText(
+            page=1,
+            text=(
+                "Behandlungsbericht ZNA\n"
+                "Druckdatum 03.01.2026 08:00\n"
+                "Freigegeben am 03.01.2026 09:00\n"
+                "Geb.Dat.: 03.05.1995\n"
+                "Notfallambulanz Frauenklinik"
+            ),
+        )
+    ]
+
+    segments = segment_pages(pages)
+    evidence, _review, _excluded, _context = extract_evidence(pages, segments)
+
+    times = {item.service_time for item in evidence if item.service_time}
+    assert times.isdisjoint({"08:00", "09:00"})

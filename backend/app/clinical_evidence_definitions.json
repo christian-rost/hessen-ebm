@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "definition_set_id": "hessen-ebm-clinical-evidence",
-  "version": "2027.1",
+  "version": "2027.3",
   "formats": {
     "fallback_segment_type": "other",
     "fallback_reason": "Kein spezifischer Dokumentmarker gefunden",
@@ -1508,6 +1508,10 @@
         {
           "source": "compact",
           "regex": "ctgstreifenvom(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"
+        },
+        {
+          "source": "compact",
+          "mode": "clinical_datetime"
         }
       ]
     },
@@ -1556,6 +1560,10 @@
         {
           "source": "compact",
           "regex": "ctgstreifenvom(\\d{2}\\.\\d{2}\\.\\d{4})(\\d{2}:\\d{2})"
+        },
+        {
+          "source": "compact",
+          "mode": "clinical_datetime"
         },
         {
           "source": "compact",
@@ -1827,7 +1835,8 @@
         "timeline_event_type": "first_personal_physician_contact",
         "timeline_label": "Erster persönlicher Arztkontakt",
         "dedupe_scope": "service_datetime",
-        "force_separate_event": true
+        "force_separate_event": true,
+        "emergency_contact": true
       },
       "context_update": {
         "key": "treatment_start",
@@ -1889,7 +1898,8 @@
         "timeline_event_type": "subsequent_personal_physician_contact",
         "timeline_label": "Weiterer persönlicher Arztkontakt",
         "dedupe_scope": "service_datetime",
-        "force_separate_event": true
+        "force_separate_event": true,
+        "emergency_contact": true
       },
       "when": {
         "all": [
@@ -1964,7 +1974,8 @@
       "label": "Fachambulanz-/Notfallkontakt",
       "confidence": 0.88,
       "metadata": {
-        "personal_contact": true
+        "personal_contact": true,
+        "emergency_contact": true
       },
       "text_mode": "fixed",
       "text": "Notfallkontakt in einer Fachambulanz dokumentiert",
@@ -3748,5 +3759,38 @@
         ]
       }
     }
-  ]
+  ],
+  "datetime_extraction": {
+    "description": "Label-unabhaengige Erkennung klinischer Zeitstempel. Aufgezaehlt werden nur die wenigen administrativen Beschriftungen, die kein Leistungszeitpunkt sind; jede andere Beschriftung gilt als klinisch.",
+    "pair_gap": 10,
+    "label_window": 40,
+    "administrative_labels": [
+      "importdatum",
+      "exportdatum",
+      "druckdatum",
+      "gedrucktam",
+      "scandatum",
+      "erstelltam",
+      "angelegtam",
+      "freigegebenam",
+      "freigegeben",
+      "validation",
+      "validiertam",
+      "signiertam",
+      "bestatigtam",
+      "auftragsnr",
+      "eingangam",
+      "versendetam",
+      "gesendetam",
+      "letzteanderung",
+      "geandertam",
+      "benutzer"
+    ],
+    "master_data_labels": [
+      "geb.dat",
+      "gebdat",
+      "geburtsdatum",
+      "geboren"
+    ]
+  }
 }

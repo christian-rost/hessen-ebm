@@ -27,12 +27,21 @@ def test_emergency_initial_gop_uses_01212_at_night_weekend_and_special_days():
     assert apply_temporal_gop_rule("01210", "2026-06-04", "12:00").gop == "01212"
 
 
-def test_missing_datetime_requires_review_for_time_dependent_emergency_gops():
+def test_missing_time_requires_review_when_the_date_alone_is_not_decisive():
+    # 24.04.2026 ist ein Werktag: ohne Uhrzeit bleibt offen, welche Variante gilt.
     decision = apply_temporal_gop_rule("01210", "2026-04-24", None)
 
     assert decision.gop is None
     assert decision.review_required is True
-    assert "Datum oder Uhrzeit fehlt" in decision.notes[0]
+    assert "keine eindeutige Variante" in decision.notes[0]
+
+
+def test_missing_time_still_resolves_when_the_date_alone_decides():
+    """An einem Feiertag gilt die Variante unabhaengig von der Uhrzeit."""
+    decision = apply_temporal_gop_rule("01210", "2026-01-01", None)
+
+    assert decision.gop == "01212"
+    assert decision.review_required is False
 
 
 def test_emergency_consultation_gop_uses_time_windows():

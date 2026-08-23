@@ -18,6 +18,7 @@ from .billing_rules import (
     evaluate_catalog_context_rules,
 )
 from .billing_events import (
+    evidence_flags,
     BillingEvent,
     build_billing_events,
     episode_selection_payload,
@@ -132,8 +133,11 @@ def _collect_catalog_candidates(
     catalog: CatalogRepository,
     quarter: str,
     region: str,
-    max_candidates: int = 80,
+    max_candidates: int | None = None,
 ) -> list[dict[str, Any]]:
+    settings = get_runtime_billing_rule_set(quarter, region).event_settings
+    max_candidates = max_candidates or int(settings.get("max_catalog_candidates") or 120)
+    search_limit = int(settings.get("catalog_search_limit") or 8)
     by_key: dict[tuple[str, str], dict[str, Any]] = {}
 
     def add(
@@ -177,7 +181,9 @@ def _collect_catalog_candidates(
     # Zeit- und Sequenzregeln liefern weiterhin ihre Varianten, weil diese GOPs
     # ohne Uhrzeitkontext gar nicht auffindbar waeren.
     for item in evidence:
-        for gop in candidate_gops_for_evidence_kind(item.kind, quarter, region):
+        for gop in candidate_gops_for_evidence_kind(
+            item.kind, quarter, region, evidence_flags=evidence_flags(item)
+        ):
             add(
                 catalog.lookup(gop, quarter, region),
                 [item.evidence_id],
@@ -195,14 +201,27 @@ def _collect_catalog_candidates(
                 gop,
             )
 
+    # Die Katalogtreffer werden reihum zugeteilt statt der Reihe nach. Sonst
+    # verbraucht die erste Evidenz das Budget und spaetere Evidenzen sind im
+    # Kandidatenpool ueberhaupt nicht vertreten.
+    ranked_by_evidence: list[tuple[Evidence, str, list[CatalogEntry]]] = []
     for item in evidence:
         for term in _search_terms(item):
-            for entry in catalog.search(term, quarter, limit=8):
-                support_level = "regional_catalog" if entry.region else "semantic_search"
-                add(entry, [item.evidence_id], f"catalog text search for '{term}'", support_level)
+            hits = catalog.search(term, quarter, limit=search_limit)
+            if hits:
+                ranked_by_evidence.append((item, term, hits))
 
+    for rank in range(search_limit):
         if len(by_key) >= max_candidates:
             break
+        for item, term, hits in ranked_by_evidence:
+            if rank >= len(hits):
+                continue
+            if len(by_key) >= max_candidates:
+                break
+            entry = hits[rank]
+            support_level = "regional_catalog" if entry.region else "semantic_search"
+            add(entry, [item.evidence_id], f"catalog text search for '{term}'", support_level)
 
     possible_base_gops: list[str] = []
     for item in evidence:

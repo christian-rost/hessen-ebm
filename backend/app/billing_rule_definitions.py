@@ -75,6 +75,10 @@ class EventSequenceRuleDefinition:
     evidence_kinds: tuple[str, ...]
     initial_gop: str
     subsequent_gop: str
+    # Alternativ zur Aufzaehlung: jede Evidenz, die eines dieser Metadaten-
+    # merkmale traegt, gehoert zur Sequenz. So muss eine neue Evidenzart nicht
+    # in jede Regel nachgetragen werden.
+    evidence_flags: tuple[str, ...] = ()
     session_gap_minutes: int = 90
     initial_role: str = "initial_contact"
     subsequent_role: str = "follow_up_contact"
@@ -246,8 +250,13 @@ def _parse_temporal_rule(item: dict[str, Any]) -> TemporalRuleDefinition:
 
 def _parse_event_sequence_rule(item: dict[str, Any]) -> EventSequenceRuleDefinition:
     evidence_kinds = tuple(str(value).strip() for value in _values(item.get("evidence_kinds")) if str(value).strip())
-    if not evidence_kinds:
-        raise ValueError(f"Ereignisregel {_required_text(item, 'rule_id')} enthält keine Evidenzarten.")
+    evidence_flags = tuple(
+        str(value).strip() for value in _values(item.get("evidence_flags", [])) if str(value).strip()
+    )
+    if not evidence_kinds and not evidence_flags:
+        raise ValueError(
+            f"Ereignisregel {_required_text(item, 'rule_id')} enthält weder Evidenzarten noch Evidenzmerkmale."
+        )
     session_gap_minutes = int(item.get("session_gap_minutes") or 90)
     if session_gap_minutes < 1:
         raise ValueError("Der Sitzungsabstand einer Ereignisregel muss mindestens eine Minute betragen.")
@@ -255,6 +264,7 @@ def _parse_event_sequence_rule(item: dict[str, Any]) -> EventSequenceRuleDefinit
         rule_id=_required_text(item, "rule_id"),
         name=_required_text(item, "name"),
         evidence_kinds=evidence_kinds,
+        evidence_flags=evidence_flags,
         initial_gop=_required_gop(item, "initial_gop"),
         subsequent_gop=_required_gop(item, "subsequent_gop"),
         session_gap_minutes=session_gap_minutes,

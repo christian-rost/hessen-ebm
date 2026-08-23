@@ -271,7 +271,24 @@ def _extract_datetime(
     normalized = normalize_text(text)
     for pattern_definition in definition.get("patterns") or []:
         source = normalized.source(str(pattern_definition.get("source") or "compact"))
+        if pattern_definition.get("mode") == "clinical_datetime":
+            configuration = definitions.datetime_extraction
+            date_value, time_value = _clinical_datetime(source, configuration, definitions)
+            if date_value:
+                return date_value, time_value
+            continue
         matches = list(re.finditer(str(pattern_definition["regex"]), source, re.IGNORECASE))
+        # Ein Muster darf administrative Zeitstempel ueberspringen. So kann ein
+        # label-unabhaengiges Datum-Zeit-Muster benutzt werden, ohne Import-,
+        # Druck- oder Freigabezeiten als Leistungszeit auszugeben.
+        excluded_before = [str(value).casefold() for value in pattern_definition.get("excluded_before") or []]
+        if excluded_before:
+            window = int(pattern_definition.get("exclusion_window") or 40)
+            matches = [
+                match
+                for match in matches
+                if not any(label in source[max(0, match.start() - window) : match.start()].casefold() for label in excluded_before)
+            ]
         if not matches:
             continue
         selected = matches[-1] if pattern_definition.get("select") == "last" else matches[0]
@@ -294,6 +311,38 @@ def _extract_datetime(
     date_value = _first_allowed_match(normalized.folded, date_regex, excluded, excluded_regex, exclusion_window)
     time_value = _first_allowed_match(normalized.folded, time_regex, excluded, excluded_regex, exclusion_window)
     return _date_to_iso(date_value), time_value
+
+
+def _clinical_datetime(source: str, configuration: dict[str, Any], definitions: ClinicalDefinitionSet):
+    """Erster klinischer Zeitstempel im Text, label-unabhaengig.
+
+    Statt klinische Beschriftungen aufzuzaehlen - davon gibt es beliebig viele -
+    werden die wenigen administrativen Beschriftungen ausgeschlossen: Import-,
+    Druck-, Freigabe- und Stammdatenzeitpunkte. Alles Uebrige gilt als
+    dokumentierter Leistungszeitpunkt.
+
+    Zurueckgeblickt wird nur bis zum vorherigen Zeitstempel, sonst wuerde dessen
+    Beschriftung dem naechsten Treffer zugerechnet.
+    """
+    date_regex = str(definitions.formats.get("date_regex") or r"(\d{2}\.\d{2}\.\d{4})")
+    time_regex = str(definitions.formats.get("time_regex") or r"(\d{2}:\d{2})")
+    gap = int(configuration.get("pair_gap") or 10)
+    window = int(configuration.get("label_window") or 40)
+    skip = [
+        str(value).casefold()
+        for key in ("administrative_labels", "master_data_labels")
+        for value in configuration.get(key) or []
+    ]
+    # Zwischen Datum und Uhrzeit nur Nicht-Ziffern, damit keine fremde Zahl ueberbrueckt wird.
+    pattern = re.compile(f"{date_regex}[^\\d]{{0,{gap}}}{time_regex}", re.IGNORECASE)
+    previous_end = 0
+    for match in pattern.finditer(source):
+        preceding = source[max(previous_end, match.start() - window) : match.start()]
+        previous_end = match.end()
+        if any(label in preceding for label in skip):
+            continue
+        return _date_to_iso(match.group(1)), match.group(2)
+    return None, None
 
 
 def _first_allowed_match(

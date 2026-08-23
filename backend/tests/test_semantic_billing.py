@@ -810,3 +810,63 @@ def test_semantic_billing_deduplicates_one_notfall_session_across_midnight():
     assert result.items[0].service_time == "23:40"
     assert result.items[0].temporal_role == "initial_contact"
     assert any("dasselbe zeitliche Kontakt" in item.reason for item in result.review_candidates)
+
+
+def test_service_after_midnight_does_not_create_a_second_base_pauschale():
+    """Eine laufende Nachtsitzung bleibt ein Kontakt.
+
+    Der Kontakt beginnt um 23:40 und ergibt die Nachtvariante. Die um 00:30
+    erbrachte Leistung faellt in dieselbe Sitzung: ihr Zeitstempel belegt eine
+    Leistung, nicht einen neuen Kontakt, und darf keine zweite Basispauschale
+    ausloesen - auch wenn 00:30 fuer sich genommen wieder im Nachtfenster liegt.
+    """
+    evidence = [
+        ev("context.kv_notfall_zna", page=1, service_date="2026-01-29", service_time="23:40"),
+        ev("clinical.diagnostics.ctg", page=2, service_date="2026-01-30", service_time="00:30"),
+    ]
+
+    def fake_llm(_messages, _settings):
+        return {
+            "items": [
+                {
+                    "gop": "01210",
+                    "evidence_ids": ["ev-context.kv_notfall_zna"],
+                    "service_date": "2026-01-29",
+                    "service_time": "23:40",
+                    "confidence": "high",
+                    "reason": "Notfallkontakt vor Mitternacht.",
+                },
+                {
+                    "gop": "01786",
+                    "evidence_ids": ["ev-clinical.diagnostics.ctg"],
+                    "service_date": "2026-01-30",
+                    "service_time": "00:30",
+                    "confidence": "high",
+                    "reason": "CTG innerhalb derselben Sitzung.",
+                },
+                {
+                    # Der Fehlgriff, gegen den dieser Test schuetzt.
+                    "gop": "01212",
+                    "evidence_ids": ["ev-clinical.diagnostics.ctg"],
+                    "service_date": "2026-01-30",
+                    "service_time": "00:30",
+                    "confidence": "high",
+                    "reason": "Zweiter Notfallkontakt nach Mitternacht.",
+                },
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence,
+        FakeCatalog(),
+        default_quarter="2026/Q1",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    billed = [item.gop_original for item in result.items]
+    assert billed.count("01212") == 1, "Die Sitzung darf nur eine Basispauschale erzeugen"
+    assert "01786" in billed, "Die Leistung nach Mitternacht bleibt abrechenbar"
+    assert not any(gop == "01210" for gop in billed), "23:40 ist die Nachtvariante"
