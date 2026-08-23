@@ -107,6 +107,10 @@ class ReviewCandidate(BaseModel):
     evidence_pages: list[int]
     reason: str
     possible_gops: list[str] = Field(default_factory=list)
+    # Seiten allein reichen fuer die Nachverfolgung nicht: mehrere Belege teilen sich
+    # eine Seite, und ohne Id laesst sich nicht feststellen, ob ein Beleg irgendwo
+    # geblieben ist. Optional, damit aeltere gespeicherte Entwuerfe weiter laden.
+    evidence_ids: list[str] = Field(default_factory=list)
 
 
 class ExcludedEvidence(BaseModel):
@@ -114,6 +118,7 @@ class ExcludedEvidence(BaseModel):
     evidence_pages: list[int]
     reason: str
     not_billed_gop: str | None = None
+    evidence_ids: list[str] = Field(default_factory=list)
 
 
 class InvoiceSummary(BaseModel):

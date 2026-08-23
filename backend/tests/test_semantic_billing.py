@@ -7,7 +7,11 @@ from typing import Optional
 from app.catalog import CatalogRepository, normalize_gop
 from app.config import Settings
 from app.models import CatalogEntry, Evidence
-from app.semantic_billing import SemanticBillingError, generate_semantic_billing_items
+from app.semantic_billing import (
+    SemanticBillingError,
+    _server_reason,
+    generate_semantic_billing_items,
+)
 
 
 class FakeCatalog(CatalogRepository):
@@ -280,7 +284,7 @@ def test_semantic_billing_uses_llm_json_and_catalog_validation():
     # Die Herleitung stammt vom Server, nicht aus dem Modelltext: Katalogtitel der
     # korrigierten GOP plus Belegstelle. Der vom Modell gelieferte Satz wird verworfen.
     assert result.items[0].semantic_reason == (
-        "Notfallpauschale II. belegt durch context.kv_notfall_zna (Seite 1)."
+        "Notfallpauschale II, belegt durch context.kv_notfall_zna (Seite 1)."
     )
     assert "korrigiert" in result.items[0].validation_notes[0]
     assert result.summary.amount_total_eur == 24.41
@@ -999,6 +1003,56 @@ def test_semantic_reason_is_composed_without_model_prose():
 
     reason = result.items[0].semantic_reason
     assert reason == (
-        "Notfallpauschale II. belegt durch context.kv_notfall_zna (Seite 1). "
+        "Notfallpauschale II, belegt durch context.kv_notfall_zna (Seite 1). "
         "Pflichtinhalt belegt: persönlicher Arzt-Patienten-Kontakt."
     )
+    # Woertliche Katalogzitate werden nicht gekuerzt - ein abgeschnittenes Zitat
+    # ist als Beleg wertlos und las sich in der Oberflaeche wie ein Fehler.
+    lang = "Externe kardiotokographische Untersuchung (CTG) gemäß § 3 Abs. 3 Nr. 3 und Anlage II"
+    assert _server_reason("CTG", None, None, [lang], None) == f"CTG. Pflichtinhalt belegt: {lang}."
+
+
+def test_evidence_with_candidates_never_vanishes_silently():
+    """Ignoriert das Modell eine Evidenz, wird sie vorgelegt statt verschluckt.
+
+    Beobachtet an einem echten Entwurf: zu einer dokumentierten Leistung stand der
+    passende Katalogkandidat im Prompt, in der Antwort kam sie schlicht nicht mehr
+    vor - weder als Position noch als Review-Kandidat noch als Ausschluss. Ein
+    fehlender Posten hinterlaesst keine Spur, deshalb faellt so etwas ohne
+    Gegenprobe niemandem auf.
+    """
+    beachtet = ev("context.kv_notfall_zna")
+    ignoriert = clinical_ev("clinical.diagnostics.ophthalmic_fundus")
+
+    def fake_llm(messages, _settings):
+        # Das Modell meldet nur die eine Leistung und schweigt zur anderen.
+        return {
+            "items": [
+                {
+                    "gop": "01210",
+                    "quantity": 1,
+                    "evidence_ids": [beachtet.evidence_id],
+                    "service_date": "2025-10-04",
+                    "service_time": "00:01",
+                    "confidence": "high",
+                }
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        [beachtet, ignoriert],
+        FakeCatalog(),
+        default_quarter="2025/Q4",
+        settings=settings(),
+        llm_client=fake_llm,
+    )
+
+    aufgefangen = [r for r in result.review_candidates if ignoriert.evidence_id in r.evidence_ids]
+    assert aufgefangen, "Die übergangene Evidenz muss zur Prüfung vorgelegt werden"
+    assert aufgefangen[0].possible_gops, "Die Kandidaten-GOPs gehören in den Vorschlag"
+    assert ignoriert.page in aufgefangen[0].evidence_pages
+
+    # Die abgerechnete Evidenz darf nicht zusätzlich als übergangen erscheinen.
+    assert not [r for r in result.review_candidates if beachtet.evidence_id in r.evidence_ids]

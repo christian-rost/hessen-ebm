@@ -98,6 +98,7 @@ def generate_semantic_billing_items(
     finalize_billing_timeline(items)
     review = item_review + blocked_review + _review_from_payload(payload, billing_evidence)
     excluded = _excluded_from_payload(payload, billing_evidence)
+    review += _unaccounted_evidence_review(billing_evidence, candidates, items, review, excluded)
     summary = InvoiceSummary(
         line_count=len(items),
         points_total=sum((item.points or 0) * item.quantity for item in items),
@@ -123,6 +124,65 @@ def generate_semantic_billing_items(
             "catalog_rule_validation": catalog_rule_validation,
         },
     )
+
+
+def _unaccounted_evidence_review(
+    evidence: list[Evidence],
+    candidates: list[dict[str, Any]],
+    items: list[BillingItem],
+    review: list[ReviewCandidate],
+    excluded: list[ExcludedEvidence],
+) -> list[ReviewCandidate]:
+    """Evidenz auffangen, die spurlos verschwunden ist.
+
+    Ein Beleg konnte bisher aus dem Entwurf fallen, ohne irgendwo aufzutauchen:
+    nicht als Position, nicht als Review-Kandidat, nicht als Ausschluss. Genau das
+    ist einmal passiert - eine dokumentierte Abdomen-Sonographie, fuer die der
+    passende Katalogkandidat im Prompt stand, kam in der Antwort schlicht nicht
+    mehr vor. Ohne Gegenprobe faellt so etwas niemandem auf, weil ein fehlender
+    Posten keine Spur hinterlaesst.
+
+    Die Pruefung ist rein strukturell: Wer Kandidaten hatte und nirgends vorkommt,
+    wird vorgelegt. Sie kennt keine GOP und keinen klinischen Begriff und greift
+    deshalb bei jedem kuenftigen stillen Ausfall genauso.
+    """
+    accounted: set[str] = set()
+    for item in items:
+        accounted.update(item.evidence_ids or [])
+    for candidate in review:
+        accounted.update(candidate.evidence_ids or [])
+    for entry in excluded:
+        accounted.update(entry.evidence_ids or [])
+
+    gops_by_evidence: dict[str, list[str]] = {}
+    pages_by_evidence: dict[str, int] = {item.evidence_id: item.page for item in evidence}
+    for candidate in candidates:
+        for evidence_id in candidate.get("evidence_ids") or []:
+            gops_by_evidence.setdefault(evidence_id, []).append(str(candidate.get("gop")))
+
+    missed: list[ReviewCandidate] = []
+    for item in evidence:
+        if item.evidence_id in accounted:
+            continue
+        possible = gops_by_evidence.get(item.evidence_id) or []
+        if not possible:
+            # Ohne Kandidaten gibt es nichts vorzulegen; das ist keine Luecke,
+            # sondern Evidenz ohne Katalogbezug.
+            continue
+        missed.append(
+            ReviewCandidate(
+                evidence=item.label or item.kind,
+                evidence_pages=[pages_by_evidence.get(item.evidence_id) or item.page],
+                evidence_ids=[item.evidence_id],
+                possible_gops=sorted(set(possible)),
+                reason=(
+                    "Zu dieser Evidenz lagen Katalogkandidaten vor, die semantische Herleitung "
+                    "hat sie aber weder abgerechnet noch begründet verworfen. Bitte prüfen, ob "
+                    "eine der genannten GOPs abzurechnen ist."
+                ),
+            )
+        )
+    return missed
 
 
 def _quarter_from_evidence(evidence: list[Evidence]) -> str | None:
@@ -533,20 +593,24 @@ def _server_reason(
     Dokumentation. Alles, was hier steht, ist dagegen nachpruefbar: Katalogtitel,
     belegende Evidenz mit Seite und die als belegt gemeldeten Pflichtelemente.
     """
-    parts: list[str] = []
-    if title:
-        parts.append(str(title))
-    if selected is not None:
-        beleg = selected.label or selected.kind
-        parts.append(f"belegt durch {beleg} (Seite {selected.page})")
-    elif event is not None and event.evidence:
-        first = event.evidence[0]
-        parts.append(f"belegt durch {first.label or first.kind} (Seite {first.page})")
-    if covered:
-        parts.append("Pflichtinhalt belegt: " + "; ".join(element[:80] for element in covered))
-    if not parts:
+    beleg = selected if selected is not None else _first_evidence(event)
+    lead = str(title) if title else ""
+    if beleg is not None:
+        quelle = f"belegt durch {beleg.label or beleg.kind} (Seite {beleg.page})"
+        lead = f"{lead}, {quelle}" if lead else quelle[0].upper() + quelle[1:]
+    if not lead:
         return fallback
-    return ". ".join(parts) + "."
+    sentences = [lead]
+    if covered:
+        # Ungekuerzt: die Elemente sind woertliche Zitate aus der Kataloglegende und
+        # sollen mit ihr vergleichbar bleiben. Eine abgeschnittene Zeile las sich wie
+        # ein Fehler ("... und Anlag") und war als Beleg wertlos.
+        sentences.append("Pflichtinhalt belegt: " + "; ".join(covered))
+    return ". ".join(sentences) + "."
+
+
+def _first_evidence(event: BillingEvent | None) -> Evidence | None:
+    return event.evidence[0] if event is not None and event.evidence else None
 
 
 def _billing_items_from_payload(
@@ -586,6 +650,7 @@ def _billing_items_from_payload(
                 ReviewCandidate(
                     evidence=f"LLM-Vorschlag GOP {gop}",
                     evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                    evidence_ids=list(evidence_ids),
                     possible_gops=[canonical_gop(gop)],
                     reason="GOP war nicht im bereitgestellten Katalog-Kandidatenpool und wurde nicht automatisch übernommen.",
                 )
@@ -600,6 +665,7 @@ def _billing_items_from_payload(
                 ReviewCandidate(
                     evidence=f"Semantischer Vorschlag GOP {gop}",
                     evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                    evidence_ids=list(evidence_ids),
                     possible_gops=[canonical_gop(gop)],
                     reason=acceptance_reason,
                 )
@@ -656,6 +722,7 @@ def _billing_items_from_payload(
                     ReviewCandidate(
                         evidence=f"Zeitabhängiger LLM-Vorschlag GOP {gop}",
                         evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                    evidence_ids=list(evidence_ids),
                         possible_gops=[canonical_gop(gop), canonical_gop(temporal_decision.gop)],
                         reason=(
                             f"Nach Datum/Uhrzeit wäre {temporal_decision.gop} plausibel, "
@@ -676,6 +743,7 @@ def _billing_items_from_payload(
                 ReviewCandidate(
                     evidence=f"LLM-Vorschlag GOP {gop}",
                     evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                    evidence_ids=list(evidence_ids),
                     possible_gops=[canonical_gop(gop)],
                     reason="GOP war nicht im bereitgestellten Katalog-Kandidatenpool und wurde nicht automatisch übernommen.",
                 )
@@ -692,6 +760,7 @@ def _billing_items_from_payload(
                 ReviewCandidate(
                     evidence=f"Doppelter Vorschlag einer Kontaktpauschale ({gop})",
                     evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                    evidence_ids=list(evidence_ids),
                     possible_gops=[canonical_gop(gop)],
                     reason=(
                         "Für dasselbe zeitliche Kontakt- und Sequenzereignis wurde bereits eine "
@@ -706,6 +775,7 @@ def _billing_items_from_payload(
                 ReviewCandidate(
                     evidence=f"Doppelter LLM-Vorschlag GOP {gop}",
                     evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                    evidence_ids=list(evidence_ids),
                     possible_gops=[canonical_gop(gop)],
                     reason="GOP-Basis wurde für dasselbe Leistungsereignis bereits als Rechnungsposition übernommen.",
                 )
@@ -881,6 +951,7 @@ def _split_items_by_catalog_verdict(
             ReviewCandidate(
                 evidence=f"Katalogprüfung GOP {item.gop_original}",
                 evidence_pages=list(item.evidence_pages),
+                evidence_ids=list(item.evidence_ids),
                 possible_gops=[item.gop_original],
                 reason=(
                     "Die Position wurde nicht übernommen, weil eine Katalogbedingung des Quartals "
@@ -1076,6 +1147,7 @@ def _review_from_payload(payload: dict[str, Any], evidence: list[Evidence]) -> l
             ReviewCandidate(
                 evidence=str(item.get("evidence") or "LLM-Review-Kandidat"),
                 evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                    evidence_ids=list(evidence_ids),
                 possible_gops=[canonical_gop(str(gop)) for gop in _as_list(item.get("possible_gops")) if str(gop).strip()],
                 reason=str(item.get("reason") or "Semantisch unsicher; manuelle Prüfung erforderlich."),
             )
@@ -1092,6 +1164,7 @@ def _excluded_from_payload(payload: dict[str, Any], evidence: list[Evidence]) ->
             ExcludedEvidence(
                 evidence=str(item.get("evidence") or "Nicht übernommene Evidenz"),
                 evidence_pages=_pages_for_ids(evidence_ids, evidence_by_id),
+                    evidence_ids=list(evidence_ids),
                 not_billed_gop=_canonical_optional_gop(item.get("not_billed_gop")),
                 reason=str(item.get("reason") or "Semantisch ausgeschlossen."),
             )
