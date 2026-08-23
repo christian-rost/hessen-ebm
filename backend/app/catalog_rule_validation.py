@@ -483,8 +483,19 @@ def _uncovered_content(required: Sequence[str], covered: Sequence[str]) -> list[
     """Pflichtelemente ohne Beleg.
 
     Das Modell gibt die Elemente woertlich zurueck, kann sie aber kuerzen oder
-    umstellen. Verglichen wird deshalb ueber die Wortmenge: ein Element gilt als
-    belegt, wenn eine Angabe seine tragenden Woerter weitgehend enthaelt.
+    umstellen. Verglichen wird deshalb ueber die Wortmenge.
+
+    Zwei Richtungen zaehlen, und das ist der Kern. Frueher wurde nur gefragt, wie
+    viel der Anforderung das Zitat abdeckt. Ein kurzes, korrektes Zitat konnte
+    eine lange Anforderung damit nie erfuellen: An einem Produktionsentwurf lag
+    der belegte "Persoenliche Arzt-Patienten-Kontakt im organisierten
+    Not(-fall)dienst" bei 0,58 gegenueber einer Anforderung, die den Satz noch um
+    die Aufzaehlung der Leistungserbringer verlaengert - und wurde als fehlend
+    gemeldet, obwohl jedes seiner Woerter in der Anforderung stand.
+
+    Ein Zitat, das fast vollstaendig in der Anforderung aufgeht, ist ein Beleg
+    fuer sie. Damit daraus kein Freibrief wird, muss die Schnittmenge zugleich
+    tragfaehig sein - zwei zufaellig geteilte Woerter belegen nichts.
     """
     normalized_covered = [_content_words(value) for value in covered if str(value).strip()]
     missing: list[str] = []
@@ -492,10 +503,32 @@ def _uncovered_content(required: Sequence[str], covered: Sequence[str]) -> list[
         words = _content_words(element)
         if not words:
             continue
-        if any(len(words & candidate) / len(words) >= 0.6 for candidate in normalized_covered if candidate):
+        if any(
+            _covers(words, candidate) for candidate in normalized_covered if candidate
+        ):
             continue
         missing.append(element)
     return missing
+
+
+# Anteil der Anforderung, den ein Beleg abdecken muss, wenn er fuer sich steht.
+CONTENT_COVERAGE_RATIO = 0.6
+# Anteil des Belegs, der in der Anforderung aufgehen muss, damit er als Zitat
+# aus ihr gilt, und die Mindestzahl gemeinsamer Woerter dafuer.
+CONTENT_QUOTE_RATIO = 0.8
+CONTENT_QUOTE_MIN_WORDS = 3
+
+
+def _covers(required_words: set[str], covered_words: set[str]) -> bool:
+    shared = required_words & covered_words
+    if not shared:
+        return False
+    if len(shared) / len(required_words) >= CONTENT_COVERAGE_RATIO:
+        return True
+    return (
+        len(shared) / len(covered_words) >= CONTENT_QUOTE_RATIO
+        and len(shared) >= CONTENT_QUOTE_MIN_WORDS
+    )
 
 
 def _content_words(value: str) -> set[str]:

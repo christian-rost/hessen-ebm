@@ -266,3 +266,32 @@ def test_declared_authorization_lets_the_position_pass(monkeypatch):
     current = item("99999", "2026-01-03", "session-1", 1)
 
     assert _evaluate_clause(authorization_clause("Ultraschall-Vereinbarung"), current, Counter(), {}, {}) is None
+
+
+def test_a_short_quote_covers_the_longer_requirement_it_comes_from():
+    """Ein kurzes, korrektes Zitat muss eine lange Anforderung belegen können.
+
+    Am Produktionsentwurf gemessen: Der belegte "Persönliche Arzt-Patienten-Kontakt
+    im organisierten Not(-fall)dienst" deckte 0,58 der Anforderung ab, die denselben
+    Satz um die Aufzählung der Leistungserbringer verlängert — knapp unter der
+    Schwelle. Die Position wurde als unvollständig dokumentiert gemeldet, obwohl
+    jedes Wort des Belegs in der Anforderung stand. Der Arzt hätte etwas
+    nachgetragen, das bereits dasteht.
+    """
+    from app.catalog_rule_validation import _uncovered_content
+
+    anforderung = (
+        "Persönlicher Arzt-Patienten-Kontakt im organisierten Not(-fall)dienst und für "
+        "nicht an der vertragsärztlichen Versorgung teilnehmende Ärzte"
+    )
+    beleg = "Persönlicher Arzt-Patienten-Kontakt im organisierten Not(-fall)dienst"
+
+    assert _uncovered_content([anforderung], [beleg]) == []
+
+    # Umgekehrt bleibt die Prüfung streng: Ein Beleg, der nur zufällig ein paar
+    # Wörter teilt, deckt die Anforderung nicht.
+    fremd = "Dokumentation im Mutterpass nach Richtlinie"
+    assert _uncovered_content([anforderung], [fremd]) == [anforderung]
+
+    # Und ein Beleg ohne tragende Schnittmenge belegt gar nichts.
+    assert _uncovered_content(["Pulsoxymetrie"], ["Befundbesprechung"]) == ["Pulsoxymetrie"]
