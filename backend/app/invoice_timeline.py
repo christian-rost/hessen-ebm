@@ -30,7 +30,11 @@ def build_invoice_timeline(
     for event in events:
         event_items = items_by_event.get(event.event_id, [])
         metadata = _timeline_metadata(event.evidence)
-        if not metadata and not event_items:
+        # Die Zeitleiste bildet den Behandlungsverlauf ab, nicht nur die Rechnung.
+        # Ein datiertes Leistungsereignis gehoert deshalb auch dann hinein, wenn
+        # daraus keine Position entstanden ist - gerade dann ist sie die einzige
+        # Information, die der Sachbearbeiter noch hat.
+        if not metadata and not event_items and not event.service_date:
             continue
         matched_item_ids.update(id(item) for item in event_items)
         event_type = str(metadata.get("timeline_event_type") or "service_event")

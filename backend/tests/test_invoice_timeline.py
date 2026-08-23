@@ -95,3 +95,33 @@ def test_configured_contacts_are_not_merged_into_one_event():
 
     assert len(events) == 2
     assert [event.temporal_role for event in events] == ["initial_contact", "follow_up_contact"]
+
+
+def test_timeline_shows_the_course_of_treatment_without_any_billing_item():
+    """Scheitert die Ableitung, ist die Zeitleiste die einzige verbliebene Auskunft."""
+    evidence = [
+        Evidence(
+            evidence_id="ev-1",
+            kind="clinical.diagnostics.ctg",
+            label="CTG / Tokographie",
+            page=1,
+            service_date="2026-01-01",
+            service_time="13:05",
+            text="CTG",
+        ),
+        Evidence(
+            evidence_id="ev-2",
+            kind="clinical.diagnostics.sonography",
+            label="Sonographie",
+            page=2,
+            service_date="2026-01-01",
+            service_time="13:15",
+            text="Sonographie",
+        ),
+    ]
+    events = build_billing_events(evidence, "2026/Q1", "Hessen")
+
+    timeline = build_invoice_timeline(events, [], "2026/Q1", "Hessen")
+
+    assert [entry.service_time for entry in timeline] == ["13:05", "13:15"]
+    assert all(entry.gops == [] for entry in timeline)
