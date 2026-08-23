@@ -88,9 +88,13 @@ def generate_semantic_billing_items(
 
     messages = _build_messages(billing_evidence, candidates, quarter, region)
     rule_set = get_runtime_billing_rule_set(quarter, region)
-    payload, attempts = _request_payload_with_retry(messages, settings, llm_client, rule_set.semantic_policy)
+    payload, attempts, agreement, passes = _derive_over_passes(
+        messages, settings, llm_client, rule_set.semantic_policy
+    )
 
-    items, item_review = _billing_items_from_payload(payload, billing_evidence, events, candidates, catalog, quarter, region)
+    items, item_review = _billing_items_from_payload(
+        payload, billing_evidence, events, candidates, catalog, quarter, region, agreement, passes
+    )
     reconcile_derived_item_anchors(items, quarter, region)
     append_derived_billing_items(items, billing_evidence, catalog, quarter, region)
     catalog_rule_validation = [
@@ -134,12 +138,85 @@ def generate_semantic_billing_items(
             "quarter": quarter,
             "region": region,
             "llm_attempts": attempts,
+            "derivation_passes": passes,
+            "pass_agreement": {f"{gop}@{date or ''}": count for (gop, date), count in sorted(agreement.items())},
             "catalog_candidate_count": len(candidates),
             "billing_event_count": len(events),
             "episode_selection": episode_selection_payload(events),
             "catalog_rule_validation": catalog_rule_validation,
         },
     )
+
+
+def _derive_over_passes(
+    messages: list[dict[str, str]],
+    settings: Settings,
+    llm_client: LlmClient | None,
+    semantic_policy: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[tuple[str, str | None], int], int]:
+    """Mehrfach ableiten und vereinigen.
+
+    Gemessen an vier Laeufen desselben Falls mit derselben Fassung und
+    temperature 0: kein Lauf enthielt alle Sollpositionen, jeder einzelne war
+    frei von Falschvorschlaegen, und die Vereinigung traf genau die Sollmenge.
+    Das Modell findet also jede richtige Position - nur nie alle auf einmal.
+
+    Bei dieser Fehlerverteilung ist ein zweiter Durchgang die einzige Massnahme,
+    die etwas bringt, ohne etwas zu riskieren: Was ein Lauf zusaetzlich findet,
+    ist nach dieser Messung eher eine gefundene als eine erfundene Position - und
+    das Katalogtor prueft ohnehin jede davon. Der Preis sind Modellaufrufe.
+
+    Zurueck kommt neben der vereinigten Antwort, in wie vielen Durchgaengen jede
+    Position auftrat. Eine Position, die nur einer von vier Durchgaengen kennt,
+    ist schwaecher belegt als eine, die alle nennen - das faellt in die
+    Konfidenz und damit in die Vorlage zur Pruefung.
+    """
+    passes = max(1, int(semantic_policy.get("derivation_passes") or 1))
+    merged: dict[str, Any] = {"items": [], "documentation_hints": [], "review_candidates": [], "excluded_evidence": []}
+    agreement: dict[tuple[str, str | None], int] = {}
+    seen: dict[str, dict[tuple[str, str | None], dict[str, Any]]] = {key: {} for key in merged}
+    attempts: list[dict[str, Any]] = []
+    failures: list[str] = []
+
+    for index in range(1, passes + 1):
+        try:
+            payload, pass_attempts = _request_payload_with_retry(
+                messages, settings, llm_client, semantic_policy
+            )
+        except SemanticBillingError as exc:
+            # Ein gescheiterter Durchgang macht die anderen nicht wertlos.
+            failures.append(str(exc))
+            attempts.append({"pass": index, "status": "failed", "reason": str(exc)})
+            continue
+        for attempt in pass_attempts:
+            attempts.append({**attempt, "pass": index})
+        for key in merged:
+            for raw in _as_list(payload.get(key)):
+                if not isinstance(raw, dict):
+                    continue
+                # Ohne Datum unterscheidet erst die Belegangabe zwei Vorschlaege
+                # derselben GOP. Fehlt beides, sind es tatsaechlich dieselben.
+                anchor = _clean_optional_str(raw.get("service_date")) or ",".join(
+                    sorted(str(value) for value in _as_list(raw.get("evidence_ids")))
+                )
+                identity = (
+                    canonical_gop(str(raw.get("gop") or raw.get("not_billed_gop") or raw.get("evidence") or "")),
+                    anchor or None,
+                )
+                if key == "items":
+                    agreement[identity] = agreement.get(identity, 0) + 1
+                previous = seen[key].get(identity)
+                if previous is None:
+                    seen[key][identity] = raw
+                    merged[key].append(raw)
+                elif len(_as_list(raw.get("evidence_ids"))) > len(_as_list(previous.get("evidence_ids"))):
+                    # Denselben Vorschlag mit der reicheren Belegangabe behalten.
+                    merged[key][merged[key].index(previous)] = raw
+                    seen[key][identity] = raw
+
+    if not any(merged[key] for key in merged) and failures:
+        raise SemanticBillingError(failures[0])
+    return merged, attempts, agreement, passes
 
 
 def _uncovered_service_days(
@@ -680,6 +757,8 @@ def _billing_items_from_payload(
     catalog: CatalogRepository,
     quarter: str,
     region: str,
+    agreement: dict[tuple[str, str | None], int] | None = None,
+    passes: int = 1,
 ) -> tuple[list[BillingItem], list[ReviewCandidate]]:
     evidence_by_id = {item.evidence_id: item for item in evidence}
     candidate_by_gop: dict[str, dict[str, Any]] = {}
@@ -889,6 +968,21 @@ def _billing_items_from_payload(
         confidence = str(proposal.get("confidence") or "medium").lower()
         if confidence not in {"high", "medium", "low"}:
             confidence = "medium"
+        # Bei mehreren Durchgaengen zaehlt die Uebereinstimmung mehr als die
+        # Selbsteinschaetzung: Eine Position, die nur eine Minderheit der
+        # Durchgaenge kennt, geht zur Pruefung, statt sich selbst hoch zu bewerten.
+        if passes > 1 and agreement:
+            anchor = _clean_optional_str(proposal.get("service_date")) or ",".join(
+                sorted(str(value) for value in _as_list(proposal.get("evidence_ids")))
+            )
+            found_in = agreement.get((canonical_gop(gop), anchor or None), 0)
+            if found_in and found_in * 2 <= passes:
+                confidence = "low"
+                validation_status = "review"
+                validation_notes.append(
+                    f"Nur {found_in} von {passes} Ableitungsdurchgängen haben diese Position "
+                    "vorgeschlagen; sie wird deshalb zur Prüfung vorgelegt."
+                )
         temporal_rule_suffix = f"+{temporal_decision.rule_id}" if temporal_decision.temporal_rule_id else ""
         sequence_rule_suffix = f"+{event.sequence_rule_id}" if event and event.sequence_rule_id else ""
         catalog_rule_suffix = (

@@ -901,7 +901,9 @@ def test_invalid_llm_answer_is_retried_with_the_error_named():
     )
 
     assert [item.gop_original for item in result.items] == ["01212"]
-    assert len(seen) == 2, "Der zweite Versuch hat nicht stattgefunden"
+    # Der erste Durchgang scheitert einmal und gelingt beim zweiten Versuch;
+    # weitere Aufrufe stammen aus den zusaetzlichen Ableitungsdurchgaengen.
+    assert len(seen) >= 2, "Der zweite Versuch hat nicht stattgefunden"
     correction = seen[1][-1]["content"]
     assert "vorherige Versuch war unbrauchbar" in correction
     assert result.context["llm_attempts"][0]["status"] == "failed"
@@ -921,7 +923,11 @@ def test_derivation_gives_up_after_the_configured_attempts():
             evidence, FakeCatalog(), default_quarter="2025/Q4", settings=settings(), llm_client=broken_llm
         )
 
-    assert len(calls) == 3, "max_attempts aus semantic_policy wurde nicht beachtet"
+    # max_attempts gilt je Durchgang; scheitert jeder Durchgang, faellt die
+    # Ableitung insgesamt aus - ein leerer Entwurf waere schlimmer als ein Fehler.
+    from app.billing_rule_store import get_runtime_billing_rule_set
+    passes = int(get_runtime_billing_rule_set().semantic_policy.get("derivation_passes") or 1)
+    assert len(calls) == 3 * passes, "max_attempts aus semantic_policy wurde nicht beachtet"
     assert "Versuch 1" in str(excinfo.value) and "Versuch 3" in str(excinfo.value)
 
 
@@ -1050,3 +1056,50 @@ def test_a_treatment_day_without_any_position_is_reported():
     assert tag_zwei.evidence_id in tage[0].evidence_ids
     # Der abgerechnete Tag darf nicht gemeldet werden.
     assert not [r for r in result.review_candidates if "2025-10-04" in r.evidence]
+
+
+def test_passes_are_united_and_minority_findings_go_to_review():
+    """Mehrere Durchgänge vereinigen, ohne die Schwachen als sicher auszugeben.
+
+    Gemessen an vier Läufen desselben Falls: kein Lauf enthielt alle
+    Sollpositionen, keiner enthielt eine falsche, die Vereinigung traf die
+    Sollmenge genau. Der Nutzen liegt also in der Vereinigung — der Preis wäre,
+    einen Einzelfund genauso sicher zu behandeln wie einen einstimmigen.
+    """
+    erst = ev("context.kv_notfall_zna", service_date="2025-10-04", service_time="00:01")
+    zweit = ev("lab.creatinine", page=3, service_date="2025-10-04", service_time="00:05")
+    durchgang = {"n": 0}
+
+    def wechselhaftes_llm(_messages, _settings):
+        durchgang["n"] += 1
+        gemeinsam = {
+            "gop": "01210",
+            "evidence_ids": [erst.evidence_id],
+            "service_date": "2025-10-04",
+            "service_time": "00:01",
+            "confidence": "high",
+        }
+        # Nur der erste Durchgang sieht die Laborleistung.
+        nur_einmal = [{
+            "gop": "32066",
+            "evidence_ids": [zweit.evidence_id],
+            "service_date": "2025-10-04",
+            "confidence": "high",
+        }] if durchgang["n"] == 1 else []
+        return {"items": [gemeinsam, *nur_einmal], "review_candidates": [], "excluded_evidence": []}
+
+    result = generate_semantic_billing_items(
+        [erst, zweit], FakeCatalog(), default_quarter="2025/Q4",
+        settings=settings(), llm_client=wechselhaftes_llm,
+    )
+
+    gops = [item.gop_original for item in result.items]
+    assert "32066" in gops, "Der Einzelfund muss in der Vereinigung erhalten bleiben"
+    assert result.context["derivation_passes"] >= 3
+
+    einstimmig = next(i for i in result.items if i.gop_original == "01212")
+    minderheit = next(i for i in result.items if i.gop_original == "32066")
+    assert minderheit.confidence == "low"
+    assert minderheit.validation_status == "review"
+    assert any("Ableitungsdurchgänge" in note for note in minderheit.validation_notes)
+    assert einstimmig.confidence == "high"
