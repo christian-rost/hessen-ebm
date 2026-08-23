@@ -77,8 +77,8 @@ def generate_semantic_billing_items(
         raise SemanticBillingError(f"Für das Quartal {quarter} wurden keine Katalogkandidaten gefunden.")
 
     messages = _build_messages(billing_evidence, candidates, quarter, region)
-    raw_payload = llm_client(messages, settings) if llm_client else _call_mistral_chat_json(messages, settings)
-    payload = _coerce_json_payload(raw_payload)
+    rule_set = get_runtime_billing_rule_set(quarter, region)
+    payload, attempts = _request_payload_with_retry(messages, settings, llm_client, rule_set.semantic_policy)
 
     items, item_review = _billing_items_from_payload(payload, billing_evidence, events, candidates, catalog, quarter, region)
     reconcile_derived_item_anchors(items, quarter, region)
@@ -115,6 +115,7 @@ def generate_semantic_billing_items(
             "model": settings.mistral_llm_model,
             "quarter": quarter,
             "region": region,
+            "llm_attempts": attempts,
             "catalog_candidate_count": len(candidates),
             "billing_event_count": len(events),
             "episode_selection": episode_selection_payload(events),
@@ -429,6 +430,57 @@ def _call_mistral_chat_json(messages: list[dict[str, str]], settings: Settings) 
     if not isinstance(content, str) or not content.strip():
         raise SemanticBillingError("Mistral Chat hat keinen JSON-Inhalt zurückgegeben.")
     return _json_from_text(content)
+
+
+def _request_payload_with_retry(
+    messages: list[dict[str, str]],
+    settings: Settings,
+    llm_client: LlmClient | None,
+    semantic_policy: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Antwort des Modells holen und bei unbrauchbarem Ergebnis erneut fragen.
+
+    Ohne semantische Herleitung entsteht kein einziger Rechnungsvorschlag. Ein
+    einzelner Aussetzer des Modells - abgeschnittenes JSON, Prosa statt Objekt,
+    ein Netzfehler - wuerde deshalb einen leeren Entwurf erzeugen. Der zweite
+    Versuch bekommt den Fehler genannt, damit das Modell ihn beheben kann.
+
+    Aufgegeben wird erst nach allen Versuchen; der Aufrufer faellt dann auf den
+    leeren Pfad zurueck und die Warnung nennt jeden Versuch einzeln.
+    """
+    max_attempts = max(1, int(semantic_policy.get("max_attempts") or 2))
+    attempts: list[dict[str, Any]] = []
+    conversation = list(messages)
+    last_error: SemanticBillingError | None = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            raw = llm_client(conversation, settings) if llm_client else _call_mistral_chat_json(conversation, settings)
+            payload = _coerce_json_payload(raw)
+            if not isinstance(payload.get("items"), list):
+                raise SemanticBillingError("Die LLM-Antwort enthält kein Feld 'items' als Liste.")
+            attempts.append({"attempt": attempt, "status": "ok"})
+            return payload, attempts
+        except SemanticBillingError as exc:
+            last_error = exc
+            attempts.append({"attempt": attempt, "status": "failed", "reason": str(exc)})
+            if attempt >= max_attempts:
+                break
+            conversation = list(messages) + [
+                {
+                    "role": "user",
+                    "content": (
+                        f"Der vorherige Versuch war unbrauchbar: {exc} "
+                        "Antworte ausschließlich mit einem einzigen JSON-Objekt nach dem angegebenen Schema, "
+                        "ohne einleitenden Text, ohne Markdown-Codeblock und ohne Kommentare. "
+                        "Das Feld items muss vorhanden sein; enthält der Fall keine abrechenbare Leistung, "
+                        "gib items als leere Liste zurück."
+                    ),
+                }
+            ]
+
+    detail = "; ".join(f"Versuch {a['attempt']}: {a.get('reason', '')}" for a in attempts)
+    raise SemanticBillingError(f"Nach {len(attempts)} Versuchen keine verwertbare Antwort. {detail}")
 
 
 def _coerce_json_payload(raw_payload: dict[str, Any] | str) -> dict[str, Any]:

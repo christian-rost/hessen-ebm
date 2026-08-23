@@ -185,7 +185,9 @@ Welche Klauseltypen als Hinweis oder als irrelevant gelten, steht in `clause_pol
 
 Wichtig für die Einordnung: Das Tor greift nur dort, wo der Katalog eine Bedingung maschinell hergibt. Der Compiler stuft jede Regel als `partial` oder `text_only` ein; eine Stufe "vollständig maschinell geprüft" gibt es bewusst nicht. Prosa-Bedingungen aus Präambeln und Allgemeinen Bestimmungen binden deshalb nicht automatisch. Genau deshalb bleibt jeder Entwurf `draft_needs_human_review`.
 
-Ohne `MISTRAL_API_KEY` entstehen keine Rechnungspositionen: die semantische Zuordnung ist der einzige Weg von Evidenz zu GOP. Die Analyse liefert dann Segmente, Zeitleiste und Evidenzen, und der Grund steht in `catalog_context.analysis_warnings`.
+Weil die semantische Zuordnung der einzige Weg von Evidenz zu GOP ist, würde ein einzelner Aussetzer des Modells einen leeren Entwurf erzeugen. Eine unbrauchbare Antwort — abgeschnittenes JSON, Prosa statt Objekt, fehlendes `items` — wird deshalb wiederholt; der nächste Versuch bekommt den Fehler ausdrücklich genannt. Die Zahl der Versuche steht in `semantic_policy.max_attempts`, jeder Versuch wird in `catalog_context.billing_derivation.llm_attempts` ausgewiesen.
+
+Ohne `MISTRAL_API_KEY` entstehen keine Rechnungspositionen. Die Analyse liefert dann Segmente, Zeitleiste und Evidenzen, und der Grund steht in `catalog_context.analysis_warnings`.
 
 ## Zeitstempel und Kontaktsequenzen
 

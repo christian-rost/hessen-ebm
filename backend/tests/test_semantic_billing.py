@@ -1,3 +1,4 @@
+import pytest
 import re
 from pathlib import Path
 from typing import Optional
@@ -5,7 +6,7 @@ from typing import Optional
 from app.catalog import CatalogRepository, normalize_gop
 from app.config import Settings
 from app.models import CatalogEntry, Evidence
-from app.semantic_billing import generate_semantic_billing_items
+from app.semantic_billing import SemanticBillingError, generate_semantic_billing_items
 
 
 class FakeCatalog(CatalogRepository):
@@ -870,3 +871,54 @@ def test_service_after_midnight_does_not_create_a_second_base_pauschale():
     assert billed.count("01212") == 1, "Die Sitzung darf nur eine Basispauschale erzeugen"
     assert "01786" in billed, "Die Leistung nach Mitternacht bleibt abrechenbar"
     assert not any(gop == "01210" for gop in billed), "23:40 ist die Nachtvariante"
+
+
+def test_invalid_llm_answer_is_retried_with_the_error_named():
+    """Ein Aussetzer des Modells darf keinen leeren Entwurf erzeugen."""
+    evidence = [ev("context.kv_notfall_zna")]
+    seen: list[list[dict]] = []
+
+    def flaky_llm(messages, _settings):
+        seen.append(messages)
+        if len(seen) == 1:
+            return "Gerne! Hier ist das Ergebnis: (kein JSON)"
+        return {
+            "items": [
+                {
+                    "gop": "01212",
+                    "evidence_ids": ["ev-context.kv_notfall_zna"],
+                    "confidence": "high",
+                    "reason": "Notfallkontakt dokumentiert.",
+                }
+            ],
+            "review_candidates": [],
+            "excluded_evidence": [],
+        }
+
+    result = generate_semantic_billing_items(
+        evidence, FakeCatalog(), default_quarter="2025/Q4", settings=settings(), llm_client=flaky_llm
+    )
+
+    assert [item.gop_original for item in result.items] == ["01212"]
+    assert len(seen) == 2, "Der zweite Versuch hat nicht stattgefunden"
+    correction = seen[1][-1]["content"]
+    assert "vorherige Versuch war unbrauchbar" in correction
+    assert result.context["llm_attempts"][0]["status"] == "failed"
+    assert result.context["llm_attempts"][1]["status"] == "ok"
+
+
+def test_derivation_gives_up_after_the_configured_attempts():
+    evidence = [ev("context.kv_notfall_zna")]
+    calls: list[int] = []
+
+    def broken_llm(_messages, _settings):
+        calls.append(1)
+        return "niemals JSON"
+
+    with pytest.raises(SemanticBillingError) as excinfo:
+        generate_semantic_billing_items(
+            evidence, FakeCatalog(), default_quarter="2025/Q4", settings=settings(), llm_client=broken_llm
+        )
+
+    assert len(calls) == 3, "max_attempts aus semantic_policy wurde nicht beachtet"
+    assert "Versuch 1" in str(excinfo.value) and "Versuch 3" in str(excinfo.value)
