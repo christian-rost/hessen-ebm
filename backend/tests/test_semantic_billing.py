@@ -1103,3 +1103,36 @@ def test_passes_are_united_and_minority_findings_go_to_review():
     assert minderheit.validation_status == "review"
     assert any("Ableitungsdurchgänge" in note for note in minderheit.validation_notes)
     assert einstimmig.confidence == "high"
+
+
+def test_a_repeated_proposal_within_one_pass_is_not_a_second_opinion():
+    """Zwei gleiche Vorschläge in einer Antwort sind keine zwei Durchgänge.
+
+    Im Produktionslauf stand `01786@2026-01-03: 2` bei einem einzigen Durchgang —
+    das Modell hatte die Position innerhalb derselben Antwort doppelt genannt.
+    Zählt das als Bestätigung, ist ein Doppelvorschlag so viel wert wie eine
+    unabhängige Wiederholung, und die Konfidenz misst das Gegenteil von dem,
+    wofür sie gedacht ist.
+    """
+    beleg = ev("context.kv_notfall_zna", service_date="2025-10-04", service_time="00:01")
+
+    def doppelndes_llm(_messages, _settings):
+        vorschlag = {
+            "gop": "01210",
+            "evidence_ids": [beleg.evidence_id],
+            "service_date": "2025-10-04",
+            "service_time": "00:01",
+            "confidence": "high",
+        }
+        return {"items": [vorschlag, dict(vorschlag)], "review_candidates": [], "excluded_evidence": []}
+
+    result = generate_semantic_billing_items(
+        [beleg], FakeCatalog(), default_quarter="2025/Q4",
+        settings=settings(), llm_client=doppelndes_llm,
+    )
+
+    passes = result.context["derivation_passes"]
+    agreement = result.context["pass_agreement"]
+    assert all(count <= passes for count in agreement.values()), (
+        f"Zustimmung kann nicht über der Zahl der Durchgänge liegen: {agreement}"
+    )

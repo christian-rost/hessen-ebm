@@ -394,7 +394,12 @@ def _merge_runtime_core_rules(local: BillingRuleSet, remote: BillingRuleSet) -> 
         clause_policy=merge_settings(local.clause_policy, remote.clause_policy),
         event_settings=merge_settings(local.event_settings, remote.event_settings),
         calendar_definitions=remote.calendar_definitions or local.calendar_definitions,
-        semantic_policy=remote.semantic_policy or local.semantic_policy,
+        # Frueher "remote or local": Sobald ferngesteuerte Regeln eine semantic_policy
+        # mitbrachten, ersetzte sie die lokale vollstaendig. Ein neu hinzugefuegter
+        # Schluessel war damit in der Produktion unsichtbar und fiel still auf seinen
+        # Vorgabewert zurueck - genau so ist derivation_passes wirkungslos geblieben.
+        # Schluesselweise wie clause_policy und event_settings daneben.
+        semantic_policy=merge_settings(local.semantic_policy, remote.semantic_policy),
     )
 
 

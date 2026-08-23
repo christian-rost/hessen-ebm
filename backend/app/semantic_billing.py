@@ -179,6 +179,11 @@ def _derive_over_passes(
     failures: list[str] = []
 
     for index in range(1, passes + 1):
+        # Je Durchgang einmal zaehlen. Schlaegt dasselbe Modell eine Position
+        # innerhalb einer Antwort zweimal vor, ist das keine Bestaetigung durch
+        # einen zweiten Durchgang - sonst waere ein Doppelvorschlag so viel wert
+        # wie eine unabhaengige Wiederholung.
+        in_diesem_durchgang: set[tuple[str, str | None]] = set()
         try:
             payload, pass_attempts = _request_payload_with_retry(
                 messages, settings, llm_client, semantic_policy
@@ -203,7 +208,8 @@ def _derive_over_passes(
                     canonical_gop(str(raw.get("gop") or raw.get("not_billed_gop") or raw.get("evidence") or "")),
                     anchor or None,
                 )
-                if key == "items":
+                if key == "items" and identity not in in_diesem_durchgang:
+                    in_diesem_durchgang.add(identity)
                     agreement[identity] = agreement.get(identity, 0) + 1
                 previous = seen[key].get(identity)
                 if previous is None:
