@@ -76,10 +76,9 @@ def generate_semantic_billing_items(
     if not candidates:
         raise SemanticBillingError(f"Für das Quartal {quarter} wurden keine Katalogkandidaten gefunden.")
 
+    messages = _build_messages(billing_evidence, candidates, quarter, region)
     rule_set = get_runtime_billing_rule_set(quarter, region)
-    payload, attempts = _ask_per_service_event(
-        events, catalog, quarter, region, settings, llm_client, rule_set.semantic_policy
-    )
+    payload, attempts = _request_payload_with_retry(messages, settings, llm_client, rule_set.semantic_policy)
 
     items, item_review = _billing_items_from_payload(payload, billing_evidence, events, candidates, catalog, quarter, region)
     reconcile_derived_item_anchors(items, quarter, region)
@@ -282,88 +281,6 @@ def _search_terms(item: Evidence) -> list[str]:
     return list(dict.fromkeys(terms))
 
 
-def _candidate_payload(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Kandidaten so, wie das Modell sie sieht. Der Legendentext bleibt vollstaendig,
-    weil daraus der obligate Leistungsinhalt hervorgeht."""
-    return [
-        {
-            "gop": item["gop"],
-            "title": item["title"],
-            "source": item["source"],
-            "points": item["points"],
-            "euro": item["euro"],
-            # description ist der erste Eintrag von rule_texts; einmal genuegt.
-            "legend": item.get("rule_texts") or [],
-        }
-        for item in candidates
-    ]
-
-
-def _build_event_messages(
-    event: BillingEvent,
-    candidates: list[dict[str, Any]],
-    quarter: str,
-    region: str,
-) -> list[dict[str, str]]:
-    """Prompt fuer genau ein Leistungsereignis.
-
-    Bewusst nicht enthalten: Sitzungsbildung, Mitternacht, Kontaktsequenz,
-    Zeitvarianten, Haeufigkeiten. Das entscheidet der Server deterministisch und
-    setzt es anschliessend durch. Stuende es hier, wuerde das Modell darueber
-    begruenden, ohne es zu bestimmen - genau daher stammten widerspruechliche
-    Begruendungstexte wie "Werktag" an einem Feiertag.
-    """
-    system = (
-        "Du bist ein vorsichtiger medizinischer Abrechnungsassistent für den EBM. "
-        "Dir wird genau eine erbrachte Leistung mit ihrer Evidenz vorgelegt, dazu die dafür "
-        "in Frage kommenden Katalogeinträge. "
-        "Entscheide, welcher Eintrag diese Leistung beschreibt. "
-        "Wähle höchstens einen; passt keiner, gib gop als null zurück. "
-        "Nutze ausschließlich GOPs aus catalog_candidates und erfinde keine. "
-        "Wähle nur, wenn die Evidenz die Leistung als erbracht belegt. Eine nur angeforderte, "
-        "stornierte, abgebrochene oder unsichere Leistung ist nicht erbracht. "
-        "Beschreibt ein Eintrag eine über den einzelnen Kontakt hinausreichende Betreuung oder ein "
-        "Programm, wähle ihn nicht allein aufgrund einer einzelnen Untersuchung. "
-        "Nennt die Legende einen obligaten Leistungsinhalt, führe in covered_content die Elemente "
-        "wörtlich auf, die diese Evidenz belegt, und lass unbelegte weg. "
-        "Kommt ein weiterer Eintrag ernsthaft in Betracht, nenne ihn unter alternatives; er wird "
-        "zur Prüfung vorgelegt, nicht abgerechnet. "
-        "Antworte ausschließlich als einzelnes JSON-Objekt."
-    )
-    user = {
-        "task": "Ordne dieser einen Leistung den passenden Katalogeintrag zu.",
-        "quarter": quarter,
-        "region": region,
-        "service_event": {
-            "service_date": event.service_date,
-            "service_time": event.service_time,
-            "evidence": [
-                {
-                    "evidence_id": item.evidence_id,
-                    "label": item.label,
-                    "page": item.page,
-                    "text": item.text,
-                    "value": item.value,
-                    "unit": item.unit,
-                }
-                for item in event.evidence
-            ],
-        },
-        "catalog_candidates": _candidate_payload(candidates),
-        "json_schema": {
-            "gop": "GOP aus catalog_candidates oder null",
-            "confidence": "high|medium|low",
-            "reason": "kurze fachliche Herleitung aus der vorgelegten Evidenz",
-            "covered_content": ["wörtliches Element des obligaten Leistungsinhalts, das belegt ist"],
-            "alternatives": [{"gop": "string", "reason": "warum ernsthaft in Betracht"}],
-        },
-    }
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
-    ]
-
-
 def _build_messages(
     evidence: list[Evidence],
     candidates: list[dict[str, Any]],
@@ -515,122 +432,11 @@ def _call_mistral_chat_json(messages: list[dict[str, str]], settings: Settings) 
     return _json_from_text(content)
 
 
-def _ask_per_service_event(
-    events: list[BillingEvent],
-    catalog: CatalogRepository,
-    quarter: str,
-    region: str,
-    settings: Settings,
-    llm_client: LlmClient | None,
-    semantic_policy: dict[str, Any],
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Je Leistungsereignis einmal fragen, statt einmal fuer den ganzen Fall.
-
-    Der Server hat Segmente, Sitzungen, Episoden, Kontaktsequenz und Zeitvarianten
-    bereits bestimmt. Uebrig bleibt die eine Frage, fuer die das Modell noetig ist:
-    Welcher Katalogeintrag beschreibt diese Leistung? Das ist eine Wahl aus wenigen
-    Kandidaten statt einer Zuordnung vieler Evidenzen zu vielen GOPs.
-
-    Datum, Uhrzeit und Evidenzbezug kommen aus dem Ereignis, nicht aus der Antwort;
-    das Modell kann sie deshalb nicht mehr falsch angeben.
-    """
-    items: list[dict[str, Any]] = []
-    review: list[dict[str, Any]] = []
-    excluded: list[dict[str, Any]] = []
-    attempts: list[dict[str, Any]] = []
-    per_event_limit = int(semantic_policy.get("max_candidates_per_event") or 12)
-
-    for event in [item for item in events if item.primary_episode]:
-        event_candidates = _collect_catalog_candidates(
-            event.evidence, catalog, quarter, region, max_candidates=per_event_limit
-        )
-        if not event_candidates:
-            continue
-        messages = _build_event_messages(event, event_candidates, quarter, region)
-        try:
-            payload, event_attempts = _request_payload_with_retry(
-                messages, settings, llm_client, semantic_policy, _validate_event_answer
-            )
-        except SemanticBillingError as exc:
-            attempts.append({"event_id": event.event_id, "status": "failed", "reason": str(exc)})
-            continue
-        attempts.extend({"event_id": event.event_id, **entry} for entry in event_attempts)
-        _merge_event_answer(payload, event, items, review, excluded)
-
-    if not attempts:
-        raise SemanticBillingError("Für kein Leistungsereignis konnten Katalogkandidaten ermittelt werden.")
-    if not any(entry.get("status") == "ok" for entry in attempts):
-        raise SemanticBillingError("Kein Leistungsereignis konnte semantisch zugeordnet werden.")
-    return {"items": items, "review_candidates": review, "excluded_evidence": excluded}, attempts
-
-
-def _validate_event_answer(payload: dict[str, Any]) -> None:
-    if "gop" not in payload:
-        raise SemanticBillingError("Die Antwort enthält kein Feld 'gop'.")
-
-
-def _merge_event_answer(
-    payload: dict[str, Any],
-    event: BillingEvent,
-    items: list[dict[str, Any]],
-    review: list[dict[str, Any]],
-    excluded: list[dict[str, Any]],
-) -> None:
-    """Antwort eines Ereignisses in die gemeinsame Nutzlast uebernehmen.
-
-    Die strukturellen Felder stammen aus dem Ereignis. Das Modell liefert nur die
-    fachliche Wahl und ihre Begruendung.
-    """
-    gop = str(payload.get("gop") or "").strip()
-    structural = {
-        "evidence_ids": list(event.evidence_ids),
-        "service_date": event.service_date,
-        "service_time": event.service_time,
-    }
-    if gop:
-        items.append(
-            {
-                "gop": gop,
-                "quantity": 1,
-                "confidence": str(payload.get("confidence") or "medium"),
-                "reason": _clean_optional_str(payload.get("reason")) or "",
-                "covered_content": [
-                    str(value) for value in (payload.get("covered_content") or []) if str(value).strip()
-                ],
-                **structural,
-            }
-        )
-    else:
-        excluded.append(
-            {
-                "evidence": event.evidence[0].label if event.evidence else event.kind,
-                "evidence_ids": structural["evidence_ids"],
-                "not_billed_gop": None,
-                "reason": _clean_optional_str(payload.get("reason")) or "Keine passende GOP im Kandidatenpool.",
-            }
-        )
-    for alternative in payload.get("alternatives") or []:
-        if not isinstance(alternative, dict):
-            continue
-        alternative_gop = str(alternative.get("gop") or "").strip()
-        if not alternative_gop or alternative_gop == gop:
-            continue
-        review.append(
-            {
-                "evidence": event.evidence[0].label if event.evidence else event.kind,
-                "evidence_ids": structural["evidence_ids"],
-                "possible_gops": [alternative_gop],
-                "reason": _clean_optional_str(alternative.get("reason")) or "Alternative Zuordnung zur Prüfung.",
-            }
-        )
-
-
 def _request_payload_with_retry(
     messages: list[dict[str, str]],
     settings: Settings,
     llm_client: LlmClient | None,
     semantic_policy: dict[str, Any],
-    validate: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Antwort des Modells holen und bei unbrauchbarem Ergebnis erneut fragen.
 
@@ -651,9 +457,7 @@ def _request_payload_with_retry(
         try:
             raw = llm_client(conversation, settings) if llm_client else _call_mistral_chat_json(conversation, settings)
             payload = _coerce_json_payload(raw)
-            if validate is not None:
-                validate(payload)
-            elif not isinstance(payload.get("items"), list):
+            if not isinstance(payload.get("items"), list):
                 raise SemanticBillingError("Die LLM-Antwort enthält kein Feld 'items' als Liste.")
             attempts.append({"attempt": attempt, "status": "ok"})
             return payload, attempts
@@ -854,12 +658,7 @@ def _billing_items_from_payload(
                 )
             )
             continue
-        # Zwei Ereignisse zum selben dokumentierten Zeitpunkt sind dieselbe
-        # Leistung, nur verschieden belegt - etwa CTG und der Untersuchungsbefund
-        # derselben Minute. Der Zeitpunkt gehoert deshalb in den Schluessel, sonst
-        # entsteht dieselbe GOP zweimal.
-        moment = f"{service_date or ''}T{service_time or ''}"
-        dedupe_key = (gop_base, moment if service_date and service_time else event_key)
+        dedupe_key = (gop_base, event_key)
         if dedupe_key in used_event_gops:
             review.append(
                 ReviewCandidate(

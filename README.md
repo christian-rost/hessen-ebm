@@ -189,18 +189,6 @@ Weil die semantische Zuordnung der einzige Weg von Evidenz zu GOP ist, würde ei
 
 Ohne `MISTRAL_API_KEY` entstehen keine Rechnungspositionen. Die Analyse liefert dann Segmente, Zeitleiste und Evidenzen, und der Grund steht in `catalog_context.analysis_warnings`.
 
-## Zuschnitt der semantischen Ableitung
-
-Gefragt wird je Leistungsereignis einmal, nicht einmal für den ganzen Fall. Der Server hat Segmente, Sitzungen, Episoden, Kontaktsequenz und Zeitvarianten bereits deterministisch bestimmt; übrig bleibt die eine Frage, für die das Modell nötig ist: **Welcher Katalogeintrag beschreibt diese Leistung?** Eine Wahl aus wenigen Kandidaten statt einer Zuordnung vieler Evidenzen zu vielen GOPs.
-
-Datum, Uhrzeit und Evidenzbezug einer Position stammen aus dem Ereignis, nicht aus der Antwort. Das Modell kann sie deshalb nicht mehr abweichend angeben — eine Fehlerquelle, die zuvor zu Positionen mit falscher Uhrzeit geführt hat.
-
-Der Systemprompt enthält bewusst **keine** Anweisungen zu Sitzungsbildung, Mitternacht, Kontaktsequenz oder Zeitvarianten. Der Server entscheidet das und setzt es anschließend durch; stünde es im Prompt, würde das Modell darüber begründen, ohne es zu bestimmen. Genau daher stammten Begründungen wie „Werktag" an einem Feiertag.
-
-Für einen Beispielfall mit 13 Leistungsereignissen: 13 Aufrufe mit zusammen rund 218.000 Zeichen statt eines Aufrufs mit 341.000, der größte Einzelaufruf rund 22.000 statt 341.000 Zeichen. Die Zahl der Kandidaten je Ereignis steht in `semantic_policy.max_candidates_per_event`.
-
-Zwei Ereignisse zum selben dokumentierten Zeitpunkt können dieselbe GOP wählen — ein CTG und der Untersuchungsbefund derselben Minute. Der Leistungszeitpunkt gehört deshalb in den Dedupe-Schlüssel.
-
 ## Zeitstempel und Kontaktsequenzen
 
 Die Leistungszeit wird label-unabhängig erkannt. Klinische Dokumentation beschriftet Zeitstempel beliebig — „Notiz vom", „Vitalwerte vom", „CTG-Streifen vom" —, und eine Liste solcher Beschriftungen wäre nie vollständig. Aufgezählt werden deshalb nur die wenigen **administrativen** Beschriftungen, die kein Leistungszeitpunkt sind: Import-, Export-, Druck-, Scan-, Freigabe- und Validierungszeitpunkte sowie Stammdaten. Alles Übrige gilt als dokumentierter Leistungszeitpunkt. Die Konfiguration steht in `datetime_extraction` in `backend/app/clinical_evidence_definitions.json`.
